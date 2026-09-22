@@ -62,18 +62,10 @@ var schemaMigrations = []migration{
 	{version: 12, name: "agent_token_charge_limit", checksum: "sha256:agent-token-charge-limit-v12-20260913", apply: migrationNoop},
 	{version: 13, name: "cloud_agent_canvas_mutation", checksum: "sha256:cloud-agent-canvas-mutation-v13-20260913", apply: migrationNoop},
 	{version: 14, name: "cloud_agent_recovery_control", checksum: "sha256:cloud-agent-recovery-control-v14", apply: migrationNoop},
-	{version: 15, name: "agent_profiles", checksum: "sha256:agent-profiles-v15-20260914", apply: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&model.AgentProfile{})
-	}},
-	{version: 16, name: "agent_lessons", checksum: "sha256:agent-lessons-v16-20260917", apply: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&model.AgentLesson{})
-	}},
-	{version: 17, name: "agent_lessons_owner_index", checksum: "sha256:agent-lessons-owner-index-v17-20260917", apply: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&model.AgentLesson{})
-	}},
-	{version: 18, name: "agent_memory_settings", checksum: "sha256:agent-memory-settings-v18-20260917", apply: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&model.AgentMemorySetting{})
-	}},
+	{version: 15, name: "agent_profiles", checksum: "sha256:agent-profiles-v15-20260914", apply: migrationNoop},
+	{version: 16, name: "agent_lessons", checksum: "sha256:agent-lessons-v16-20260917", apply: migrationNoop},
+	{version: 17, name: "agent_lessons_owner_index", checksum: "sha256:agent-lessons-owner-index-v17-20260917", apply: migrationNoop},
+	{version: 18, name: "agent_memory_settings", checksum: "sha256:agent-memory-settings-v18-20260917", apply: migrationNoop},
 	{version: 19, name: "payment_plugin_version", checksum: "sha256:payment-plugin-version-v19-20260917", apply: migrationNoop},
 	{version: 20, name: "banner_announcements", checksum: "sha256:banner-announcements-v20-20260917", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BannerAnnouncement{})

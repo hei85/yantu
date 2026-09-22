@@ -10,13 +10,13 @@ import (
 func TestRequestRetryAfterMatchesWindow(t *testing.T) {
 	s := &Service{coordinator: platform.NewCoordinatorWithRedis(nil, "registration-test")}
 	ctx := context.Background()
-	if ok, err := s.AllowRequest(ctx, "email-code:test", 1, time.Hour); err != nil || !ok {
+	if ok, err := s.AllowRequest(ctx, "request-limit:test", 1, time.Hour); err != nil || !ok {
 		t.Fatal(err)
 	}
-	if ok, _ := s.AllowRequest(ctx, "email-code:test", 1, time.Hour); ok {
+	if ok, _ := s.AllowRequest(ctx, "request-limit:test", 1, time.Hour); ok {
 		t.Fatal("limit bypassed")
 	}
-	wait := s.RequestRetryAfter(ctx, "email-code:test", time.Hour)
+	wait := s.RequestRetryAfter(ctx, "request-limit:test", time.Hour)
 	if wait < 59*time.Minute || wait > time.Hour {
 		t.Fatalf("wrong wait: %v", wait)
 	}

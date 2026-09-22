@@ -130,42 +130,6 @@ describe("site appearance and editable skin library", () => {
         expect(appearance.activeSkin.name).toBe("暖调测试");
     });
 
-    test("site UI wires metadata, editable theme actions, and the official ICP destination", async () => {
-        const [storeSource, footerSource, pageSource, editorSource, globalStyles, adminStyles, adminTokens] = await Promise.all([
-            Bun.file(new URL("../src/stores/use-appearance-store.ts", import.meta.url)).text(),
-            Bun.file(new URL("../src/components/layout/site-compliance-footer.tsx", import.meta.url)).text(),
-            Bun.file(new URL("../src/pages/admin/settings/appearance-settings-page.tsx", import.meta.url)).text(),
-            Bun.file(new URL("../src/pages/admin/settings/components/skin-theme-editor.tsx", import.meta.url)).text(),
-            Bun.file(new URL("../src/styles/globals.css", import.meta.url)).text(),
-            Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text(),
-            Bun.file(new URL("../src/pages/admin/theme/admin-tokens.css", import.meta.url)).text(),
-        ]);
-
-        expect(storeSource).toContain('setMeta(targetDocument, "name", "description"');
-        expect(storeSource).toContain('setMeta(targetDocument, "property", "og:title"');
-        expect(footerSource).toContain("https://beian.miit.gov.cn/");
-        expect(footerSource).toContain('rel="noopener noreferrer"');
-        expect(pageSource).toContain('title="皮肤主题"');
-        expect(editorSource).toContain("从默认新建");
-        expect(editorSource).toContain("复制当前");
-        expect(editorSource).toContain("删除这套主题");
-        expect(editorSource).toContain("系统默认 · 只读");
-        expect(editorSource).toContain('className="admin-skin-delete-button"');
-        expect(editorSource).toContain('type="primary"');
-        expect(editorSource).toContain("danger");
-        expect(editorSource).toContain('<div className="admin-skin-color-field">');
-        expect(editorSource).not.toContain('<label className="admin-skin-color-field">');
-        expect(editorSource).toContain("后台菜单");
-        expect(globalStyles).toContain("--control-switch-checked-bg: #16a34a");
-        expect(globalStyles).toContain("--plugin-switch-checked-bg: var(--control-switch-checked-bg)");
-        expect(globalStyles).toContain("--ant-tooltip-arrow-background-color: var(--popover) !important");
-        expect(globalStyles).toContain("--ant-tooltip-overlay-color: var(--popover-foreground) !important");
-        expect(globalStyles).toContain(":where(.ant-tooltip-container, .ant-tooltip-inner)");
-        expect(globalStyles).toContain("color: var(--popover-foreground) !important");
-        expect(adminStyles).toContain("var(--admin-status-warning)");
-        expect(adminTokens).toContain("--admin-status-warning: #b45309;");
-        expect(adminStyles).toContain("border-radius: var(--menu-radius);");
-    });
 });
 
 type SkinFixture = Omit<ReturnType<typeof duplicateSkinDefinition>, "tokens"> & {

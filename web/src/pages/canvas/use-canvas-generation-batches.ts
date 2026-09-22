@@ -311,7 +311,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             if (!batch) return;
             const nodeById = new Map(nodesRef.current.map((node) => [node.id, node]));
             // 只允许停止还在本地等待队列中的项目。进入 submitting 后请求可能已经被服务端接收，
-            // 即使前端尚未拿到 taskId 也不能再把它标成取消，避免隐藏已计费任务。
+            // 即使前端尚未拿到 taskId 也不能再把它标成取消，避免隐藏已提交任务。
             const stoppableItems = batch.items.filter((item) => item.status === "waiting" && !nodeById.get(item.nodeId)?.metadata?.taskId);
             if (!stoppableItems.length) return message.info("没有尚未提交的任务");
             modal.confirm({

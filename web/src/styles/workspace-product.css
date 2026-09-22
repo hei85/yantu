@@ -1,5 +1,4 @@
-/* Shared product components. Page files own composition; these rules own material,
-   control geometry and interaction. Spatial canvas and admin layouts stay isolated. */
+/* Shared product components. Page files own composition; these rules own material, control geometry and interaction. Spatial canvas and admin layouts stay isolated. */
 .app-user-workspace .studio-collection-page > div {
     width: min(var(--product-content-max), calc(100% - 64px));
     margin-inline: auto;
@@ -133,16 +132,14 @@
 }
 .collection-filter-group { display: flex; flex-direction: column; gap: 6px; }
 .collection-filter-label { color: var(--user-ink-soft); font-size: 11px; font-weight: 650; letter-spacing: .04em; white-space: nowrap; }
-.collection-filter-options,
-.assets-collection-filters .collection-folder-list {
+.collection-filter-options, .assets-collection-filters .collection-folder-list {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 2px;
 }
 .assets-collection-filters .assets-filter-item { width: 100%; }
-.assets-collection-filters .collection-folder-list > button,
-.assets-collection-filters .collection-folder-list .assets-folder-row { width: 100%; max-width: none; }
+.assets-collection-filters .collection-folder-list > button, .assets-collection-filters .collection-folder-list .assets-folder-row { width: 100%; max-width: none; }
 .collection-folder-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .collection-folder-heading .collection-filter-label { padding: 0; }
 .collection-trash-entry {
@@ -167,8 +164,7 @@
         box-shadow: none !important;
         transition: background var(--user-motion), transform var(--user-motion);
     }
-    .app-user-workspace .product-collection-card:hover,
-    .app-user-workspace .product-collection-card:focus-within {
+    .app-user-workspace .product-collection-card:hover, .app-user-workspace .product-collection-card:focus-within {
         background: color-mix(in srgb, var(--user-surface) 65%, var(--user-surface-muted)) !important;
         box-shadow: none !important;
         transform: translateY(-2px);
@@ -183,8 +179,7 @@
     .app-user-workspace .project-library-cover { border-radius: var(--user-radius-control); }
     .app-user-workspace .project-library-body { padding: var(--space-3) var(--space-2); }
     .app-user-workspace .project-library-stats { border-top: 0; padding-top: var(--space-3); }
-    .app-product-workspace .ant-btn,
-    .app-product-overlays .ant-btn {
+    .app-product-workspace .ant-btn, .app-product-overlays .ant-btn {
         height: var(--user-control-height);
         border-radius: var(--user-radius-control);
         border-color: transparent !important;
@@ -193,13 +188,9 @@
         gap: var(--space-2);
     }
     .app-product-workspace .ant-btn-sm { height: 30px; border-radius: 8px; font-size: 12px; }
-    .app-product-workspace .ant-btn > .ant-btn-icon svg,
-    .app-product-overlays .ant-btn > .ant-btn-icon svg { width: var(--user-icon-size); height: var(--user-icon-size); stroke-width: 1.7; }
-    .app-product-workspace .ant-btn:disabled,
-    .app-product-overlays .ant-btn:disabled { opacity: .42; }
-    .app-user-workspace .collection-toolbar .ant-input-affix-wrapper,
-    .app-user-workspace .collection-toolbar .ant-select,
-    .app-user-workspace .collection-toolbar .ant-select-selector {
+    .app-product-workspace .ant-btn > .ant-btn-icon svg, .app-product-overlays .ant-btn > .ant-btn-icon svg { width: var(--user-icon-size); height: var(--user-icon-size); stroke-width: 1.7; }
+    .app-product-workspace .ant-btn:disabled, .app-product-overlays .ant-btn:disabled { opacity: .42; }
+    .app-user-workspace .collection-toolbar .ant-input-affix-wrapper, .app-user-workspace .collection-toolbar .ant-select, .app-user-workspace .collection-toolbar .ant-select-selector {
         height: var(--user-control-height);
         border: 0 !important;
         border-radius: var(--user-radius-control) !important;
@@ -231,11 +222,9 @@
     }
     .assets-collection-filter-scroll { overflow: visible; }
     .collection-filter-group { gap: var(--space-2); }
-    .assets-collection-filters .collection-filter-options,
-    .assets-collection-filters .collection-folder-list { flex-direction: row; flex-wrap: wrap; }
+    .assets-collection-filters .collection-filter-options, .assets-collection-filters .collection-folder-list { flex-direction: row; flex-wrap: wrap; }
     .assets-collection-filters .assets-filter-item { width: auto; }
-    .assets-collection-filters .collection-folder-list > button,
-    .assets-collection-filters .collection-folder-list .assets-folder-row { width: auto; max-width: 220px; }
+    .assets-collection-filters .collection-folder-list > button, .assets-collection-filters .collection-folder-list .assets-folder-row { width: auto; max-width: 220px; }
     .app-user-workspace .skill-library-grid { grid-template-columns: minmax(0, 1fr); }
     .app-product-workspace .skill-library-grid.library-grid { grid-template-columns: minmax(0, 1fr); }
     .story-launcher-panel { padding: var(--space-4); }
@@ -254,8 +243,7 @@
    geometry and motion so pages do not invent a new button, card or overlay
    language for every route. The canvas editor keeps its own spatial chrome.
    ======================================================================== */
-.app-user-workspace,
-.app-product-overlays {
+.app-user-workspace, .app-product-overlays {
     --product-ease: cubic-bezier(.16, 1, .3, 1);
     --product-fast: 120ms;
     --product-state: 180ms;
@@ -270,9 +258,7 @@
     --product-accent-cyan: #2f6f8f;
 }
 
-.dark .app-user-workspace,
-.dark .app-product-workspace,
-.dark .app-product-overlays {
+.dark .app-user-workspace, .dark .app-product-workspace, .dark .app-product-overlays {
     --product-accent-blue: #96b4ff;
     --product-accent-green: #79cfb1;
     --product-accent-orange: #edb77c;
@@ -285,23 +271,20 @@
 .app-product-workspace [data-category="creative"] { --category-accent: var(--product-accent-pink); }
 .app-product-workspace [data-category="social"] { --category-accent: var(--product-accent-green); }
 
-.app-product-workspace .library-page > div,
-.app-product-workspace .studio-collection-page > div {
+.app-product-workspace .library-page > div, .app-product-workspace .studio-collection-page > div {
     width: min(var(--product-content-max), calc(100% - 64px));
     padding-top: 24px;
     padding-bottom: 44px;
 }
 
-.app-product-workspace .library-page .app-page-header,
-.app-product-workspace .studio-collection-page .app-page-header {
+.app-product-workspace .library-page .app-page-header, .app-product-workspace .studio-collection-page .app-page-header {
     min-height: 64px;
     align-items: center;
     gap: 16px;
     padding: 0 0 16px;
 }
 
-.app-product-workspace .app-page-header-title,
-.app-product-workspace .app-page-header h1 {
+.app-product-workspace .app-page-header-title, .app-product-workspace .app-page-header h1 {
     max-width: 38ch;
     margin: 0;
     color: var(--user-ink) !important;
@@ -323,9 +306,7 @@
     gap: 8px;
 }
 
-.app-product-workspace .collection-toolbar,
-.app-product-workspace .library-page .library-toolbar,
-.app-product-workspace .library-page .admin-list-toolbar {
+.app-product-workspace .collection-toolbar, .app-product-workspace .library-page .library-toolbar, .app-product-workspace .library-page .admin-list-toolbar {
     min-height: 0;
     margin: 0 0 20px;
     padding: 0;
@@ -335,13 +316,11 @@
     box-shadow: none;
 }
 
-.app-product-workspace .collection-toolbar-controls,
-.app-product-workspace .admin-list-toolbar-main {
+.app-product-workspace .collection-toolbar-controls, .app-product-workspace .admin-list-toolbar-main {
     gap: 8px;
 }
 
-.app-product-workspace .collection-toolbar-actions,
-.app-product-workspace .admin-list-toolbar-actions {
+.app-product-workspace .collection-toolbar-actions, .app-product-workspace .admin-list-toolbar-actions {
     gap: 8px;
 }
 
@@ -349,27 +328,17 @@
     min-height: 0;
 }
 
-.app-product-workspace .canvas-collection-grid,
-.app-product-workspace .library-grid,
-.app-product-workspace .assets-library-grid,
-.app-product-workspace .skill-library-grid,
-.app-product-workspace .plugins-grid,
-.app-product-workspace .task-grid-view {
+.app-product-workspace .canvas-collection-grid, .app-product-workspace .library-grid, .app-product-workspace .assets-library-grid, .app-product-workspace .skill-library-grid, .app-product-workspace .plugins-grid, .app-product-workspace .task-grid-view {
     grid-template-columns: repeat(auto-fill, minmax(224px, 1fr));
     gap: 24px 16px;
 }
 
-.app-product-workspace .assets-library-grid,
-.app-product-workspace .skill-library-grid {
+.app-product-workspace .assets-library-grid, .app-product-workspace .skill-library-grid {
     gap: 20px 16px;
 }
 .app-product-workspace .project-library-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 312px), 1fr)); gap: 24px; }
 
-.app-product-workspace .product-collection-card,
-.app-product-workspace .library-card,
-.app-product-workspace .task-grid-card,
-.app-product-workspace .plugin-card,
-.app-product-workspace .skill-library-card {
+.app-product-workspace .product-collection-card, .app-product-workspace .library-card, .app-product-workspace .task-grid-card, .app-product-workspace .plugin-card, .app-product-workspace .skill-library-card {
     animation: product-card-enter var(--product-enter) var(--product-ease) backwards;
 }
 
@@ -430,8 +399,7 @@
 .app-product-workspace .skills-tab.is-active { background: transparent; color: var(--user-ink); box-shadow: none; }
 .app-product-workspace .skills-tab-count { background: var(--user-surface-hover); color: var(--user-ink-muted); }
 
-.app-product-workspace .task-record-list,
-.app-product-workspace .task-group-list {
+.app-product-workspace .task-record-list, .app-product-workspace .task-group-list {
     gap: 8px !important;
 }
 
@@ -443,8 +411,7 @@
     transition: background var(--product-state) var(--product-ease), transform var(--product-state) var(--product-ease);
 }
 
-.app-product-workspace .task-record-row:hover,
-.app-product-workspace .task-record-row:focus-within {
+.app-product-workspace .task-record-row:hover, .app-product-workspace .task-record-row:focus-within {
     transform: translateX(2px);
 }
 
@@ -457,10 +424,8 @@
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-link { width: 54px !important; padding: 4px 0 !important; }
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-main { width: 100%; align-items: center; justify-content: center; }
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-icon { width: 24px; height: 24px; flex-basis: 24px; }
-.app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-link .app-workspace-nav-icon svg,
-.app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-link .app-workspace-nav-main > svg { width: 18px !important; height: 18px !important; flex: 0 0 18px; }
+.app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-link .app-workspace-nav-icon svg, .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-nav-link .app-workspace-nav-main > svg { width: 18px !important; height: 18px !important; flex: 0 0 18px; }
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-sidebar-account { width: 100%; align-items: center; }
-.app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-sidebar-checkin { width: 48px; }
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-sidebar-profile-row { width: 100%; justify-content: center; }
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-sidebar-profile { width: 48px; min-width: 48px; flex: 0 0 48px; margin-inline: auto; }
 .app-user-workspace .app-workspace-sidebar-nav.is-collapsed .app-workspace-sidebar-notification-spacer { display: none; }
@@ -498,8 +463,7 @@
     transform-origin: center;
     transition: transform var(--product-state) var(--product-ease);
 }
-.app-user-workspace .app-workspace-nav-link:hover .app-workspace-nav-icon,
-.app-user-workspace .app-workspace-nav-link:focus-visible .app-workspace-nav-icon {
+.app-user-workspace .app-workspace-nav-link:hover .app-workspace-nav-icon, .app-user-workspace .app-workspace-nav-link:focus-visible .app-workspace-nav-icon {
     transform: translateY(-1px);
 }
 .app-user-workspace .app-workspace-nav-link.is-active {
@@ -580,51 +544,40 @@
 @media (max-width: 720px) { .creation-floating-prompt { top: 8px; width: calc(100% - 24px); min-height: 60px; gap: 10px; padding: 8px 9px 8px 16px; border-radius: 19px; } .creation-floating-prompt input { font-size: 14px; } .creation-floating-prompt button { width: 40px; height: 40px; flex-basis: 40px; } .creation-model-picker-surface .creation-model-picker-menu:is(.is-brand-list, .is-model-list) { width: calc(100vw - 24px) !important; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-two-pane { grid-template-columns: minmax(0, 1fr); min-height: 0; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-brand-rail { display: none; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-tabs { height: 30px; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-button { height: 26px; min-height: 26px; padding: 0 6px; font-size: 10px; } }
 
 /* Shared controls: one size system and one state vocabulary. */
-.app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number),
-.app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number) {
+.app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number), .app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number) {
     transition: background var(--product-state) var(--product-ease), color var(--product-state) var(--product-ease), border-color var(--product-state) var(--product-ease), box-shadow var(--product-state) var(--product-ease), transform var(--product-fast) var(--product-ease) !important;
 }
 
-.app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number),
-.app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number) {
+.app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number), .app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number) {
     border-radius: var(--user-radius-control);
 }
 
-.app-product-workspace .ant-btn:not(:disabled):active,
-.app-product-overlays .ant-btn:not(:disabled):active { transform: scale(.975); }
+.app-product-workspace .ant-btn:not(:disabled):active, .app-product-overlays .ant-btn:not(:disabled):active { transform: scale(.975); }
 
-.app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number):focus-visible,
-.app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number):focus-visible {
+.app-product-workspace :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number):focus-visible, .app-product-overlays :where(.ant-btn, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-input-number):focus-visible {
     outline: 2px solid var(--product-focus-ring);
     outline-offset: 2px;
 }
 
-.app-product-workspace .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):not([aria-pressed="true"]):hover,
-.app-product-overlays .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):not([aria-pressed="true"]):hover {
+.app-product-workspace .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):not([aria-pressed="true"]):hover, .app-product-overlays .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):not([aria-pressed="true"]):hover {
     color: var(--user-ink) !important;
     background: var(--user-surface-hover) !important;
 }
 
-.app-product-workspace .ant-btn-primary:not(:disabled):hover,
-.app-product-overlays .ant-btn-primary:not(:disabled):hover { transform: translateY(-1px); }
+.app-product-workspace .ant-btn-primary:not(:disabled):hover, .app-product-overlays .ant-btn-primary:not(:disabled):hover { transform: translateY(-1px); }
 
-.app-product-workspace .ant-btn-primary:not(:disabled):active,
-.app-product-overlays .ant-btn-primary:not(:disabled):active { transform: scale(.975); }
+.app-product-workspace .ant-btn-primary:not(:disabled):active, .app-product-overlays .ant-btn-primary:not(:disabled):active { transform: scale(.975); }
 
 /* Floating surfaces and their enter/leave lifecycle belong to app-theme.ts.
    Do not animate portal positioning nodes here: that breaks dismissal/placement. */
 
 /* Icon actions use one compact interaction language across the user workspace. */
-.app-product-workspace button:has(> svg):not(:has(> span)):not(.ant-btn-icon-only),
-.app-product-overlays button:has(> svg):not(:has(> span)):not(.ant-btn-icon-only) {
+.app-product-workspace button:has(> svg):not(:has(> span)):not(.ant-btn-icon-only), .app-product-overlays button:has(> svg):not(:has(> span)):not(.ant-btn-icon-only) {
     transition: color var(--product-state) var(--product-ease), background-color var(--product-state) var(--product-ease), border-color var(--product-state) var(--product-ease), transform var(--product-fast) var(--product-ease), box-shadow var(--product-state) var(--product-ease) !important;
 }
-.app-product-workspace button:has(> svg):not(:has(> span)):not(:disabled):hover,
-.app-product-overlays button:has(> svg):not(:has(> span)):not(:disabled):hover { color: var(--user-accent) !important; background: color-mix(in srgb, var(--user-accent) 9%, var(--user-surface)) !important; box-shadow: 0 5px 16px color-mix(in srgb, var(--user-accent) 13%, transparent); transform: translateY(-1px); }
-.app-product-workspace button:has(> svg):not(:has(> span)):not(:disabled):active,
-.app-product-overlays button:has(> svg):not(:has(> span)):not(:disabled):active { transform: scale(.92) translateY(0); }
-.app-product-workspace button:has(> svg):not(:has(> span)):focus-visible,
-.app-product-overlays button:has(> svg):not(:has(> span)):focus-visible { outline: 2px solid var(--product-focus-ring); outline-offset: 2px; }
+.app-product-workspace button:has(> svg):not(:has(> span)):not(:disabled):hover, .app-product-overlays button:has(> svg):not(:has(> span)):not(:disabled):hover { color: var(--user-accent) !important; background: color-mix(in srgb, var(--user-accent) 9%, var(--user-surface)) !important; box-shadow: 0 5px 16px color-mix(in srgb, var(--user-accent) 13%, transparent); transform: translateY(-1px); }
+.app-product-workspace button:has(> svg):not(:has(> span)):not(:disabled):active, .app-product-overlays button:has(> svg):not(:has(> span)):not(:disabled):active { transform: scale(.92) translateY(0); }
+.app-product-workspace button:has(> svg):not(:has(> span)):focus-visible, .app-product-overlays button:has(> svg):not(:has(> span)):focus-visible { outline: 2px solid var(--product-focus-ring); outline-offset: 2px; }
 
 /* 列表进入节奏：卡片和图片错开出现，慢网络时仍有内容层次。 */
 .app-product-workspace :is(.product-collection-card, .library-card, .task-grid-card, .task-record-row, .skill-library-card, .plugin-card) { animation: product-card-enter var(--product-enter) var(--product-ease) both; }
@@ -634,7 +587,6 @@
 .app-product-workspace :is(.product-collection-card, .library-card, .task-grid-card, .task-record-row, .skill-library-card, .plugin-card):nth-child(n + 5) { animation-delay: 180ms; }
 .app-product-workspace .library-card img, .app-product-workspace .product-collection-card img { animation: product-image-reveal 520ms var(--product-ease) both; }
 
-
 @keyframes product-image-reveal { from { opacity: 0; filter: blur(5px); } to { opacity: 1; filter: blur(0); } }
 @keyframes product-card-enter {
     from { opacity: 0; transform: translateY(8px); }
@@ -642,16 +594,14 @@
 }
 
 @media (max-width: 900px) {
-    .app-product-workspace .library-page > div,
-    .app-product-workspace .studio-collection-page > div { width: calc(100% - 32px); }
+    .app-product-workspace .library-page > div, .app-product-workspace .studio-collection-page > div { width: calc(100% - 32px); }
 }
 
 .app-product-workspace .project-workspace-header {
     border-bottom-color: var(--user-border);
     color: var(--user-ink);
 }
-.app-product-workspace .project-workspace-header button:has(> svg):not(:disabled):hover,
-.app-product-workspace .project-workspace-header button:has(> svg):not(:disabled):active {
+.app-product-workspace .project-workspace-header button:has(> svg):not(:disabled):hover, .app-product-workspace .project-workspace-header button:has(> svg):not(:disabled):active {
     color: var(--user-ink) !important;
     background: var(--user-surface-hover) !important;
     box-shadow: none !important;
@@ -659,16 +609,12 @@
 }
 
 @media (max-width: 620px) {
-    .app-product-workspace .library-page > div,
-    .app-product-workspace .studio-collection-page > div { width: calc(100% - 24px); padding-top: 16px; padding-bottom: 32px; }
+    .app-product-workspace .library-page > div, .app-product-workspace .studio-collection-page > div { width: calc(100% - 24px); padding-top: 16px; padding-bottom: 32px; }
     .app-product-workspace .app-page-header { align-items: flex-start; padding-bottom: 10px; }
-    .app-product-workspace .app-page-header-title,
-    .app-product-workspace .app-page-header h1 { font-size: 19px !important; }
+    .app-product-workspace .app-page-header-title, .app-product-workspace .app-page-header h1 { font-size: 19px !important; }
     .app-product-workspace .collection-toolbar-controls { flex-basis: 100%; }
     .app-product-workspace .collection-toolbar-actions { width: 100%; justify-content: flex-start; }
-    .app-product-workspace .canvas-collection-grid,
-    .app-product-workspace .assets-library-grid,
-    .app-product-workspace .task-grid-view { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; }
+    .app-product-workspace .canvas-collection-grid, .app-product-workspace .assets-library-grid, .app-product-workspace .task-grid-view { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; }
     .app-product-workspace .plugins-grid { grid-template-columns: minmax(0, 1fr); }
     .app-product-workspace .story-launcher-panel { padding: 16px; border-radius: 16px; }
 }
@@ -825,15 +771,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .app-product-workspace *,
-    .app-product-overlays * { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
-    .app-product-workspace .product-collection-card:hover,
-    .app-product-workspace .library-card:hover,
-    .app-product-workspace .task-grid-card:hover,
-    .app-product-workspace .plugin-card:hover,
-    .app-product-workspace .skill-library-card:hover,
-    .app-product-workspace .task-record-row:hover { transform: none !important; }
-    .app-user-workspace .app-workspace-nav-link,
-    .app-user-workspace .app-workspace-nav-icon,
-    .app-user-workspace .app-workspace-nav-icon svg { animation: none !important; transform: none !important; }
+    .app-product-workspace *, .app-product-overlays * { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+    .app-product-workspace .product-collection-card:hover, .app-product-workspace .library-card:hover, .app-product-workspace .task-grid-card:hover, .app-product-workspace .plugin-card:hover, .app-product-workspace .skill-library-card:hover, .app-product-workspace .task-record-row:hover { transform: none !important; }
+    .app-user-workspace .app-workspace-nav-link, .app-user-workspace .app-workspace-nav-icon, .app-user-workspace .app-workspace-nav-icon svg { animation: none !important; transform: none !important; }
 }

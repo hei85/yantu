@@ -9,7 +9,7 @@ import { ChannelHeadersEditor, validateChannelHeaders } from "@/components/chann
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { mergeFetchedChannelModelCosts } from "@/lib/channel-model-catalog";
 import { buildChannelBundle, channelBundleFileName, parseChannelBundle, type ChannelBundleChannel, type ChannelBundleModel } from "@/lib/channel-bundle";
-import { listAdminChannelModels } from "@/services/api/wallet";
+import { listAdminChannelModels } from "@/services/api/channel-models";
 import { fetchChannelModels } from "@/services/api/image";
 import { deleteAdminChannel, listAdminChannels } from "@/services/api/auth";
 import { ChannelModelManager } from "@/pages/admin/components/channel-model-manager";

@@ -63,7 +63,7 @@ func creationError(err error) error {
 		return BadAuthRequest("同时排队或运行的任务已达到上限")
 	}
 	if errors.Is(err, repository.ErrLogicalModelUnavailable) {
-		return creationConflict("模型已更新或停用，请重新准备报价")
+		return creationConflict("模型已更新或停用，请重新准备方案")
 	}
 	if errors.Is(err, repository.ErrCreationConflict) {
 		return creationConflict("创作状态已变化，请重新读取后继续")
@@ -412,7 +412,7 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 	resolved, _ := input["config"].(map[string]any)
 	for _, key := range []string{"size", "videoSeconds", "vquality", "quality", "count"} {
 		if requested := stringValue(config[key]); requested != "" && !strings.EqualFold(requested, stringValue(resolved[key])) {
-			return nil, "", creationConflict("模型解析后的生成规格与请求不同，请调整方案后重新报价")
+			return nil, "", creationConflict("模型解析后的生成规格与请求不同，请调整方案后重新确认")
 		}
 	}
 	channel, channelErr := s.repo.SystemChannel(stringValue(resolved["channelId"]))
@@ -547,7 +547,7 @@ func (s *Service) PrepareCreationSubmission(userID, id string, req CreationReque
 		return nil, BadAuthRequest("缺少稳定执行项键")
 	}
 	if strings.HasPrefix(req.ItemKey, "requote:") {
-		return nil, BadAuthRequest("该执行项键由报价刷新接口保留")
+		return nil, BadAuthRequest("该执行项键由方案刷新接口保留")
 	}
 	run, err := s.repo.CreationRun(userID, id)
 	if err != nil {
@@ -633,7 +633,7 @@ func (s *Service) RefreshCreationSubmission(userID, id string, req CreationReque
 		return nil, creationError(err)
 	}
 	if old.TaskID != nil {
-		return nil, creationConflict("任务已提交，请查看原任务，不需要刷新报价")
+		return nil, creationConflict("任务已提交，请查看原任务，不需要刷新方案")
 	}
 	successorKey := "requote:" + old.ID
 	items, err := s.repo.CreationSubmissions(userID, id)
@@ -674,7 +674,7 @@ func (s *Service) RefreshCreationSubmission(userID, id string, req CreationReque
 			return e
 		}
 		if fresh.TaskID != nil {
-			return creationConflict("任务已经提交，不能刷新报价")
+			return creationConflict("任务已经提交，不能刷新方案")
 		}
 		all, e := repo.CreationSubmissions(userID, id)
 		if e != nil {
@@ -687,7 +687,7 @@ func (s *Service) RefreshCreationSubmission(userID, id string, req CreationReque
 			}
 		}
 		if fresh.RevokedAt != nil {
-			return creationConflict("原报价已撤销")
+			return creationConflict("原方案已撤销")
 		}
 		if e = validateCreationSubmissionScope(current, fresh.ProposalVersion, normalized); e != nil {
 			return e
@@ -746,7 +746,7 @@ func (s *Service) ApproveCreationSubmissions(userID, id string, req CreationRequ
 			return nil, err
 		}
 		if creationQuoteFor(task, sig, item.ExpiresAt).QuoteHash != creationSubmissionOutput(*item).Quote.QuoteHash {
-			return nil, creationConflict("报价已变化，请重新准备并确认")
+			return nil, creationConflict("方案已变化，请重新准备并确认")
 		}
 		prepared[sid] = task
 		signatures[sid] = sig
@@ -763,7 +763,7 @@ func (s *Service) ApproveCreationSubmissions(userID, id string, req CreationRequ
 				return e
 			}
 			if item.RevokedAt != nil || !item.ExpiresAt.After(now) {
-				return creationConflict("报价已过期或撤销")
+				return creationConflict("方案已过期或撤销")
 			}
 			var request CreateTaskRequest
 			_ = json.Unmarshal([]byte(item.RequestJSON), &request)
@@ -832,7 +832,7 @@ func (s *Service) ExecuteCreationSubmission(userID, id string, req CreationReque
 		return nil, err
 	}
 	if creationQuoteFor(task, signature, item.ExpiresAt).QuoteHash != creationSubmissionOutput(*item).Quote.QuoteHash {
-		return nil, creationConflict("报价已变化，请重新确认")
+		return nil, creationConflict("方案已变化，请重新确认")
 	}
 	var input map[string]any
 	_ = json.Unmarshal([]byte(task.InputJSON), &input)
@@ -865,7 +865,7 @@ func (s *Service) ExecuteCreationSubmission(userID, id string, req CreationReque
 			return nil
 		}
 		if fresh.ApprovedAt == nil || fresh.RevokedAt != nil || !fresh.ExpiresAt.After(time.Now()) {
-			return creationConflict("任务尚未批准或报价已过期")
+			return creationConflict("任务尚未批准或方案已过期")
 		}
 		if e = validateCreationSubmissionScope(current, fresh.ProposalVersion, request); e != nil {
 			return e

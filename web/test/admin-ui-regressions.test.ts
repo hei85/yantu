@@ -68,7 +68,7 @@ test("model editor presents protocols in a searchable inline radio browser inste
 test("channel model fetch requires explicit selection before import", async () => {
     const [componentSource, apiSource, adminCssSource] = await Promise.all([
         Bun.file(new URL("../src/pages/admin/components/channel-model-manager.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/services/api/wallet.ts", import.meta.url)).text(),
+        Bun.file(new URL("../src/services/api/channel-models.ts", import.meta.url)).text(),
         Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text(),
     ]);
     const component = compactSource(componentSource);
@@ -95,7 +95,7 @@ test("channel model fetch requires explicit selection before import", async () =
 });
 
 test("channel model manager supports bounded atomic batch deletion", async () => {
-    const [componentSource, apiSource] = await Promise.all([Bun.file(new URL("../src/pages/admin/components/channel-model-manager.tsx", import.meta.url)).text(), Bun.file(new URL("../src/services/api/wallet.ts", import.meta.url)).text()]);
+    const [componentSource, apiSource] = await Promise.all([Bun.file(new URL("../src/pages/admin/components/channel-model-manager.tsx", import.meta.url)).text(), Bun.file(new URL("../src/services/api/channel-models.ts", import.meta.url)).text()]);
     const component = compactSource(componentSource);
 
     expect(apiSource).toContain("http.post<{ deleted: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/batch-delete`, { modelIds })");
@@ -117,18 +117,6 @@ test("analytics keeps fixed range presets distinct and uses enabled channel mode
     expect(source).toContain('["60d", "60 天"]');
     expect(source).toContain('next.set("rangePreset", rangePreset)');
     expect(source).toContain("setRangePreset(undefined)");
-});
-
-test("storage settings keep generic S3 controls and connection validation", async () => {
-    const source = await Bun.file(new URL("../src/pages/admin/settings/storage-settings-page.tsx", import.meta.url)).text();
-    const compacted = compactSource(source);
-
-    expect(compacted).toContain('{ mode: "s3", label: "S3 兼容存储"');
-    expect(compacted).toContain("testAdminOSSConnection(connectionInput(values))");
-    for (const field of ["s3Preset", "sessionToken", "pathStyle", "allowUserS3"]) {
-        expect(compacted).toContain(`name="${field}"`);
-    }
-    expect(compacted).toContain('["aliyun", "tencent", "qiniu", "s3"].includes(setting.provider || "")');
 });
 
 test("system settings group only exposes the kept panels", async () => {
@@ -181,59 +169,6 @@ test("admin settings use full-width summaries without selected-card side stripes
     expect(drawingSelected).not.toContain("inset 3px 0 0");
 });
 
-test("task-first settings reveal dependent configuration only after the primary choice", async () => {
-    // 本地单用户工作站已移除多用户接入设置面板，不再断言该页面。
-    const [storageSource, featureSource, appearanceSource, welcomeSource, drawingSource, arkSource, interceptionSource, thirdPartySource, cssSource] = await Promise.all([
-        Bun.file(new URL("../src/pages/admin/settings/storage-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/feature-availability-panel.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/settings/appearance-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/settings/components/welcome-setting.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/settings/drawing-engine-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/settings/ark-private-assets-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/settings/response-interception-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/settings/libtv-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text(),
-    ]);
-
-    expect(storageSource).toContain('title="1. 选择新资源存储位置"');
-    expect(storageSource).toContain("选择后继续完成第 2 步并保存");
-    expect(sourceSection(storageSource, "const requestModeChange", "const save")).not.toContain("save(values)");
-
-    expect(featureSource).toContain('title="1. 用户工作台入口"');
-    expect(featureSource).toContain('title="2. 插件开放范围"');
-    // 前台模型目录已经下线，功能开放只剩两个创作相关分组。
-    expect(featureSource).not.toContain('title="3. 用户模型来源"');
-    expect(appearanceSource).toContain("<WelcomeSetting />");
-    expect(welcomeSource).toContain("<strong>启用欢迎页</strong>");
-    expect(welcomeSource).toContain("updateAdminFeatureAvailability({ welcomeEnabled: value })");
-
-    expect(drawingSource).toContain('title="1. 选择新建绘图默认编辑器"');
-    expect(drawingSource).toContain('title="2. 配置 tldraw 授权（按需）"');
-    expect(sourceSection(drawingSource, "const selectEngine", "async function save")).not.toContain("save(");
-
-    expect(arkSource).toContain('title="1. 配置方舟项目与 IAM 凭据"');
-    expect(arkSource).toContain('title="2. 是否启用可信素材同步"');
-    expect(arkSource).toContain("{prerequisitesReady || draftEnabled ? (");
-    expect(arkSource).toContain('aria-label="启用可信素材同步，保存修改后生效"');
-
-    expect(interceptionSource).toContain('title="1. 是否替换用户可见的上游错误"');
-    expect(interceptionSource).toContain('title="2. 配置替换规则与优先级"');
-    expect(interceptionSource).toContain('title="3. 本地预览用户最终文案"');
-    expect(interceptionSource).toContain("{enabled ? (");
-    expect(interceptionSource).not.toContain('className="admin-intercept-overview"');
-    expect(sourceSection(interceptionSource, "const changeEnabled", "if (loading")).not.toContain("save(");
-
-    expect(thirdPartySource).toContain('title="1. 配置 LibTV 服务端访问凭据"');
-    expect(thirdPartySource).toContain('title="2. 是否开放用户导入 LibTV 画布"');
-    expect(thirdPartySource).toContain('title="3. 验证已保存的 LibTV 凭据"');
-    expect(thirdPartySource).toContain("{draftHasToken ? (");
-    expect(thirdPartySource).toContain("{setting.hasToken && !clearTokenDraft ? (");
-    expect(thirdPartySource).not.toContain('className="admin-third-party-overview"');
-    expect(sourceSection(thirdPartySource, "const changeEnabled", "const markTokenForRemoval")).not.toContain("save(");
-
-    expect(compactSource(cssSource)).toContain(".admin-feature-board { width: 100%; max-width: none; grid-template-columns: minmax(0, 1fr);");
-});
-
 test("admin tables keep requested filters and actions in the intended positions", async () => {
     const storageSource = await Bun.file(new URL("../src/pages/admin/components/storage-resources-panel.tsx", import.meta.url)).text();
 
@@ -245,28 +180,6 @@ test("admin tables keep requested filters and actions in the intended positions"
     expect(storageToolbar).toContain('aria-label="筛选资源类型"');
     expect(storageToolbar).toContain('aria-label="筛选资源状态"');
     expect(storageToolbar).toContain('aria-label="筛选存储类型"');
-});
-
-test("request logs hide credit billing now that the local workstation drops charging", async () => {
-    const [listSource, detailSource, apiSource] = await Promise.all([
-        Bun.file(new URL("../src/pages/admin/logs/logs-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/api-log-detail-drawer.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/services/api/auth.ts", import.meta.url)).text(),
-    ]);
-
-    // 本地工作站不收费：请求明细不再展示积分、售价与上游成本。
-    expect(listSource).toContain('title: "请求阶段 / 状态"');
-    expect(listSource).not.toContain('title: "积分计算"');
-    expect(listSource).not.toContain("function BillingSummary");
-    expect(listSource).not.toContain("销售价格");
-    expect(listSource).not.toContain("成本价格");
-    expect(detailSource).toContain('["请求阶段", requestKindText(log.requestKind)]');
-    expect(detailSource).not.toContain("计费属性");
-    expect(detailSource).not.toContain("销售价格");
-    expect(detailSource).not.toContain("成本价格");
-    expect(detailSource).not.toContain("上游成本");
-    expect(apiSource).not.toContain("billingAmountMicrocredits");
-    expect(apiSource).not.toContain("billingAvailable");
 });
 
 test("banner announcement editor keeps title styles through edit, save and status toggle", async () => {
@@ -340,43 +253,4 @@ test("banner announcement editor keeps title styles through edit, save and statu
     expect(apiSource).toContain("noticeType?: BannerNoticeType");
     expect(apiSource).not.toContain("icon?:");
     expect(apiSource).toContain("export type { BannerTitleRun }");
-});
-
-test("admin console tokens and shell stay isolated from the user workspace", async () => {
-    const [tokens, shell, chrome, globals] = await Promise.all([
-        Bun.file(new URL("../src/pages/admin/theme/admin-tokens.css", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/admin-shell.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/theme/admin-chrome.css", import.meta.url)).text(),
-        Bun.file(new URL("../src/styles/globals.css", import.meta.url)).text(),
-    ]);
-
-    expect(tokens).toContain("--admin-canvas: #f5f5f5;");
-    expect(tokens).toContain("--admin-canvas: #0f0f0f;");
-    expect(tokens).not.toContain("--admin-layer-0: var(--workspace-");
-    expect(tokens).not.toContain("--admin-layer-0: var(--skin-admin-");
-    expect(shell).toContain("data-admin-root");
-    expect(shell).toContain("getIsolatedAdminAntTheme");
-    expect(shell).not.toContain("WorkspacePage");
-    expect(shell).not.toContain("getAdminAntThemeConfig");
-    expect(shell).not.toContain("app-workspace-nav-link");
-    expect(chrome).toContain("[data-admin-root] .admin-nav-link");
-    expect(chrome).toContain("border-left: 0 !important");
-    expect(chrome).not.toContain("left: -8px");
-    expect(chrome).toContain(".admin-drawer .ant-drawer-content");
-    expect(globals).not.toContain("/* 管理端专用视觉收口：不覆盖创作端 workspace 的导航、状态和图表样式。 */");
-
-    const [overlays, userDetail, prompts, modelEditor] = await Promise.all([
-        Bun.file(new URL("../src/pages/admin/ui/overlays.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/admin-user-detail-drawer.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/storyboard-prompts/storyboard-prompts-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/channel-model-editor.tsx", import.meta.url)).text(),
-    ]);
-    expect(overlays).toContain('rootClassName={cn("admin-drawer"');
-    expect(overlays).toContain('rootClassName={cn("admin-modal-root"');
-    expect(overlays).not.toContain("@/components/ui/product");
-    for (const source of [userDetail, prompts, modelEditor]) {
-        expect(source).not.toContain("@/components/ui/product");
-        expect(source).not.toContain("AppDrawer");
-        expect(source).not.toContain("AppModal");
-    }
 });

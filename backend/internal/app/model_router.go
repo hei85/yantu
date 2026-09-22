@@ -985,7 +985,7 @@ func (s *Service) beginTaskRouteAttempt(task *model.Task) (*model.RouteAttempt, 
 				}
 				return existing, nil
 			}
-			return nil, routeDispatchUncertainError{"上一次提交结果不明确，为避免重复扣费已停止自动重发"}
+			return nil, routeDispatchUncertainError{"上一次提交结果不明确，为避免重复提交已停止自动重发"}
 		case "rejected_no_job":
 			if task.LogicalModelID == "" {
 				return nil, errors.New("上游已拒绝本次请求，请检查渠道配置后再试")
@@ -1009,7 +1009,7 @@ func (s *Service) markRouteAttemptDispatching(attempt *model.RouteAttempt) error
 	}
 	// A stale worker must not dispatch the same selected attempt a second time.
 	if err := s.repo.MarkRouteAttemptDispatching(attempt.ID); err != nil {
-		return routeDispatchUncertainError{"提交状态未能独占确认，为避免重复扣费已停止自动重发"}
+		return routeDispatchUncertainError{"提交状态未能独占确认，为避免重复提交已停止自动重发"}
 	}
 	attempt.Status, attempt.DispatchState = "dispatching", "submission_unknown"
 	return nil

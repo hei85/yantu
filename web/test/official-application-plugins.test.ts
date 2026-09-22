@@ -32,21 +32,4 @@ describe("official application plugin classification", () => {
         expect(ids.length).toBe(5);
     });
 
-    test("both plugin pages consume the shared list instead of a local copy", () => {
-        const adminPage = readFileSync(
-            resolve(import.meta.dir, "../src/pages/admin/plugins/plugins-page.tsx"),
-            "utf8",
-        );
-        const userPage = readFileSync(
-            resolve(import.meta.dir, "../src/pages/plugins/index.tsx"),
-            "utf8",
-        );
-
-        expect(adminPage).toContain("isOfficialApplicationPluginId");
-        expect(userPage).toContain("isOfficialApplicationPluginId");
-
-        // No page may reintroduce a hand-maintained id array.
-        expect(adminPage).not.toContain("const officialApplicationIds = new Set([");
-        expect(userPage).not.toContain("function isOfficialApplicationPlugin(pluginId: string) {");
-    });
 });

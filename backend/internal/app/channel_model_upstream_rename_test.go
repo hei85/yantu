@@ -77,8 +77,8 @@ func TestRenamedUpstreamKeyReachesSystemChannelRequests(t *testing.T) {
 		ModelKey: "deepseek-v4-flash", ProviderModelKey: "deepseek-v4-flash", DisplayName: "deepseek-v4-flash",
 		Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
 		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "deepseek-v4-flash"),
-		Variants:      []ChannelModelVariantRequest{{ProviderModelKey: "deepseek-v4-flash", Enabled: &enabled}},
-		Enabled:         &enabled,
+		Variants:         []ChannelModelVariantRequest{{ProviderModelKey: "deepseek-v4-flash", Enabled: &enabled}},
+		Enabled:          &enabled,
 	})
 	if err != nil {
 		t.Fatalf("initial save failed: %v", err)
@@ -87,13 +87,13 @@ func TestRenamedUpstreamKeyReachesSystemChannelRequests(t *testing.T) {
 		ModelKey: "deepseek-v4.1-flash", ProviderModelKey: "deepseek-v4.1-flash", DisplayName: "deepseek-v4.1-flash",
 		Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
 		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "deepseek-v4.1-flash"),
-		Variants: []ChannelModelVariantRequest{{ProviderModelKey: "deepseek-v4-flash", Enabled: &enabled}},
-		Enabled:    &enabled,
+		Variants:         []ChannelModelVariantRequest{{ProviderModelKey: "deepseek-v4-flash", Enabled: &enabled}},
+		Enabled:          &enabled,
 	}); err != nil {
 		t.Fatalf("rename save failed: %v", err)
 	}
 
-	// 用户在画布 Agent 选中新模型发起任务；config 形状与 cloud_agent.go 组装一致。
+	// 用户在画布 Agent 选中新模型发起任务；config 形状与画布 Agent 组装一致。
 	resolved, err := svc.resolveSystemChannelModelSelection(map[string]any{
 		"config": map[string]any{"channelId": channel.ID, "model": "deepseek-v4.1-flash", "channelModelKey": "deepseek-v4.1-flash"},
 	}, "canvas_text", "")

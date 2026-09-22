@@ -36,7 +36,7 @@ func TestOpenAIImageRejectsMaskWithoutSourceBeforePlugin(t *testing.T) {
 func TestProviderConnectionErrorPreservesCause(t *testing.T) {
 	for _, cause := range []error{io.EOF, io.ErrUnexpectedEOF} {
 		err := providerConnectionError(cause)
-		if !errors.Is(err, cause) || !strings.Contains(err.Error(), "扣费记录") {
+		if !errors.Is(err, cause) || !strings.Contains(err.Error(), "执行记录") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}

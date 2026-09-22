@@ -8,7 +8,7 @@ export function clampOpenAIPromptCacheKey(value?: string) {
 
 export function agentPromptCacheKey(sessionId: string) {
     const value = sessionId.trim();
-    return value ? clampOpenAIPromptCacheKey(`cloud-agent:${value}`) : undefined;
+    return value ? clampOpenAIPromptCacheKey(`canvas-agent:${value}`) : undefined;
 }
 
 export function withOpenAIPromptCacheKey<T extends Record<string, unknown>>(body: T, value?: string): T & { prompt_cache_key?: string } {

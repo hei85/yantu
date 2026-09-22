@@ -44,9 +44,9 @@ const statusLabels: Record<string, string> = {
     success: "已完成",
     error: "异常",
     deleted: "已删除",
-    reserved: "已冻结",
-    settled: "已结算",
-    refunded: "已退款",
+
+
+
     uncertain: "待核对",
 };
 

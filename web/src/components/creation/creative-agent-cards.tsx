@@ -106,7 +106,7 @@ export function CreativeQuoteCard({ quote, onApprove, onRefresh, busy, disabled 
         <h3>{quote.title}</h3><div className="creative-agent-quote-total"><span>本批 {quantity} 项生成</span><strong>确认后开始</strong></div>
         <details className="creative-agent-quote-details"><summary>查看执行明细</summary><div className="creative-agent-card-content"><ul className="creative-agent-quote-items">{quote.items.map((item) => <li key={item.id}><div><strong>{item.label}</strong><span>{item.model} · {item.specification}</span></div><b>× {item.quantity}</b></li>)}</ul><p className="creative-agent-muted">{quote.basis}</p>
         {quote.expiresAt && <p>有效期至 {quote.expiresAt}</p>}{quote.approvedQuantity !== undefined && <p>已批准 {quote.approvedQuantity} 项</p>}
-        {onRefresh && <Button className="creative-agent-detail-toggle" type="text" disabled={disabled || busy} onClick={onRefresh}>更新报价</Button>}</div></details>
+        {onRefresh && <Button className="creative-agent-detail-toggle" type="text" disabled={disabled || busy} onClick={onRefresh}>更新方案</Button>}</div></details>
         <div className="creative-agent-actions creative-agent-primary-actions"><Button type="primary" loading={busy} disabled={disabled || busy} onClick={onApprove}>确认生成</Button></div>
     </section>;
 }

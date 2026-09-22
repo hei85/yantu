@@ -20,7 +20,7 @@ export function generationTaskStatusLabel(task: GenerationTaskDisplayTarget) {
 }
 
 export function generationTaskStageLabel(task: GenerationTaskDisplayTarget) {
-    if (isGenerationTaskSubmissionUncertain(task)) return "为避免重复扣费，未自动重试";
+    if (isGenerationTaskSubmissionUncertain(task)) return "为避免重复提交，未自动重试";
     if (task.stage === "generating") return "生成中";
     if (task.stage === "queued") return "排队中";
     return task.stage || generationTaskStatusLabel(task);

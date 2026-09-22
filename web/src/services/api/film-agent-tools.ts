@@ -4,7 +4,7 @@
 //   1. 列出服务端已经定义的 Prompt Operation（短剧大纲、资产提取、分镜规划……）；
 //   2. 用页面同款调用方式（占位提示词 + promptTemplateOperation + 变量）发起生成任务；
 //   3. 等待/查询已有任务，避免重复提交。
-// 模板渲染、任务生命周期、计费与产物登记全部复用现有后端与页面服务。
+// 模板渲染、任务生命周期与产物登记全部复用现有后端与页面服务。
 
 import { promptTemplateTaskPlaceholder, PromptTemplateOperation, type PromptTemplateOperationId } from "@/lib/prompts";
 import { effectiveConfigForCustomChannels, useConfigStore, type AiConfig } from "@/stores/use-config-store";
@@ -57,7 +57,7 @@ async function listFilmOperations() {
             "多镜头任务优先用 project_create_or_update_shots 写入真实 Script 分镜，不要用普通文本节点堆 Markdown。",
             "章节只做一次 chapter_assets_extract；角色资产确认后再做 character_turnaround。",
             "storyboard_plan 产出后用 storyboard_repair 修结构，再逐镜 storyboard_first_frame / storyboard_video。",
-            "同一镜头重试时必须复用同一个 clientOperationId，避免重复扣费与重复任务。",
+            "同一镜头重试时必须复用同一个 clientOperationId，避免重复提交与重复任务。",
         ],
     };
 }

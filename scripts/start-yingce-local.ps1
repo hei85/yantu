@@ -148,7 +148,6 @@ try {
     $env:CANVAS_BACKEND_ADDR = "127.0.0.1:8080"
     $env:CANVAS_BACKEND_DATA_DIR = $dataDir
     $env:CANVAS_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
-    $env:CANVAS_REGISTRATION_ENABLED = "false"
     # 单机自用工作站：不启用账号容量、每日上传量与素材/画布数量等配额限制。
     $env:CANVAS_SELF_USE_MODE = "1"
     # 纯本地部署没有公网素材地址：允许把参考图以内嵌 data URL 交给上游（图生视频必需）。
@@ -179,7 +178,7 @@ $webProcess = Start-Process -FilePath $bunExe -ArgumentList @("run", "dev") -Wor
     $env:FRAMEFIELD_TRUSTED_WEB_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
 $agentProcess = Start-Process -FilePath $nodeExe -ArgumentList @($agentEntry) -WorkingDirectory $agentDir -WindowStyle Hidden -PassThru -RedirectStandardInput $serviceStdin -RedirectStandardOutput $agentOut -RedirectStandardError $agentErr
 } finally {
-    Remove-Item Env:CANVAS_BACKEND_ADDR, Env:CANVAS_BACKEND_DATA_DIR, Env:CANVAS_CORS_ORIGINS, Env:CANVAS_REGISTRATION_ENABLED, Env:CANVAS_SELF_USE_MODE, Env:CANVAS_INLINE_MEDIA_URLS, Env:ENABLE_PROVIDER_PLUGINS, Env:CANVAS_AUTO_MIGRATE, Env:VITE_API_PROXY_TARGET, Env:VITE_LOCAL_AUTO_LOGIN_USER, Env:VITE_LOCAL_AUTO_LOGIN_PASSWORD, Env:FRAMEFIELD_LOCAL_RUNTIME_CONFIG_DIR, Env:FRAMEFIELD_TRUSTED_WEB_ORIGINS -ErrorAction SilentlyContinue
+    Remove-Item Env:CANVAS_BACKEND_ADDR, Env:CANVAS_BACKEND_DATA_DIR, Env:CANVAS_CORS_ORIGINS, Env:CANVAS_SELF_USE_MODE, Env:CANVAS_INLINE_MEDIA_URLS, Env:ENABLE_PROVIDER_PLUGINS, Env:CANVAS_AUTO_MIGRATE, Env:VITE_API_PROXY_TARGET, Env:VITE_LOCAL_AUTO_LOGIN_USER, Env:VITE_LOCAL_AUTO_LOGIN_PASSWORD, Env:FRAMEFIELD_LOCAL_RUNTIME_CONFIG_DIR, Env:FRAMEFIELD_TRUSTED_WEB_ORIGINS -ErrorAction SilentlyContinue
 }
 
 @{ backend = $backendProcess.Id; web = $webProcess.Id; agent = $agentProcess.Id } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8

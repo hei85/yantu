@@ -1,7 +1,7 @@
 import type { ModelCapabilityChoice } from "@/components/model-protocol-picker";
 import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
-import type { ChannelModel } from "@/services/api/wallet";
+import type { ChannelModel } from "@/services/api/channel-models";
 
 export type ChannelModelFormValues = {
     modelKey: string;
