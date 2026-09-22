@@ -49,9 +49,27 @@ $mingwRoot = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\
 if ($mingwRoot) { $env:Path = "$mingwRoot;$env:Path" }
 
 $bunFallback = Join-Path $env:APPDATA "npm\node_modules\bun\bin\bun.exe"
-if (Test-Path -LiteralPath $bunFallback) { $bunExe = $bunFallback } else { $bunExe = Resolve-CommandPath @("bun.exe") }
+if (Test-Path -LiteralPath $bunFallback) {
+    $bunExe = $bunFallback
+} else {
+    try {
+        $bunExe = Resolve-CommandPath @("bun.exe")
+    } catch {
+        # 首次使用且未安装 bun 时，自动通过 npm 安装（需要已安装 Node.js）。
+        $npmExe = Resolve-CommandPath @("npm.cmd", "npm") @((Join-Path $env:ProgramFiles "nodejs\npm.cmd"))
+        Write-Host "未检测到 bun，正在通过 npm 自动安装..." -ForegroundColor Yellow
+        & $npmExe install -g bun
+        $bunExe = Resolve-CommandPath @("bun.exe") @($bunFallback)
+    }
+}
 $nodeExe = Resolve-CommandPath @("node") @((Join-Path $env:ProgramFiles "nodejs\node.exe"))
-$goExe = Resolve-CommandPath @("go") @((Join-Path $env:ProgramFiles "Go\bin\go.exe"))
+# Go 仅在需要重新编译后端时才必需：内置 server.exe 的免构建包不需要安装 Go。
+$script:goExe = $null
+function Get-GoExe() {
+    if ($script:goExe) { return $script:goExe }
+    $script:goExe = Resolve-CommandPath @("go") @((Join-Path $env:ProgramFiles "Go\bin\go.exe"))
+    return $script:goExe
+}
 
 if (-not (Test-Path -LiteralPath (Join-Path $webDir "node_modules\.bin\vite.exe"))) {
     Write-Host "Installing frontend dependencies with Bun..." -ForegroundColor Yellow
@@ -65,7 +83,7 @@ if ($Rebuild -or -not (Test-Path -LiteralPath $backendExe)) {
     try {
         $env:GOCACHE = $goBuildCache
         $env:GOMODCACHE = $goModuleCache
-        & $goExe build -o $backendExe ./cmd/server
+        & (Get-GoExe) build -o $backendExe ./cmd/server
     } finally {
         Pop-Location
     }

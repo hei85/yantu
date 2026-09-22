@@ -5,7 +5,7 @@ import { appearanceLogoURL, normalizePublicAppearance } from "../src/stores/use-
 test("initial HTML stays brand neutral until the public appearance is resolved", async () => {
     const [html, mainSource] = await Promise.all([Bun.file(new URL("../index.html", import.meta.url)).text(), Bun.file(new URL("../src/main.tsx", import.meta.url)).text()]);
 
-    expect(html).not.toContain("影策");
+    expect(html).not.toContain("衍图");
     expect(html).not.toContain("/logo.svg");
     expect(html).toContain("<title>正在加载</title>");
     expect(mainSource.indexOf("bootstrapAppearance()")).toBeLessThan(mainSource.indexOf('import("./application")'));
