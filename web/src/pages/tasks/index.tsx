@@ -63,7 +63,6 @@ export default function TasksPage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const projects = useCanvasStore((state) => state.projects);
     const shortDramaEnabled = useUserStore((state) => state.features.shortDramaEnabled);
-    const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const [form] = Form.useForm<CreateTaskInput & { operation: string }>();
     const { view: viewPreferenceKey, group: groupPreferenceKey } = preferenceKeys();
     const [domainProjects, setDomainProjects] = useState<ProjectSummary[]>([]);
@@ -169,7 +168,6 @@ export default function TasksPage() {
             canvasById={canvasById}
             projectNameById={domainProjectNameById}
             effectiveConfig={effectiveConfig}
-            creditsEnabled={creditsEnabled}
             actingId={actingId}
             onOpen={() => void openTaskDetail(task)}
             onRetry={() => void runAction(task.id)}
@@ -328,10 +326,8 @@ export default function TasksPage() {
             setTasks((items) => items.map((item) => (item.id === task.id ? { ...item, ...result.task } : item)));
             setTaskLogs(await listTaskLogs(task.id));
             await syncGenerationTaskToCanvasStore(result.task);
-            window.dispatchEvent(new CustomEvent("wallet:updated"));
             void loadTasks(false);
-            if (result.billingSettled) message.success("已获取上游视频，任务已恢复并完成结算");
-            else message.warning("已获取上游视频，任务已恢复，计费状态待管理员核对");
+            message.success("已获取上游视频，任务已恢复");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "查询上游任务失败");
         } finally {
@@ -547,7 +543,7 @@ function reconcileTaskSummaries(current: GenerationTask[], next: GenerationTask[
     let changed = false;
     const reconciled = next.map((task) => {
         const previous = currentById.get(task.id);
-        if (previous?.updatedAt === task.updatedAt && previous.previewUrl === task.previewUrl && previous.previewPosterUrl === task.previewPosterUrl && previous.billing?.status === task.billing?.status && previous.billing?.amountMicrocredits === task.billing?.amountMicrocredits) return previous;
+        if (previous?.updatedAt === task.updatedAt && previous.previewUrl === task.previewUrl && previous.previewPosterUrl === task.previewPosterUrl && true) return previous;
         changed = true;
         return task;
     });

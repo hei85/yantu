@@ -23,7 +23,6 @@ import {
     type ModelChannel,
     type ModelCapability,
 } from "@/stores/use-config-store";
-import { ChannelModelSettings } from "./channel-video-pricing";
 import { SystemChannelEditorModal } from "./system-channel-editor-modal";
 
 type UserChannelConnection = "openai" | "gemini";
@@ -143,7 +142,6 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                             icon: model.icon,
                             capability: model.capability,
                             protocol: model.protocol,
-                            billingMode: model.billingMode,
                             capabilityConfig: model.capabilityConfig,
                         })),
                     };
@@ -161,7 +159,6 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                     icon: cost.icon,
                     capability: cost.capability,
                     protocol: cost.protocol,
-                    billingMode: cost.billingMode,
                     capabilityConfig: cost.capabilityConfig,
                 })),
             }));
@@ -197,11 +194,6 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                             icon: model.icon || "",
                             capability: model.capability,
                             protocol: model.protocol,
-                            billingMode: model.billingMode === "per_second" || model.billingMode === "token" ? model.billingMode : "fixed_request",
-                            unitPriceMicrocredits: 0,
-                            inputTokenPriceMicrocredits: 0,
-                            outputTokenPriceMicrocredits: 0,
-                            cachedTokenPriceMicrocredits: 0,
                             capabilityConfig: model.capabilityConfig,
                         })),
                 }),
@@ -474,10 +466,9 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                                             <section className="model-editor-section">
                                                 <div>
                                                     <h2>模型与能力</h2>
-                                                    <p className="mt-1 text-xs text-foreground/50">维护渠道模型，并在单个模型中配置调用协议、能力和定价。</p>
+                                                    <p className="mt-1 text-xs text-foreground/50">维护渠道模型，并在单个模型中配置调用协议与能力。</p>
                                                 </div>
                                                 <Form.Item label="模型列表" htmlFor={`channel-${channel.id}-models`} className="mb-0"><Select id={`channel-${channel.id}-models`} mode="tags" showSearch allowClear maxTagCount="responsive" tokenSeparators={[",", "\n"]} placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models: uniqueModels(models) })} /></Form.Item>
-                                                <ChannelModelSettings channel={channel} onChange={(modelCosts) => updateChannel(channel.id, { modelCosts })} />
                                             </section>
                                         </div>
                                     </ModelEditorModal>

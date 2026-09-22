@@ -172,8 +172,8 @@ export function verifyCanvasOperations(before: CanvasSnapshot, after: CanvasSnap
             const outcome = generationOutcome(taskStatus, officialStatus, taskId);
             const message = generationVerificationMessage(outcome, resourceReady);
             generation.push({ nodeId: op.nodeId, ...(taskId ? { taskId } : {}), ...(taskStatus ? { taskStatus } : {}), ...(officialStatus ? { officialStatus } : {}), outcome, resourceReady, message });
-            if (outcome === "not_started") warnings.push(`节点「${node?.title || op.nodeId}」没有绑定生成任务，工具没有确认任务已提交`);
-            else if (outcome === "failed" || outcome === "cancelled") warnings.push(`节点「${node?.title || op.nodeId}」的生成任务未成功：${message}`);
+            if (outcome === "not_started") warnings.push(`节点「${node?.title || op.nodeId}」没有绑定成成任务，工具没有确认任务已提交`);
+            else if (outcome === "failed" || outcome === "cancelled") warnings.push(`节点「${node?.title || op.nodeId}」的成成任务未成功：${message}`);
             else if (outcome === "succeeded" && !resourceReady) warnings.push(`节点「${node?.title || op.nodeId}」的 provider 任务已成功，但资源尚未物化`);
             continue;
         }
@@ -212,7 +212,7 @@ export function findCanvasNodeOverlaps(nodes: CanvasNodeData[], onlyIds?: string
             const left = candidates[index];
             const right = candidates[next];
             if (left.position.x >= right.position.x + right.width || right.position.x >= left.position.x + left.width || left.position.y >= right.position.y + right.height || right.position.y >= left.position.y + left.height) continue;
-            overlaps.push(`节点「${left.title || left.id}」与「${right.title || right.id}」发生重叠`);
+            overlaps.push(`节点「${left.title || left.id}」与「${right.title || right.id}」发成重叠`);
         }
     }
     return overlaps;
@@ -225,13 +225,13 @@ export function canvasOperationPostconditionMessage(result: CanvasOperationPostc
         : `当前共 ${result.connectionCount} 条连线`;
     if (!result.ok) {
         if (result.generation.some((item) => item.outcome === "failed" || item.outcome === "cancelled")) return result.generation.map((item) => item.message).join("；");
-        if (result.generation.some((item) => item.outcome === "not_started")) return "画布写入完成，但生成任务没有成功提交，请检查当前生成执行器。";
+        if (result.generation.some((item) => item.outcome === "not_started")) return "画布写入完成，但成成任务没有成功提交，请检查当前成成执行器。";
         const details = [...result.overlapWarnings, ...result.warnings].filter(Boolean).slice(0, 2).join("；");
         return `${nodeSummary}，但事实复核失败：${details || "目标节点或连线没有达到预期状态"}。${result.expectedConnectionCount ? ` ${connectionSummary}。` : ""}`;
     }
-    if (result.generation.some((item) => item.outcome === "queued" || item.outcome === "running")) return `${nodeSummary}，${connectionSummary}；已提交生成任务，当前仍在${result.generation.map((item) => item.message).join("、")}，尚未完成。`;
-    if (result.generation.some((item) => item.outcome === "succeeded" && !item.resourceReady)) return `${nodeSummary}，${connectionSummary}；生成任务已成功，但资源尚未物化到画布，当前不能把它当作可复用素材。`;
-    if (result.generation.some((item) => item.outcome === "succeeded" && item.resourceReady)) return `${nodeSummary}，${connectionSummary}；生成已完成，且资源已在画布节点上就绪。`;
+    if (result.generation.some((item) => item.outcome === "queued" || item.outcome === "running")) return `${nodeSummary}，${connectionSummary}；已提交成成任务，当前仍在${result.generation.map((item) => item.message).join("、")}，尚未完成。`;
+    if (result.generation.some((item) => item.outcome === "succeeded" && !item.resourceReady)) return `${nodeSummary}，${connectionSummary}；成成任务已成功，但资源尚未物化到画布，当前不能把它当作可复用素材。`;
+    if (result.generation.some((item) => item.outcome === "succeeded" && item.resourceReady)) return `${nodeSummary}，${connectionSummary}；成成已完成，且资源已在画布节点上就绪。`;
     return `${nodeSummary}，${connectionSummary}，布局无重叠，已复核最终状态。`;
 }
 
@@ -289,7 +289,7 @@ export function previewCanvasOperations(ops?: CanvasOperation[], snapshot?: Canv
         if (op.type === "run_generation") {
             affectedNodeIds.add(op.nodeId);
             generationCount += 1;
-            items.push(`为「${nodeById.get(op.nodeId)?.title || op.nodeId}」触发${generationModeLabel(op.mode)}生成`);
+            items.push(`为「${nodeById.get(op.nodeId)?.title || op.nodeId}」触发${generationModeLabel(op.mode)}成成`);
             return;
         }
         if (op.type === "select_nodes") {
@@ -302,7 +302,7 @@ export function previewCanvasOperations(ops?: CanvasOperation[], snapshot?: Canv
 
     const warnings = [];
     if (destructiveCount) warnings.push("包含删除操作，批准后可从最近 Agent 批次逐步撤销。");
-    if (generationCount) warnings.push("生成任务可能产生模型费用，画布撤销不会取消已提交任务。");
+    if (generationCount) warnings.push("生成任务提交后无法通过画布撤销取消。");
     return {
         operationCount: safeOps.length,
         affectedNodeCount: affectedNodeIds.size + addedNodeCount,
@@ -390,7 +390,7 @@ function opLabel(type: string) {
     if (type === "connect_nodes") return "连接";
     if (type === "set_viewport") return "调整视图";
     if (type === "select_nodes") return "选择节点";
-    if (type === "run_generation") return "触发生成";
+    if (type === "run_generation") return "触发成成";
     return type;
 }
 
@@ -398,7 +398,7 @@ function canvasNodeTypeLabel(type?: CanvasNodeTypeId) {
     if (type === CanvasNodeType.Image) return "图片节点";
     if (type === CanvasNodeType.Video) return "视频节点";
     if (type === CanvasNodeType.Audio) return "音频节点";
-    if (type === CanvasNodeType.Config) return "生成配置";
+    if (type === CanvasNodeType.Config) return "成成配置";
     if (type === CanvasNodeType.Script) return "分镜脚本";
     if (type === CanvasNodeType.Frame) return "背板";
     if (type === CanvasNodeType.Drawing) return "绘图节点";
@@ -427,8 +427,8 @@ function generationOutcome(taskStatus?: string, officialStatus?: string, taskId?
 function generationVerificationMessage(outcome: CanvasGenerationVerification["outcome"], resourceReady: boolean) {
     if (outcome === "not_started") return "没有成功提交任务";
     if (outcome === "queued") return "排队中";
-    if (outcome === "running") return "生成中";
-    if (outcome === "failed") return "生成失败";
+    if (outcome === "running") return "成成中";
+    if (outcome === "failed") return "成成失败";
     if (outcome === "cancelled") return "已取消";
     if (outcome === "succeeded" && resourceReady) return "已完成且资源就绪";
     if (outcome === "succeeded") return "任务已成功但资源未就绪";

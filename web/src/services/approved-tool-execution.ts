@@ -4,10 +4,9 @@ import { prepareBackendToolGenerationTask, parseBackendGenerationResult, runBack
 import { waitForGenerationTask } from "./api/task-center";
 import type { CreativeQuote } from "@/lib/creation/creative-agent-contract";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { logicalModelIDForConfig, resolveModelRequestConfig } from "@/stores/use-config-store";
 
 type Request = Parameters<typeof runBackendToolGenerationTask>[0];
-type Pending = { submission: CreationSubmission; externalBilling: boolean; resolve: () => void; reject: (error: Error) => void };
+type Pending = { submission: CreationSubmission; resolve: () => void; reject: (error: Error) => void };
 export type ApprovedToolExecutionState = { quote?: CreativeQuote; busy: boolean; error?: string };
 
 // Only this boundary approves and executes quoted tasks. Pipeline code never grants approval.
@@ -77,14 +76,13 @@ export class ApprovedToolExecution {
         if (submission.revokedAt) {
             const detail = await this.api.get(this.run!.id, this.controller.signal);
             submission = detail.submissions.find((item) => item.requestHash === submission.requestHash && !item.revokedAt) || submission;
-            if (submission.revokedAt) throw new Error("原报价已失效，无法恢复此阶段");
+            if (submission.revokedAt) throw new Error("原执行方案已失效，无法恢复此阶段");
         }
         if (!submission.taskId && Date.parse(submission.quote.expiresAt) <= Date.now()) submission = await this.api.refreshQuote(this.run!.id, { ...this.guard(), submissionId: submission.id }, this.controller.signal);
         this.assertLive();
         if (!submission.taskId && !submission.approvedAt) {
             await new Promise<void>((resolve, reject) => {
-                const externalBilling = !logicalModelIDForConfig(request.config) && !resolveModelRequestConfig(request.config, request.config.model).channelId;
-                this.pending.set(stage, { submission, externalBilling, resolve, reject });
+                this.pending.set(stage, { submission, resolve, reject });
                 this.emit();
             });
             submission = this.pending.get(stage)!.submission;
@@ -99,7 +97,7 @@ export class ApprovedToolExecution {
         if (this.busy || this.disposed || this.controller.signal.aborted) return;
         const ids = new Set(submissionIds);
         const batch = [...this.pending.values()].filter((item) => ids.has(item.submission.id) && !item.submission.approvedAt);
-        if (batch.length !== ids.size) { this.error = "报价已变化，请核对当前费用卡后确认"; this.emit(); return; }
+        if (batch.length !== ids.size) { this.error = "执行方案已变化，请核对当前确认卡后继续"; this.emit(); return; }
         if (!batch.length) return;
         this.busy = true; this.error = undefined; this.emit();
         try {
@@ -107,17 +105,17 @@ export class ApprovedToolExecution {
             const result = await this.api.approve(this.run!.id, { ...this.guard(), submissionIds: batch.map((item) => item.submission.id) }, this.controller.signal);
             this.assertLive();
             if (batch.some((item) => !result.submissions.some((candidate) => candidate.id === item.submission.id && candidate.approvedAt))) {
-                const error = new Error("费用确认回执不完整，请继续上次分析以读取实际状态");
+                const error = new Error("执行确认回执不完整，请继续上次分析以读取实际状态");
                 this.abort(error);
                 throw error;
             }
             for (const item of batch) {
                 const approved = result.submissions.find((candidate) => candidate.id === item.submission.id && candidate.approvedAt);
-                if (!approved) throw new Error("费用确认结果不完整，请重新核对");
+                if (!approved) throw new Error("执行确认结果不完整，请重新核对");
                 item.submission = approved;
             }
             batch.forEach((item) => item.resolve());
-        } catch (error) { this.error = error instanceof Error ? error.message : "费用确认失败"; }
+        } catch (error) { this.error = error instanceof Error ? error.message : "执行确认失败"; }
         finally { this.busy = false; this.emit(); }
     }
 
@@ -131,21 +129,17 @@ export class ApprovedToolExecution {
                 item.submission = await this.api.refreshQuote(this.run!.id, { ...this.guard(), submissionId: item.submission.id }, this.controller.signal);
                 this.assertLive();
             }
-        } catch (error) { this.error = error instanceof Error ? error.message : "报价刷新失败"; }
+        } catch (error) { this.error = error instanceof Error ? error.message : "方案刷新失败"; }
         finally { this.busy = false; this.emit(); }
     }
 
     private emit() {
         if (this.disposed || this.scope !== getActiveUserScope()) return;
         const items = [...this.pending.entries()].filter(([, item]) => !item.submission.approvedAt).map(([stage, item]) => ({ ...item.submission, stage }));
-        const externalBilling = [...this.pending.values()].some((item) => !item.submission.approvedAt && item.externalBilling);
-        const estimated = items.some((item) => item.quote.estimated);
         this.options.onState({ busy: this.busy, error: this.error, quote: items.length ? {
-            id: items.map((item) => item.id).join(":"), title: "确认本批分析费用",
-            items: items.map((item) => ({ id: item.id, label: stageLabel(item.stage), model: item.quote.model, quantity: item.quote.quantity, specification: `${item.quote.estimated ? "预计" : ""} ${item.quote.amountMicrocredits / 1_000_000} 积分` })),
-            amountLabel: `${externalBilling ? "平台 " : ""}${estimated ? "预计 " : ""}${items.reduce((sum, item) => sum + item.quote.amountMicrocredits, 0) / 1_000_000} 积分${externalBilling ? " + 外部渠道费用" : ""}`,
-            externalBilling,
-            basis: "仅批准本批列出的模型调用；按用量计费时按实际结算，估算不是费用上限。后续阶段根据分析结果另行报价。",
+            id: items.map((item) => item.id).join(":"), title: "确认本批分析",
+            items: items.map((item) => ({ id: item.id, label: stageLabel(item.stage), model: item.quote.model, quantity: 1, specification: "确认后开始执行" })),
+            basis: "仅确认本批列出的分析调用；后续阶段会根据分析结果继续。",
             expiresAt: items.map((item) => item.quote.expiresAt).sort()[0],
         } : undefined });
     }

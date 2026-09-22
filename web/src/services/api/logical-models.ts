@@ -38,12 +38,6 @@ export type PublicLogicalModel = {
     description: string;
     capability: CapabilitySpec["capability"];
     sortOrder: number;
-    pricePolicy: "channel" | "unified";
-    billingMode: "fixed_request" | "per_second" | "token";
-    unitPriceMicrocredits: number;
-    inputPriceMicrocredits: number;
-    outputPriceMicrocredits: number;
-    cachedPriceMicrocredits: number;
     priceTiers: PublicLogicalModelPriceTier[];
     legacyModelIds: string[];
     capabilitySpec: CapabilitySpec;
@@ -52,15 +46,11 @@ export type PublicLogicalModel = {
     available: boolean;
 };
 
+/** 规格档只描述可执行的输入组合，不包含任何价格信息。 */
 export type PublicLogicalModelPriceTier = {
     selector: Record<string, string>;
     resolution: string;
     videoSeconds: number;
-    billingMode: "fixed_request" | "per_second" | "token";
-    unitPriceMicrocredits: number;
-    inputTokenPriceMicrocredits: number;
-    outputTokenPriceMicrocredits: number;
-    cachedTokenPriceMicrocredits: number;
 };
 
 export type AdminLogicalRoute = {
@@ -109,12 +99,6 @@ export type LogicalModelMutation = {
     capability: CapabilitySpec["capability"];
     enabled: boolean;
     sortOrder: number;
-    pricePolicy: PublicLogicalModel["pricePolicy"];
-    billingMode: PublicLogicalModel["billingMode"];
-    unitPriceMicrocredits: number;
-    inputPriceMicrocredits: number;
-    outputPriceMicrocredits: number;
-    cachedPriceMicrocredits: number;
     legacyModelIds?: string[];
     capabilitySpec: CapabilitySpec;
     defaultOptions: Record<string, unknown>;
@@ -124,33 +108,6 @@ export type LogicalModelMutation = {
 export type RouteSimulationResult = {
     productMatch: { matched: boolean; reasons?: string[] };
     candidates: Array<{ routeId: string; channelModelId: string; channelModelKey: string; channelModelName: string; priority: number; weight: number; enabled: boolean; matched: boolean; blocked: boolean; inPool: boolean; reasons?: string[] }>;
-};
-
-export type LogicalModelQuote = {
-    logicalModelId: string;
-    billingMode: PublicLogicalModel["billingMode"];
-    quantity: number;
-    amountMicrocredits: number;
-    estimated: boolean;
-    videoTokenEstimate?: {
-        formulaTokens: number;
-        reservedTokens: number;
-        outputWidth: number;
-        outputHeight: number;
-        framesPerSecond: number;
-        outputSeconds: number;
-        referenceSeconds: number;
-        referenceDurationEstimated: boolean;
-        dimensionsEstimated: boolean;
-        reservationMarginPercent: number;
-    };
-};
-
-export type ModelQuoteRequest = {
-    logicalModelID?: string;
-    channelId?: string;
-    modelKey?: string;
-    intent: ModelRequestIntent;
 };
 
 export type ModelCatalogSource = "system";
@@ -175,9 +132,6 @@ export type PublicChannelModel = {
     protocol?: string;
     capabilityConfig?: Record<string, any>;
     priceTiers: PublicChannelModelPriceTier[];
-    pricingMode: string;
-    displayPrice?: number;
-    priceLabel: string;
     available: boolean;
 };
 
@@ -186,11 +140,6 @@ export type PublicChannelModelPriceTier = {
     selector?: Record<string, string>;
     resolution: string;
     videoSeconds: number;
-    billingMode: string;
-    unitPriceMicrocredits: number;
-    inputTokenPriceMicrocredits: number;
-    outputTokenPriceMicrocredits: number;
-    cachedTokenPriceMicrocredits: number;
 };
 
 export type ModelCatalogResponse = {
@@ -202,16 +151,6 @@ export type ModelCatalogResponse = {
 // 创作目录直接读取系统渠道模型，不使用逻辑模型及其功能开关。
 export function getModelCatalog() {
     return http.get<ModelCatalogResponse>("/model-catalog");
-}
-
-export function quoteLogicalModel(id: string, intent: ModelRequestIntent, signal?: AbortSignal) {
-    return http.post<{ quote: LogicalModelQuote }>(`/models/${encodeURIComponent(id)}/quote`, intent, { signal });
-}
-
-export function quoteModel(request: ModelQuoteRequest, signal?: AbortSignal) {
-    if (request.logicalModelID) return quoteLogicalModel(request.logicalModelID, request.intent, signal);
-    if (!request.channelId || !request.modelKey) return Promise.reject(new Error("请选择需要报价的系统模型"));
-    return http.post<{ quote: LogicalModelQuote }>("/model-catalog/quote", { channelId: request.channelId, modelKey: request.modelKey, intent: request.intent }, { signal });
 }
 
 export function listAdminLogicalModels() {

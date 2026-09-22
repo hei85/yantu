@@ -3,9 +3,8 @@ import { App, Button, Divider, Input } from "antd";
 import { ArrowRight, LockKeyhole, UserRound } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
-import { getAuthSession, getAuthSettings, linuxDOLoginURL, login } from "@/services/api/auth";
+import { getAuthSession, login } from "@/services/api/auth";
 import { useUserStore } from "@/stores/use-user-store";
-import { LinuxDOIcon } from "./auth-scene";
 
 export default function LoginPage() {
     const navigate = useNavigate();
@@ -14,7 +13,6 @@ export default function LoginPage() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [submitting, setSubmitting] = useState(false);
-    const [linuxdoEnabled, setLinuxdoEnabled] = useState(false);
     const next = safeNext(params.get("next"));
     const forgotPasswordURL = `/forgot-password?next=${encodeURIComponent(next)}`;
     const user = useUserStore((state) => state.user);
@@ -28,13 +26,6 @@ export default function LoginPage() {
     }, [hydrated, user, next, navigate]);
 
     useEffect(() => {
-        void getAuthSettings()
-            .then((settings) => setLinuxdoEnabled(settings.linuxdoEnabled))
-            .catch((error) => {
-                // 这是登录页的展示配置读取：失败时明确隐藏第三方入口，
-                // 账号密码登录仍可用；不能无痕地把配置读取失败当成成功。
-                console.warn("读取登录方式配置失败，已隐藏第三方登录入口", error);
-            });
         const oauthError = params.get("oauth_error");
         if (oauthError) message.error(oauthError);
     }, [message, params]);
@@ -86,16 +77,6 @@ export default function LoginPage() {
             <Button type="primary" htmlType="submit" size="large" block loading={submitting} icon={<ArrowRight className="size-4" />} iconPlacement="end">
                 登录
             </Button>
-            {linuxdoEnabled ? (
-                <>
-                    <Divider plain className="!border-white/10 !text-white/30">
-                        或
-                    </Divider>
-                    <Button size="large" block icon={<LinuxDOIcon />} href={linuxDOLoginURL(next)}>
-                        使用 Linux.do 登录
-                    </Button>
-                </>
-            ) : null}
         </form>
     );
 }

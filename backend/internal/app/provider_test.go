@@ -490,12 +490,9 @@ func TestCanonicalAgentBodiesPreserveAssistantToolCalls(t *testing.T) {
 	request := canonicalAgentRequest{
 		Messages: []map[string]any{
 			{"role": "user", "content": "读取画布"},
-			{"role": "assistant", "content": "我先查看当前内容。", "tool_calls": []cloudAgentCall{{
-				ID: "call-5",
-				Function: struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				}{Name: "canvas_get_state", Arguments: `{}`},
+			{"role": "assistant", "content": "我先查看当前内容。", "tool_calls": []map[string]any{{
+				"id":       "call-5",
+				"function": map[string]any{"name": "canvas_get_state", "arguments": `{}`},
 			}}},
 			{"role": "tool", "tool_call_id": "call-5", "content": `{"nodes":[]}`},
 		},

@@ -93,7 +93,6 @@ export const AGENT_MEMORY_CATEGORIES = [
     { key: "asset", label: "资产" },
     { key: "model", label: "模型选择" },
     { key: "workflow", label: "流程顺序" },
-    { key: "billing", label: "计费" },
     { key: "other", label: "其他" },
 ] as const;
 

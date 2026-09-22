@@ -14,7 +14,6 @@ import (
 	"infinite-canvas/backend/internal/canvas"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
-	"infinite-canvas/backend/internal/payment"
 	"infinite-canvas/backend/internal/platform"
 	"infinite-canvas/backend/internal/prompts"
 	"infinite-canvas/backend/internal/repository"
@@ -40,7 +39,6 @@ type Service struct {
 	pendingStorage           map[string]int64
 	coordinator              *platform.Coordinator
 	platform                 *platform.Service
-	taskBillingCoordinator   *taskBillingCoordinator
 	taskTerminalCoordinator  *taskTerminalCoordinator
 	taskRouteExecutor        *taskRouteExecutor
 	taskWorkerCoordinator    *taskWorkerCoordinator
@@ -48,7 +46,6 @@ type Service struct {
 	runtimeErr               error
 	pluginRuntime            *pluginRuntime
 	pluginRuntimeErr         error
-	paymentRegistry          *payment.Registry
 	workerID                 string
 	routeCatalogMu           sync.RWMutex
 	routeCatalogRefreshMu    sync.Mutex
@@ -103,14 +100,7 @@ func New(repo *repository.Repository, dataDir string) *Service {
 func newService(repo *repository.Repository, dataDir string) *Service {
 	coordinator, err := platform.NewCoordinator(repo.Dialect())
 	pluginRuntime, pluginRuntimeErr := newPluginRuntime(dataDir)
-	paymentRegistry, _ := payment.NewRegistry()
-	if pluginRuntime != nil {
-		if dynamic := pluginRuntime.paymentRegistrySnapshot(); dynamic != nil {
-			paymentRegistry = dynamic
-		}
-	}
-	service := &Service{repo: repo, dataDir: dataDir, activeStorageTests: make(map[string]bool), activeCancels: make(map[string]context.CancelFunc), agentConflictStreak: make(map[string]int), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, paymentRegistry: paymentRegistry, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time)}
-	service.taskBillingCoordinator = newTaskBillingCoordinator(service.repo)
+	service := &Service{repo: repo, dataDir: dataDir, activeStorageTests: make(map[string]bool), activeCancels: make(map[string]context.CancelFunc), agentConflictStreak: make(map[string]int), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time)}
 	service.taskTerminalCoordinator = newTaskTerminalCoordinator(service)
 	service.taskRouteExecutor = newTaskRouteExecutor(service)
 	service.taskWorkerCoordinator = newTaskWorkerCoordinator(service)
@@ -123,14 +113,6 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 	return service
 }
 
-func (s *Service) taskBilling() *taskBillingCoordinator {
-	if s.taskBillingCoordinator != nil {
-		return s.taskBillingCoordinator
-	}
-	// 部分单元测试直接构造 Service 字面量；延迟创建保持这些测试和内部工具兼容。
-	return newTaskBillingCoordinator(s.repo)
-}
-
 func (s *Service) StartWorker() {
 	runtime := s.backgroundWorkers()
 	ctx, started := runtime.Start()
@@ -140,7 +122,6 @@ func (s *Service) StartWorker() {
 	s.taskWorker().start(ctx)
 	s.startResourceDeletionWorker(ctx)
 	s.startSkillSyncWorker(ctx)
-	s.startPaymentWorker(ctx)
 }
 
 func (s *Service) BeginDrain() { s.backgroundWorkers().BeginDrain() }
@@ -183,11 +164,7 @@ func (s *Service) TasksWithOptions(userID string, options TaskListOptions) ([]Ta
 	if err != nil {
 		return nil, err
 	}
-	orders, err := s.repo.BillingOrdersByTaskIDs(userID, taskBillingTaskIDs(tasks))
-	if err != nil {
-		return nil, err
-	}
-	return taskSummariesForOutputWithBilling(tasks, orders), nil
+	return taskSummariesForOutput(tasks), nil
 }
 
 func (s *Service) Task(userID string, id string) (*model.Task, error) {
@@ -202,11 +179,6 @@ func (s *Service) Task(userID string, id string) (*model.Task, error) {
 func (s *Service) hydrateTaskProviderRequestID(task *model.Task) {
 	if task == nil || task.ProviderRequestID != "" {
 		return
-	}
-	if task.BillingOrderID != "" {
-		if order, err := s.repo.BillingOrder(task.BillingOrderID); err == nil {
-			task.ProviderRequestID = strings.TrimSpace(order.ProviderRequestID)
-		}
 	}
 	if task.ProviderRequestID == "" {
 		if providerRequestID, err := s.repo.LatestProviderRequestIDForTask(task.ID); err == nil {

@@ -148,7 +148,7 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
                 `质量：${generationConfig.quality || "默认"}`,
                 `分辨率：${imageResolution}`,
                 `并发：${table.concurrency}`,
-                "这些任务可能消耗积分或产生外部模型费用。",
+                "这些任务会调用模型执行。",
             ].join("\n"),
             okText: "确认生成",
             cancelText: "取消",

@@ -6,8 +6,8 @@ import { useUserStore } from "@/stores/use-user-store";
 import { UserAvatar } from "./user-avatar";
 import "./workspace-account-card.css";
 
-/** 同一账户卡片用于顶部和侧栏；余额与退出均复用真实服务。 */
-export function WorkspaceAccountCard({ onNavigate }: { onWallet?: () => void; onNavigate: () => void }) {
+/** 同一账户卡片用于顶部和侧栏；身份与退出均复用真实服务。 */
+export function WorkspaceAccountCard({ onNavigate }: { onNavigate: () => void }) {
     const user = useUserStore((state) => state.user);
     const { handleLogout, loggingOut } = useWorkspaceLogout();
     if (!user) return null;

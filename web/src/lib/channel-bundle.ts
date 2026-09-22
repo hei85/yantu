@@ -15,7 +15,6 @@ export type ChannelBundleModel = {
     icon?: string;
     capability: "text" | "image" | "video" | "audio" | "";
     protocol?: string;
-    billingMode?: string;
     capabilityConfig?: ModelCapabilityConfig;
 };
 
@@ -114,7 +113,6 @@ function parseModel(value: unknown): ChannelBundleModel | null {
         icon: stringValue(record.icon) || undefined,
         capability: (["text", "image", "video", "audio"].includes(capability) ? capability : "") as ChannelBundleModel["capability"],
         protocol: stringValue(record.protocol) || undefined,
-        billingMode: stringValue(record.billingMode) || undefined,
         capabilityConfig: (record.capabilityConfig as ModelCapabilityConfig | undefined) || undefined,
     };
 }

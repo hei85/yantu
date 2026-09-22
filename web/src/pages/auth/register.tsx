@@ -3,8 +3,7 @@ import { App, Button, Divider, Input } from "antd";
 import { ArrowRight, Info, LockKeyhole, Mail, ShieldCheck, TriangleAlert, UserRound } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router";
 
-import { getAuthSession, getAuthSettings, linuxDOLoginURL, register, sendRegistrationEmailCode } from "@/services/api/auth";
-import { LinuxDOIcon } from "./auth-scene";
+import { getAuthSession, getAuthSettings, register, sendRegistrationEmailCode } from "@/services/api/auth";
 import { ApiError } from "@/services/api/request";
 
 type AuthSettings = Awaited<ReturnType<typeof getAuthSettings>>;
@@ -192,16 +191,6 @@ export default function RegisterPage() {
             <Button type="primary" htmlType="submit" size="large" block loading={submitting} disabled={disabled || registerCountdown > 0} icon={<ArrowRight className="size-4" />} iconPlacement="end">
                 {registerCountdown > 0 ? `${registerCountdown} 秒后可重试` : "创建账号"}
             </Button>
-            {settings?.linuxdoEnabled ? (
-                <>
-                    <Divider plain className="!border-white/10 !text-white/30">
-                        或
-                    </Divider>
-                    <Button size="large" block icon={<LinuxDOIcon />} href={linuxDOLoginURL(next)}>
-                        使用 Linux.do 注册 / 登录
-                    </Button>
-                </>
-            ) : null}
         </form>
     );
 }

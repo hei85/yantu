@@ -8,7 +8,6 @@ import { useSearchParams } from "react-router";
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { MediaPreview } from "@/components/media-preview";
-import { formatCredits } from "@/constant/credits";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { exportAdminApiLogs, listAdminApiLogs, type ApiCallLog } from "@/services/api/auth";
 import { ApiLogDetailDrawer } from "../components/api-log-detail-drawer";

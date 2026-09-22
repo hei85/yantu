@@ -57,8 +57,6 @@ type AdminUserPage struct {
 
 type AdminUser struct {
 	model.User
-	AvailableMicrocredits int64 `json:"availableMicrocredits"`
-	ReservedMicrocredits  int64 `json:"reservedMicrocredits"`
 }
 
 type AdminChannelPage struct {
@@ -154,22 +152,9 @@ func (s *Service) AdminUsers(actor *model.User, query AdminListQuery) (*AdminUse
 	if err != nil {
 		return nil, err
 	}
-	userIDs := make([]string, 0, len(users))
-	for _, user := range users {
-		userIDs = append(userIDs, user.ID)
-	}
-	accounts, err := s.repo.CreditAccounts(userIDs)
-	if err != nil {
-		return nil, err
-	}
-	accountByUserID := make(map[string]model.CreditAccount, len(accounts))
-	for _, account := range accounts {
-		accountByUserID[account.UserID] = account
-	}
 	result := make([]AdminUser, 0, len(users))
 	for _, user := range users {
-		account := accountByUserID[user.ID]
-		result = append(result, AdminUser{User: user, AvailableMicrocredits: account.AvailableMicrocredits, ReservedMicrocredits: account.ReservedMicrocredits})
+		result = append(result, AdminUser{User: user})
 	}
 	return &AdminUserPage{Users: result, Total: total, Page: page, Limit: limit}, nil
 }
@@ -262,21 +247,10 @@ func (s *Service) CreateAdminUser(actor *model.User, req CreateAdminUserRequest)
 	if err := s.repo.Create(user); err != nil {
 		return nil, err
 	}
-	if err := s.ensureSignupBonus(user.ID); err != nil {
-		return nil, err
-	}
 	if err := s.appendAdminAudit(actor, "user.create", "user", user.ID, "\u521b\u5efa\u7528\u6237\u8d26\u53f7", map[string]any{"role": user.Role, "status": user.Status}); err != nil {
 		return nil, err
 	}
-	account, err := s.repo.CreditAccount(user.ID)
-	if err != nil {
-		return nil, err
-	}
-	return &AdminUser{
-		User:                  *user,
-		AvailableMicrocredits: account.AvailableMicrocredits,
-		ReservedMicrocredits:  account.ReservedMicrocredits,
-	}, nil
+	return &AdminUser{User: *user}, nil
 }
 
 func (s *Service) UpdateUser(actor *model.User, userID string, req UpdateUserRequest) (*model.User, error) {
@@ -735,14 +709,6 @@ func (s *Service) LogAPICall(log model.ApiCallLog) error {
 	}
 	if log.StartedAt.IsZero() {
 		log.StartedAt = log.CreatedAt.Add(-time.Duration(log.DurationMs) * time.Millisecond)
-	}
-	s.estimateCallCost(&log)
-	if log.BillingOrderID != "" && log.ProviderRequestID != "" {
-		if err := s.repo.UpdateBillingProviderRequestID(log.BillingOrderID, log.ProviderRequestID); err != nil {
-			// 账单关联是请求日志的辅助状态，不能因为关联更新失败而丢失
-			// 已经发生的上游调用记录。后续由任务/账单对账流程补偿关联。
-			stdlog.Printf("provider billing request id update failed: billing_order_id=%s provider_request_id=%s error=%v", log.BillingOrderID, log.ProviderRequestID, err)
-		}
 	}
 	if log.TaskID != "" {
 		stage := log.RequestKind

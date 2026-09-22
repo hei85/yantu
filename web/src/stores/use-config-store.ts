@@ -368,11 +368,6 @@ export type ModelChannel = {
         capability: ModelCapability;
         protocol?: ModelProtocol;
         pricePolicy?: "channel" | "unified";
-        billingMode: "fixed_request" | "per_second" | "token";
-        unitPriceMicrocredits: number;
-        inputTokenPriceMicrocredits?: number;
-        outputTokenPriceMicrocredits?: number;
-        cachedTokenPriceMicrocredits?: number;
         capabilityConfig?: ModelCapabilityConfig;
         logicalModelId?: string;
         logicalCapabilitySpec?: CapabilitySpec;
@@ -802,21 +797,9 @@ export function modelOptionsFromChannels(channels: ModelChannel[]) {
 
 export function hasSystemModelPrice(channel: ModelChannel, model: string) {
     if (channel.scope !== "system") return true;
-    // 价格字段已由后端按“非负数”校验；0 表示免费模型，不能在目录重建时被过滤。
-    const configured = (value: number | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0;
-    return (
-        channel.modelCosts?.some((item) => {
-            if (item.model !== model) return false;
-            const tiers = item.logicalPriceTiers || [];
-            if (tiers.length) {
-                return tiers.some((tier) => (tier.billingMode === "token" ? [tier.inputTokenPriceMicrocredits, tier.outputTokenPriceMicrocredits, tier.cachedTokenPriceMicrocredits].every(configured) : configured(tier.unitPriceMicrocredits)));
-            }
-            if (item.billingMode === "token") {
-                return [item.inputTokenPriceMicrocredits, item.outputTokenPriceMicrocredits, item.cachedTokenPriceMicrocredits].every(configured);
-            }
-            return configured(item.unitPriceMicrocredits);
-        }) === true
-    );
+    // 本地工作站不再校验价格档：渠道目录里登记过该模型即可用。
+    if (channel.modelCosts?.some((item) => item.model === model) === true) return true;
+    return (channel.models || []).includes(model);
 }
 
 export function normalizeModelOptionValue(value: unknown, channels: ModelChannel[]) {

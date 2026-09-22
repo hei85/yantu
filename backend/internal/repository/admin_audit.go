@@ -17,10 +17,9 @@ var (
 )
 
 type AdminUserCounts struct {
-	LedgerEntries int64 `json:"ledgerEntries"`
-	Tasks         int64 `json:"tasks"`
-	APICalls      int64 `json:"apiCalls"`
-	AuditEvents   int64 `json:"auditEvents"`
+	Tasks       int64 `json:"tasks"`
+	APICalls    int64 `json:"apiCalls"`
+	AuditEvents int64 `json:"auditEvents"`
 }
 
 func (r *Repository) AppendAdminAudit(event *model.AdminAuditEvent) error {
@@ -102,7 +101,6 @@ func (r *Repository) AdminUserCounts(userID string) (AdminUserCounts, error) {
 		where string
 		value *int64
 	}{
-		{&model.CreditLedgerEntry{}, "user_id = ?", &counts.LedgerEntries},
 		{&model.Task{}, "user_id = ?", &counts.Tasks},
 		{&model.ApiCallLog{}, "user_id = ?", &counts.APICalls},
 		{&model.AdminAuditEvent{}, "target_type = 'user' AND target_id = ?", &counts.AuditEvents},
@@ -122,23 +120,9 @@ func (r *Repository) AdminUserTasks(userID string, limit int, offset int) ([]mod
 		return nil, 0, err
 	}
 	var tasks []model.Task
-	err := query.Select("id", "user_id", "project_id", "type", "status", "stage", "progress", "operation", "provider", "model", "billing_order_id", "provider_request_id", "poll_stage", "attempts", "started_at", "completed_at", "created_at", "updated_at").
+	err := query.Select("id", "user_id", "project_id", "type", "status", "stage", "progress", "operation", "provider", "model", "provider_request_id", "poll_stage", "attempts", "started_at", "completed_at", "created_at", "updated_at").
 		Order("created_at desc").Limit(limit).Offset(offset).Find(&tasks).Error
 	return tasks, total, err
-}
-
-func (r *Repository) DisableRedeemBatch(batchID string, now time.Time) (int64, error) {
-	result := r.db.Model(&model.RedeemCode{}).
-		Where("batch_id = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?)", batchID, model.RedeemCodeUnused, now).
-		Updates(map[string]any{"status": model.RedeemCodeDisabled, "updated_at": now})
-	return result.RowsAffected, result.Error
-}
-
-func (r *Repository) DisableRedeemCode(batchID string, codeID string, now time.Time) (bool, error) {
-	result := r.db.Model(&model.RedeemCode{}).
-		Where("id = ? AND batch_id = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?)", codeID, batchID, model.RedeemCodeUnused, now).
-		Updates(map[string]any{"status": model.RedeemCodeDisabled, "updated_at": now})
-	return result.RowsAffected == 1, result.Error
 }
 
 func (r *Repository) APICallLog(id string) (*model.ApiCallLog, error) {

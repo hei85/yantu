@@ -9,7 +9,7 @@ const manifest: PluginManifest = {
     id: ART_CRITIQUE_PLUGIN_ID,
     name: "AI 审美批改",
     version: "0.1.0",
-    description: "分析图片的构图、色彩、光线和比例问题，输出结构化批改报告与可视化标注。prepare-input 准备节点；canvas_start_art_critique 打开分析并准备真实报价，用户确认费用后执行；canvas_read_plugin_node 读取结果。",
+    description: "分析图片的构图、色彩、光线和比例问题，输出结构化批改报告与可视化标注。prepare-input 准备节点；canvas_start_art_critique 打开分析并准备真实报价，用户确认后执行；canvas_read_plugin_node 读取结果。",
     author: "内置工具",
     surfaces: ["node", "fullscreen"],
     permissions: ["canvas.read", "canvas.write", "media.read", "ai.text"],

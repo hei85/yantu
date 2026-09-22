@@ -79,7 +79,7 @@ export function useCanvasStoryboard({
         if (!count) return resolve(false);
         modal.confirm({
             title: `确认提交 ${count} 个${taskLabel}任务`,
-            content: `任务数：${count}；模型：${modelDisplayName(effectiveConfig, model)}。当前没有可用价格数据，将提交 ${count} 个外部模型任务。`,
+            content: `任务数：${count}；模型：${modelDisplayName(effectiveConfig, model)}。当前没有可用的模型参数数据，将提交 ${count} 个外部模型任务。`,
             okText: "确认生成",
             cancelText: "取消",
             centered: true,
@@ -193,7 +193,7 @@ export function useCanvasStoryboard({
                 const quote = submission.quote;
                 const dialog = modal.confirm({
                     title: "确认生成分镜",
-                    content: `使用 ${modelDisplayName(effectiveConfig, quote.model)} 拆分镜头。${quote.estimated ? "预计" : ""}平台费用 ${quote.amountMicrocredits / 1_000_000} 积分；自定义渠道费用由渠道另计，按用量计费以实际结算为准。${(scriptNode.metadata?.storyboard?.rows || []).length ? "本次将替换现有分镜行，原图片视频保留，镜头关联需要重新核对。" : "确认后生成可编辑的分镜表。"}`,
+                    content: `使用 ${modelDisplayName(effectiveConfig, quote.model)} 拆分镜头。${(scriptNode.metadata?.storyboard?.rows || []).length ? "本次将替换现有分镜行，原图片视频保留，镜头关联需要重新核对。" : "确认后生成可编辑的分镜表。"}`,
                     okText: "确认生成", cancelText: "取消", centered: true,
                     onOk: () => resolve(true), onCancel: () => resolve(false),
                     afterClose: () => signal.removeEventListener("abort", cancel),

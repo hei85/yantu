@@ -18,7 +18,6 @@ type ProviderTaskQueryResult struct {
 	Task           *model.Task `json:"task"`
 	ProviderStatus string      `json:"providerStatus"`
 	Recovered      bool        `json:"recovered"`
-	BillingSettled bool        `json:"billingSettled"`
 }
 
 func (s *Service) QueryFailedVideoTask(ctx context.Context, userID string, taskID string) (*ProviderTaskQueryResult, error) {
@@ -63,7 +62,6 @@ func (s *Service) AdminQueryFailedVideoTask(ctx context.Context, actor *model.Us
 }
 
 func (s *Service) queryFailedVideoTask(ctx context.Context, task *model.Task, claimUserID string) (*ProviderTaskQueryResult, error) {
-	billing := s.taskBilling()
 	ctx = withProtocolRegistry(ctx, s.protocolRegistry())
 	if task == nil || task.ID == "" {
 		return nil, BadAuthRequest("任务不存在")
@@ -79,17 +77,6 @@ func (s *Service) queryFailedVideoTask(ctx context.Context, task *model.Task, cl
 	providerRequestID := strings.TrimSpace(task.ProviderRequestID)
 	if providerRequestID == "" {
 		return nil, BadAuthRequest("该任务没有可恢复的上游任务 ID")
-	}
-	wasRefunded := false
-	if task.BillingOrderID != "" {
-		order, err := s.repo.BillingOrder(task.BillingOrderID)
-		if err != nil {
-			return nil, err
-		}
-		if order.UserID != task.UserID || order.TaskID != task.ID {
-			return nil, BadAuthRequest("任务与计费订单归属不一致")
-		}
-		wasRefunded = order.Status == model.BillingStatusRefunded
 	}
 
 	decryptedInput, err := s.decryptTaskInputJSON(task.InputJSON)
@@ -161,35 +148,15 @@ func (s *Service) queryFailedVideoTask(ctx context.Context, task *model.Task, cl
 	task.PollStage = strings.ToLower(providerStatus)
 	task.NextPollAt = nil
 	if err := s.saveTaskCompletionWithinStorageQuota(task, resultJSON, nil, false); err != nil {
-		uncertainErr := billing.MarkBillingUncertain(task.BillingOrderID, "人工查询确认上游成功，但任务结果未保存："+err.Error())
 		_ = s.log(task.UserID, task.ID, "error", "人工查询已取得视频，但任务恢复失败", err.Error())
-		if uncertainErr != nil {
-			return nil, errors.Join(err, fmt.Errorf("记录任务结果未保存的计费待核对状态失败：%w", uncertainErr))
-		}
 		return nil, err
-	}
-	billingSettled := true
-	var billingErr error
-	if wasRefunded {
-		billingErr = billing.RestoreRefundedBilling(task.BillingOrderID, providerRequestID)
-	} else {
-		billingErr = billing.SettleBilling(task.BillingOrderID, providerRequestID)
-	}
-	if billingErr != nil {
-		billingSettled = false
-		uncertainErr := billing.MarkBillingUncertain(task.BillingOrderID, "人工查询确认生成成功，但积分结算失败："+billingErr.Error())
-		_ = s.log(task.UserID, task.ID, "error", "任务恢复成功但积分结算失败，已进入待核对", billingErr.Error())
-		if uncertainErr != nil {
-			return nil, errors.Join(billingErr, fmt.Errorf("记录任务恢复后的计费待核对状态失败：%w", uncertainErr))
-		}
-		return nil, billingErr
 	}
 	if err := s.RegisterTaskOutputFromTask(*task); err != nil {
 		_ = s.log(task.UserID, task.ID, "error", "任务恢复成功但项目产物登记失败", err.Error())
-		return nil, fmt.Errorf("任务已恢复并完成扣费，但项目素材登记失败：%w", err)
+		return nil, fmt.Errorf("任务已恢复，但项目素材登记失败：%w", err)
 	}
-	_ = s.log(task.UserID, task.ID, "info", "人工查询确认生成成功，任务已恢复、完成结算并登记项目产物", providerStatus)
-	return &ProviderTaskQueryResult{Task: taskForOutput(*task), ProviderStatus: providerStatus, Recovered: true, BillingSettled: billingSettled}, nil
+	_ = s.log(task.UserID, task.ID, "info", "人工查询确认生成成功，任务已恢复并登记项目产物", providerStatus)
+	return &ProviderTaskQueryResult{Task: taskForOutput(*task), ProviderStatus: providerStatus, Recovered: true}, nil
 }
 
 func providerTaskRecoveryContext(parent context.Context) (context.Context, context.CancelFunc) {

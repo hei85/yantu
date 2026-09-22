@@ -1,7 +1,6 @@
 import { App, Button, Input, Select } from "antd";
 import { Switch } from "@/pages/admin/ui/controls";
 import { AlipayCircleFilled, WechatFilled } from "@ant-design/icons";
-import { ZHIFUFM_LOGO_SRC } from "@/components/payment-brand-icons";
 import type { ColumnsType } from "antd/es/table";
 import { CloudUpload, PlugZap, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -35,7 +34,7 @@ export default function AdminPluginsPage() {
     const [savingId, setSavingId] = useState("");
     const [uploadOpen, setUploadOpen] = useState(false);
     const [search, setSearch] = useState("");
-    const [kind, setKind] = useState<"all" | "application" | "protocol" | "payment" | "uploaded">("all");
+    const [kind, setKind] = useState<"all" | "application" | "protocol" | "uploaded">("all");
     const [availability, setAvailability] = useState<"all" | "available" | "unavailable">("all");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
@@ -121,7 +120,6 @@ export default function AdminPluginsPage() {
 
     const applicationCount = items.filter((item) => item.management.kind === "application").length;
     const protocolCount = items.filter((item) => item.management.kind === "protocol").length;
-    const paymentCount = items.filter((item) => item.management.kind === "payment").length;
     const unavailableCount = items.filter((item) => !(states[item.manifest.id]?.platformAvailable ?? item.status === "enabled")).length;
     const hasFilters = Boolean(search.trim() || kind !== "all" || availability !== "all");
     const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -247,7 +245,6 @@ export default function AdminPluginsPage() {
                 <OverviewItem label="全部插件" value={items.length} />
                 <OverviewItem label="官方应用" value={applicationCount} />
                 <OverviewItem label="系统协议" value={protocolCount} />
-                <OverviewItem label="支付协议" value={paymentCount} />
                 <OverviewItem label="平台已停用" value={unavailableCount} tone={unavailableCount ? "warning" : "default"} />
             </div>
             <AdminDataTable
@@ -279,7 +276,6 @@ export default function AdminPluginsPage() {
                                 { value: "all", label: "全部类型" },
                                 { value: "application", label: "官方应用插件" },
                                 { value: "protocol", label: "系统协议插件" },
-                                { value: "payment", label: "支付协议插件" },
                                 { value: "uploaded", label: "上传的自定义插件" },
                             ]}
                         />
@@ -337,27 +333,6 @@ function OverviewItem({ label, value, tone = "default" }: { label: string; value
 }
 
 function PluginBrandIcon({ pluginId }: { pluginId: string }) {
-    if (pluginId === "official-payment-wechat-native") {
-        return (
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#07c160]/10 text-[#07c160]">
-                <WechatFilled className="text-lg" aria-hidden />
-            </span>
-        );
-    }
-    if (pluginId === "official-payment-alipay-page") {
-        return (
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#1677ff]/10 text-[#1677ff]">
-                <AlipayCircleFilled className="text-lg" aria-hidden />
-            </span>
-        );
-    }
-    if (pluginId === "official-payment-zhifufm") {
-        return (
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg overflow-hidden border border-border/40 bg-card shadow-xs">
-                <img src={ZHIFUFM_LOGO_SRC} alt="支付FM" className="size-full object-contain select-none pointer-events-none rounded-lg" />
-            </span>
-        );
-    }
     return (
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-foreground/65">
             <PlugZap className="size-4" aria-hidden="true" />
@@ -386,7 +361,6 @@ function mergePlugins(remote: BackendPlugin[]): AdminPluginItem[] {
 
 function managementOrder(value: PluginManagement) {
     if (value.kind === "application") return 0;
-    if (value.kind === "payment") return 1;
     if (value.origin === "official") return 2;
     return 3;
 }
@@ -394,5 +368,5 @@ function managementOrder(value: PluginManagement) {
 function managementLabel(value: PluginManagement) {
     if (value.origin === "uploaded") return "自定义插件";
     if (value.kind === "application") return "官方应用";
-    return value.kind === "payment" ? "系统支付协议" : "系统协议";
+    return "系统协议";
 }

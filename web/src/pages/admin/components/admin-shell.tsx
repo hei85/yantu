@@ -66,7 +66,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
     {
         label: "平台资源",
         items: [
-            { path: "/admin/models", label: "前台模型", description: "展示、线路与用户价格", icon: <Layers3 className="size-4" />, requireFeature: "frontendModelsEnabled" },
+            { path: "/admin/models", label: "前台模型", description: "展示、线路与路由", icon: <Layers3 className="size-4" />, requireFeature: "frontendModelsEnabled" },
             { path: "/admin/prompt-templates", label: "提示词模板", description: "平台创作策略版本", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/resources", label: "存储资源", description: "资源列表、容量与预览", icon: <Database className="size-4" /> },
         ],
@@ -77,7 +77,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
             { path: "/admin/settings/features", label: "功能开放", description: "工作台、插件与模型能力", icon: <ToggleLeft className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", description: "画布绘图节点默认引擎", icon: <Paintbrush className="size-4" /> },
             { path: "/admin/settings/system-performance", label: "系统性能", description: "主机、数据库与缓存状态", icon: <Activity className="size-4" /> },
-            // 邮件服务属于多用户注册/找回密码链路，本地单用户工作站已下线对应后端路由，这里不再展示入口。
+            // 邮件服务属于多用户注册/找回密码链路，本地单用户工作站已下线对应后端路由，这里不再示示入口。
             { path: "/admin/settings/third-party", label: "第三方参数配置", description: "先配置凭据，再开放用户入口", icon: <KeyRound className="size-4" /> },
         ],
     },
@@ -142,8 +142,8 @@ export function AdminShell() {
                             </AdminTooltip>
                         </div>
                     </aside>
-                    <AdminTooltip title={collapsed ? "展开侧栏" : "收起侧栏"} placement="right">
-                        <button type="button" className={cn("admin-sidebar-edge-toggle hidden lg:grid", collapsed && "is-collapsed")} onClick={toggleCollapsed} aria-label={collapsed ? "展开侧栏" : "收起侧栏"} aria-expanded={!collapsed}>
+                    <AdminTooltip title={collapsed ? "示开侧栏" : "收起侧栏"} placement="right">
+                        <button type="button" className={cn("admin-sidebar-edge-toggle hidden lg:grid", collapsed && "is-collapsed")} onClick={toggleCollapsed} aria-label={collapsed ? "示开侧栏" : "收起侧栏"} aria-expanded={!collapsed}>
                             {collapsed ? <ChevronRight className="size-3.5" aria-hidden="true" /> : <ChevronLeft className="size-3.5" aria-hidden="true" />}
                         </button>
                     </AdminTooltip>

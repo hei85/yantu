@@ -108,8 +108,8 @@ func (r *Repository) CreateCreationCanvas(canvas *model.CanvasProject) error {
 	return r.UpsertCanvasProject(canvas)
 }
 
-// Capture server-side configuration versions, never channel credentials.
-func (r *Repository) CreationPriceSignature(task *model.Task, channelID, modelKey string) (string, error) {
+// CreationConfigSignature 捕获服务端模型配置版本，确保方案确认与执行使用同一份配置。
+func (r *Repository) CreationConfigSignature(task *model.Task, channelID, modelKey string) (string, error) {
 	db := r.db.Clauses(clause.Locking{Strength: "SHARE"}).Session(&gorm.Session{})
 	values := map[string]any{}
 	var cm model.ChannelModel
@@ -131,11 +131,6 @@ func (r *Repository) CreationPriceSignature(task *model.Task, channelID, modelKe
 		return "", err
 	}
 	values["channel"] = channel
-	var tiers []model.ChannelModelPriceTier
-	if err := db.Where("channel_model_id = ?", cm.ID).Order("id").Find(&tiers).Error; err != nil {
-		return "", err
-	}
-	values["tiers"] = tiers
 	if task.LogicalModelID != "" {
 		var logical model.LogicalModel
 		if err := db.First(&logical, "id = ?", task.LogicalModelID).Error; err != nil {
@@ -149,10 +144,10 @@ func (r *Repository) CreationPriceSignature(task *model.Task, channelID, modelKe
 		values["route"] = route
 	}
 	var settings []model.SystemSetting
-	if err := db.Where("key IN ?", []string{"credit_policy", "feature_availability"}).Order("key").Find(&settings).Error; err != nil {
+	if err := db.Where("key IN ?", []string{"feature_availability"}).Order("key").Find(&settings).Error; err != nil {
 		return "", err
 	}
-	values["pricingSettings"] = settings
+	values["settings"] = settings
 	b, err := json.Marshal(values)
 	return string(b), err
 }

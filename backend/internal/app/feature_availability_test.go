@@ -23,7 +23,7 @@ func TestFeatureAvailabilityDefaultsToDisableFrontendModels(t *testing.T) {
 	if !setting.WelcomeEnabled {
 		t.Fatal("welcome should be enabled by default")
 	}
-	if setting.Configured || !setting.ShortDramaEnabled || !setting.TaskCenterEnabled || !setting.CreditsEnabled || !setting.CustomChannelsEnabled || setting.FrontendModelsEnabled || !setting.PluginCenterEnabled || !setting.SystemPluginsVisibleToUsers {
+	if setting.Configured || !setting.ShortDramaEnabled || !setting.TaskCenterEnabled || !setting.CustomChannelsEnabled || setting.FrontendModelsEnabled || !setting.PluginCenterEnabled || !setting.SystemPluginsVisibleToUsers {
 		t.Fatalf("FeatureAvailability() = %#v", setting)
 	}
 }
@@ -69,13 +69,13 @@ func TestWelcomeAvailabilityCanBeDisabledAndReenabled(t *testing.T) {
 func TestUpdateFeatureAvailabilityPersistsAndAudits(t *testing.T) {
 	svc, db := newFeatureAvailabilityTestService(t)
 	actor := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
-	want := FeatureAvailability{ShortDramaEnabled: false, TaskCenterEnabled: true, CreditsEnabled: false, CustomChannelsEnabled: true, PluginCenterEnabled: false, SystemPluginsVisibleToUsers: false}
+	want := FeatureAvailability{ShortDramaEnabled: false, TaskCenterEnabled: true, CustomChannelsEnabled: true, PluginCenterEnabled: false, SystemPluginsVisibleToUsers: false}
 
 	setting, err := svc.UpdateFeatureAvailability(actor, want)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !setting.Configured || setting.ShortDramaEnabled || !setting.TaskCenterEnabled || setting.CreditsEnabled || !setting.CustomChannelsEnabled || setting.PluginCenterEnabled || setting.SystemPluginsVisibleToUsers {
+	if !setting.Configured || setting.ShortDramaEnabled || !setting.TaskCenterEnabled || !setting.CustomChannelsEnabled || setting.PluginCenterEnabled || setting.SystemPluginsVisibleToUsers {
 		t.Fatalf("UpdateFeatureAvailability() = %#v", setting)
 	}
 	if enabled, err := svc.FeatureEnabled(FeaturePluginCenter); err != nil || enabled {
@@ -102,7 +102,7 @@ func TestPluginsForUserKeepsOfficialApplicationsAndHidesManagedPlugins(t *testin
 	svc, _ := newFeatureAvailabilityTestService(t)
 	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
 	if _, err := svc.UpdateFeatureAvailability(admin, FeatureAvailability{
-		ShortDramaEnabled: true, TaskCenterEnabled: true, CreditsEnabled: true,
+		ShortDramaEnabled: true, TaskCenterEnabled: true,
 		CustomChannelsEnabled: true, PluginCenterEnabled: true, SystemPluginsVisibleToUsers: false,
 	}); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestPluginsForUserKeepsOfficialApplicationsAndHidesManagedPlugins(t *testin
 func TestCustomChannelTaskInputRequiresFeature(t *testing.T) {
 	svc, _ := newFeatureAvailabilityTestService(t)
 	actor := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
-	if _, err := svc.UpdateFeatureAvailability(actor, FeatureAvailability{ShortDramaEnabled: true, TaskCenterEnabled: true, CreditsEnabled: true, CustomChannelsEnabled: false}); err != nil {
+	if _, err := svc.UpdateFeatureAvailability(actor, FeatureAvailability{ShortDramaEnabled: true, TaskCenterEnabled: true, CustomChannelsEnabled: false}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,7 +162,7 @@ func TestCustomChannelTaskInputRequiresFeature(t *testing.T) {
 func TestCreateTaskDoesNotClassifyCustomChannelAsMissingSystemModel(t *testing.T) {
 	svc, _ := newFeatureAvailabilityTestService(t)
 	actor := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
-	if _, err := svc.UpdateFeatureAvailability(actor, FeatureAvailability{ShortDramaEnabled: true, TaskCenterEnabled: true, CreditsEnabled: true, CustomChannelsEnabled: false, FrontendModelsEnabled: true}); err != nil {
+	if _, err := svc.UpdateFeatureAvailability(actor, FeatureAvailability{ShortDramaEnabled: true, TaskCenterEnabled: true, CustomChannelsEnabled: false, FrontendModelsEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -180,22 +180,6 @@ func TestCreateTaskDoesNotClassifyCustomChannelAsMissingSystemModel(t *testing.T
 	var authErr *AuthError
 	if !errors.As(err, &authErr) || authErr.Message != "自定义渠道暂未开放" {
 		t.Fatalf("CreateTask() error = %#v, want custom channel feature error", err)
-	}
-}
-
-func TestTaskBillingOrderSkipsPricingWhenCreditsDisabled(t *testing.T) {
-	svc, _ := newFeatureAvailabilityTestService(t)
-	actor := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
-	if _, err := svc.UpdateFeatureAvailability(actor, FeatureAvailability{ShortDramaEnabled: true, TaskCenterEnabled: true, CreditsEnabled: false, CustomChannelsEnabled: true}); err != nil {
-		t.Fatal(err)
-	}
-
-	order, err := svc.taskBillingOrder("user-1", &model.Task{ID: "task-1"}, map[string]any{"config": map[string]any{"channelId": "missing", "model": "missing"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if order != nil {
-		t.Fatalf("taskBillingOrder() = %#v, want nil", order)
 	}
 }
 

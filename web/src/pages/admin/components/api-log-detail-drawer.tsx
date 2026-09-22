@@ -3,7 +3,6 @@ import { App, Button, Descriptions, Drawer, Skeleton, Tabs, Typography } from "a
 import { AdminEmpty } from "@/pages/admin/components/admin-ui";
 import { RefreshCw } from "lucide-react";
 
-import { formatCredits } from "@/constant/credits";
 import { getAdminApiLog, queryAdminApiLogTask, type ApiCallLog } from "@/services/api/auth";
 import { AdminStatusBadge } from "./admin-ui";
 
@@ -35,9 +34,7 @@ export function ApiLogDetailDrawer({ logId, onClose, onLogUpdated }: { logId: st
             setLog(refreshed.log);
             onLogUpdated?.(refreshed.log);
             if (result.recovered) {
-                window.dispatchEvent(new CustomEvent("wallet:updated"));
-                if (result.billingSettled) message.success("已获取上游视频，任务已恢复并完成结算");
-                else message.warning("已获取上游视频，任务已恢复，计费状态待核对");
+                message.success("已获取上游视频，任务已恢复");
             } else {
                 message.info(`上游任务仍在处理中${result.providerStatus ? `（${result.providerStatus}）` : ""}`);
             }
@@ -146,13 +143,6 @@ function LogDetail({ log, querying, onQueryProviderTask }: { log: ApiCallLog; qu
     );
 }
 
-function billingText(log: ApiCallLog) {
-    if (!log.billable) return "不计费";
-    if (!log.billingAvailable) return "未扣积分";
-    const status = log.billingStatus || "reserved";
-    const statusLabel = ({ settled: "已结算", refunded: "已退回", uncertain: "待核对", running: "运行中", reserved: "已预授权" } as const)[status];
-    return `${formatCredits(log.billingAmountMicrocredits)} 积分 · ${statusLabel}`;
-}
 
 function requestKindText(value: ApiCallLog["requestKind"]) {
     const labels: Partial<Record<ApiCallLog["requestKind"], string>> = { create: "模型生成", poll: "状态查询", download: "结果下载", repair: "结果修复" };

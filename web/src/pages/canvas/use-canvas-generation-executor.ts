@@ -83,8 +83,8 @@ export function useCanvasGenerationExecutor({
         () =>
             new Promise<boolean>((resolve) => {
                 modal.confirm({
-                    title: "再次生成相同内容？",
-                    content: "当前节点已使用相同提示词、模型、参数和参考素材提交过任务。再次生成会新建任务，并可能再次消耗积分。",
+                    title: "次次生成相同内容？",
+                    content: "当前节点已使用相同提示词、模型、参数和参考素材提交过任务。再次生成会新建任务。",
                     okText: "仍然生成",
                     cancelText: "取消",
                     centered: true,
@@ -103,7 +103,7 @@ export function useCanvasGenerationExecutor({
                 async () => {
                     const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
                     if (isCanvasNodeGenerating(sourceNode)) {
-                        message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
+                        message.info("该节点的生成任务仍在进行中，请等待完成后次生成");
                         return;
                     }
                     if (sourceNode?.type === CanvasNodeType.Video && sourceNode.metadata?.videoEditOperation === "concat") {

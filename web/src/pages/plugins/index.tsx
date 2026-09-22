@@ -1,7 +1,7 @@
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { App, Button, Input, Modal, Select, Typography } from "antd";
 import { Switch } from "@/components/ui/base/switch";
-import { AudioLines, CalendarDays, CheckCircle2, Clock3, CreditCard, ExternalLink, Film, FolderOpen, Image as ImageIcon, MessageSquareText, PlugZap, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { AudioLines, CalendarDays, CheckCircle2, Clock3, ExternalLink, Film, FolderOpen, Image as ImageIcon, MessageSquareText, PlugZap, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -25,7 +25,6 @@ import "./plugins.css";
 
 const categoryLabels: Record<string, string> = {
     provider: "模型渠道",
-    "payment-provider": "支付协议",
     "canvas-node": "画布节点",
     workflow: "工作流",
     transform: "媒体转换",
@@ -63,7 +62,6 @@ const protocolSectionMeta = [
     { key: "image", label: "图片协议", description: "生成、编辑与参考图", icon: ImageIcon },
     { key: "video", label: "视频协议", description: "创建任务、轮询与媒体结果", icon: Film },
     { key: "audio", label: "音频协议", description: "语音与异步音频任务", icon: AudioLines },
-    { key: "payment", label: "支付协议", description: "支付、查单、关单与对账", icon: CreditCard },
 ] as const;
 
 export default function PluginsPage() {
@@ -177,7 +175,7 @@ export default function PluginsPage() {
 
     const categoryCounts = useMemo(() => {
         const visiblePlugins = registeredPlugins.filter((plugin) => user?.role === "admin" || features.systemPluginsVisibleToUsers || isOfficialApplicationPluginId(plugin.manifest.id));
-        const counts: Record<string, number> = { all: visiblePlugins.length, text: 0, image: 0, video: 0, audio: 0, payment: 0, other: 0 };
+        const counts: Record<string, number> = { all: visiblePlugins.length, text: 0, image: 0, video: 0, audio: 0, other: 0 };
         for (const plugin of visiblePlugins) {
             for (const section of protocolSectionMeta) {
                 if (pluginMatchesCategory(plugin.manifest, section.key)) counts[section.key] += 1;
@@ -324,7 +322,7 @@ export default function PluginsPage() {
                                             key={section.key}
                                             id={`plugin-section-${section.key}`}
                                             className="plugin-section"
-                                            data-category={section.key === "image" ? "creative" : section.key === "video" ? "drama" : section.key === "audio" ? "social" : section.key === "payment" ? "ecommerce" : undefined}
+                                            data-category={section.key === "image" ? "creative" : section.key === "video" ? "drama" : section.key === "audio" ? "social" : undefined}
                                         >
                                             <header className="plugin-section-heading">
                                                 <span className="plugin-section-icon">
@@ -620,7 +618,6 @@ function contributionKindsFor(manifest: PluginManifest | PluginManifestV2): stri
     const contributions = manifest.contributes;
     const kinds: string[] = [];
     if (contributions.providers?.length) kinds.push("provider");
-    if (contributions.paymentProviders?.length) kinds.push("payment-provider");
     if (contributions.workflows?.length) kinds.push("workflow");
     if (contributions.canvasNodes?.length) kinds.push("canvas-node");
     if (contributions.transforms?.length) kinds.push("transform");
@@ -638,9 +635,7 @@ function providerCapabilitiesFor(manifest: PluginManifest | PluginManifestV2) {
 
 function pluginMatchesCategory(manifest: PluginManifest | PluginManifestV2, category: string) {
     const providerCapabilities = providerCapabilitiesFor(manifest);
-    const isPaymentProtocol = Boolean(manifest.contributes.paymentProviders?.length);
-    if (category === "payment") return isPaymentProtocol;
-    if (category === "other") return !isPaymentProtocol && providerCapabilities.length === 0;
+    if (category === "other") return providerCapabilities.length === 0;
     return providerCapabilities.includes(category as "text" | "image" | "video" | "audio");
 }
 

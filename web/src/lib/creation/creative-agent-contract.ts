@@ -15,7 +15,7 @@ export type CreativeGenerationItem = { ref: string; mode: "image" | "video"; mod
 export type CreativeProposal<T = unknown> = { id: string; version: number; title: string; summary: string; markdown: string; deliverables: string[]; workflow: CanvasWorkflowInput & { autoRun: false }; generationItems: CreativeGenerationItem[]; extra?: T };
 export type CreativePlanStep = { id: string; title: string; status: "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled"; detail?: string; nodeIds?: string[] };
 export type CreativePlan = { id: string; steps: CreativePlanStep[] };
-export type CreativeQuote = { id: string; title: string; items: { id: string; label: string; model: string; quantity: number; specification: string }[]; amountLabel: string; basis: string; expiresAt?: string; approvedQuantity?: number; externalBilling?: boolean };
+export type CreativeQuote = { id: string; title: string; items: { id: string; label: string; model: string; quantity: number; specification: string }[]; basis: string; expiresAt?: string; approvedQuantity?: number };
 export type CreativePendingInteraction = CreativeQuestionRequest | (CreativeInteractionIdentity & { kind: "proposal_request"; proposalId: string; proposalVersion: number }) | (CreativeInteractionIdentity & { kind: "payment_request"; quoteId: string });
 
 function object(value: unknown): Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }

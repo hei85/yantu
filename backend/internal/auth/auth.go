@@ -43,7 +43,6 @@ type LoginRequest struct {
 type PublicAuthSettings struct {
 	FirstUser           bool `json:"firstUser"`
 	RegistrationEnabled bool `json:"registrationEnabled"`
-	LinuxDOEnabled      bool `json:"linuxdoEnabled"`
 	EmailEnabled        bool `json:"emailEnabled"`
 	EmailCodeRequired   bool `json:"emailCodeRequired"`
 }
@@ -68,7 +67,7 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 		return nil, err
 	}
 	if count == 0 {
-		return &PublicAuthSettings{FirstUser: true, RegistrationEnabled: true, LinuxDOEnabled: false}, nil
+		return &PublicAuthSettings{FirstUser: true, RegistrationEnabled: true}, nil
 	}
 	registrationEnabled, err := s.RegistrationEnabled()
 	if err != nil {
@@ -78,7 +77,7 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: registrationEnabled, LinuxDOEnabled: s.LinuxDOEnabled(), EmailEnabled: emailEnabled, EmailCodeRequired: true}, nil
+	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: registrationEnabled, EmailEnabled: emailEnabled, EmailCodeRequired: true}, nil
 }
 
 func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {

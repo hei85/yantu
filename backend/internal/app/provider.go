@@ -173,13 +173,10 @@ type providerAnalyticsKey struct{}
 
 type providerAnalyticsContext struct {
 	Service           *Service
-	Billing           taskBillingLifecycle
 	UserID            string
 	TaskID            string
 	TraceID           string
 	RequestID         string
-	BillingOrderID    string
-	BillingMode       string
 	Capability        string
 	Operation         string
 	ChannelID         string
@@ -191,16 +188,7 @@ type providerAnalyticsContext struct {
 }
 
 func withProviderAnalytics(ctx context.Context, service *Service, task model.Task) context.Context {
-	metadata := providerAnalyticsContext{Service: service, UserID: task.UserID, TaskID: task.ID, TraceID: task.TraceID, RequestID: task.RequestID, BillingOrderID: task.BillingOrderID, Capability: capabilityFromTaskType(task.Type), Operation: task.Operation, Model: task.Model, ProviderRequestID: task.ProviderRequestID}
-	if service != nil {
-		metadata.Billing = service.taskBilling()
-	}
-	// 账单模式随请求上下文传递，流式协议据此只为 Token 计费开启 usage 终态块。
-	if service != nil && task.BillingOrderID != "" {
-		if order, err := service.repo.BillingOrder(task.BillingOrderID); err == nil {
-			metadata.BillingMode = order.BillingMode
-		}
-	}
+	metadata := providerAnalyticsContext{Service: service, UserID: task.UserID, TaskID: task.ID, TraceID: task.TraceID, RequestID: task.RequestID, Capability: capabilityFromTaskType(task.Type), Operation: task.Operation, Model: task.Model, ProviderRequestID: task.ProviderRequestID}
 	var input struct {
 		Mode   string         `json:"mode"`
 		Config providerConfig `json:"config"`
@@ -361,12 +349,6 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	}
 	if input.Mode == "text" && strings.HasPrefix(taskType, "canvas_text") && input.StreamText {
 		textPublisher = newTaskTextStreamPublisher(s, userID, taskExecutionID(ctx))
-		if input.AgentRequests != nil {
-			textPublisher = newCloudAgentStreamPublisher(s, userID, taskExecutionID(ctx), "assistant_delta")
-			reasoningPublisher := newCloudAgentStreamPublisher(s, userID, taskExecutionID(ctx), "reasoning_delta")
-			input.OnReasoningDelta = reasoningPublisher.Publish
-			defer reasoningPublisher.Close()
-		}
 		input.OnTextDelta = textPublisher.Publish
 		defer textPublisher.Close()
 	}

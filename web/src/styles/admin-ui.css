@@ -8899,7 +8899,7 @@
     overflow-y: auto;
 }
 
-/* 系统渠道模型编辑器：恢复已确认的信息层级、协议参数与价格档布局。 */
+/* 系统渠道模型编辑器：恢复已确认的信息层级、协议参数与规格档布局。 */
 .admin-model-import-modal .channel-model-import-picker .ant-checkbox-wrapper {
     display: flex;
     min-width: 0;
@@ -9263,120 +9263,43 @@
     }
 }
 
-.admin-price-tier-card {
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--foreground) 2%, var(--admin-layer-1));
-}
 
-.admin-price-tier-card-header {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent);
-    padding: 8px 12px;
-}
 
-.admin-price-tier-card-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-    gap: 12px 16px;
-    padding: 12px;
-}
 
-.admin-price-tier-block {
-    min-width: 0;
-}
 
-.admin-price-tier-block-title {
-    margin-bottom: 10px;
-    color: color-mix(in srgb, var(--foreground) 48%, transparent);
-    font-size: 10px;
-    font-weight: 650;
-    letter-spacing: 0.08em;
-}
 
-.admin-price-tier-block-title > span {
-    margin-right: 5px;
-    color: var(--admin-text-muted);
-}
 
-.admin-price-tier-match-grid {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-}
 
-.admin-price-tier-upstream {
-    grid-column: span 2;
-}
 
-.admin-price-tier-billing-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-    gap: 12px;
-}
 
-.admin-price-tier-token-grid {
-    grid-column: 1 / -1;
-}
 
-.admin-price-tier-token-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-}
 
-.admin-price-tier-billing-mode .ant-segmented {
-    border: 1px solid var(--admin-card-border);
-    background: var(--admin-layer-2);
-    padding: 2px;
-}
 
-.admin-price-tier-billing-mode .ant-segmented-item {
-    min-height: 28px;
-    border-radius: 5px;
-}
 
-.admin-price-tier-billing-mode .ant-segmented-item-label {
-    min-height: 28px;
-    padding-inline: 12px;
-    line-height: 28px;
-}
 
-.admin-price-tier-billing-mode .ant-segmented-item-selected {
-    background: var(--admin-layer-1);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 14%, transparent);
-}
 
-.admin-price-tier-unit-price .ant-input-number {
-    width: 100% !important;
-}
 
-.admin-price-tier-controls {
-    margin-left: auto;
-}
 
-.admin-price-tier-toggle {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
 
-.admin-price-tier-toggle span {
-    overflow-wrap: anywhere;
-    color: var(--admin-text-muted);
-    font-size: 12px;
-    line-height: 1.4;
-    white-space: normal;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 .admin-model-editor-add-tier.ant-btn {
     min-height: 38px;
@@ -9440,17 +9363,6 @@
 :root:not(.dark) .admin-model-editor-drawer :is(.admin-capability-group, .admin-capability-boolean-field, .admin-capability-parameter-field),
 :root:not(.dark) .admin-model-editor-drawer .admin-capability-reference-card,
 :root:not(.dark) .admin-model-editor-drawer .admin-capability-protocol-card,
-:root:not(.dark) .admin-price-tier-toggle,
-:root:not(.dark) .admin-price-tier-billing-mode .ant-segmented {
-    border-color: rgba(17, 17, 17, 0.18);
-    background: #ffffff;
-}
-
-:root:not(.dark) .admin-price-tier-card {
-    border-color: rgba(17, 17, 17, 0.18);
-    background: #f7f7f7;
-}
-
 :root:not(.dark) .admin-model-editor-drawer .admin-capability-reference-card,
 :root:not(.dark) .admin-model-editor-drawer .admin-capability-protocol-card {
     border-color: rgba(17, 17, 17, 0.18);
@@ -9492,10 +9404,7 @@
     box-shadow: 0 6px 20px rgb(17 17 17 / 0.08);
 }
 
-:root:not(.dark) .admin-price-tier-billing-mode .ant-segmented-item-selected {
-    background: #ececec;
-    box-shadow: inset 0 0 0 1px rgb(17 17 17 / 0.12);
-}
+
 @media (max-width: 600px) {
     .admin-model-editor-modal .ant-modal-container {
         height: calc(100dvh - 24px);
@@ -9511,23 +9420,6 @@
         grid-template-columns: minmax(0, 1fr);
     }
     .admin-model-editor-modal .admin-capability-protocol-grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
-    .admin-price-tier-upstream {
-        grid-column: 1 / -1;
-    }
-    .admin-model-identity-grid,
-    .admin-model-protocol-grid,
-    .admin-price-tier-billing-grid,
-    .admin-price-tier-match-grid,
-    .admin-price-tier-token-grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
-}
-
-@media (max-width: 899px) {
-    .admin-model-editor-section,
-    .admin-price-tier-card-body {
         grid-template-columns: minmax(0, 1fr);
     }
 }
@@ -9606,9 +9498,7 @@
 
 .admin-model-editor-section-heading p,
 .admin-model-editor-subsection-heading p,
-.admin-price-tier-block-title {
-    color: var(--admin-text-muted);
-}
+
 
 .admin-channel-modal .ant-modal-body {
     max-height: min(70vh, 620px);

@@ -116,46 +116,24 @@ export function systemChannelModelChannels(channels: PublicChannelCatalog[]): Mo
             enabled: true,
             models: availableModels.map((m) => m.modelKey),
             modelAliases: {},
-            modelCosts: availableModels.map((model) => {
-                // 标量价格仅用于旧配置兼容；创作端按完整 SKU 档位展示和匹配价格。
-                const firstTier = model.priceTiers?.[0];
-                const unitPrice = firstTier?.unitPriceMicrocredits || 0;
-                const inputPrice = firstTier?.inputTokenPriceMicrocredits || 0;
-                const outputPrice = firstTier?.outputTokenPriceMicrocredits || 0;
-                const cachedPrice = firstTier?.cachedTokenPriceMicrocredits || 0;
-                const billingMode = firstTier?.billingMode || "fixed_request";
-                const logicalPriceTiers = (model.priceTiers || []).map((tier) => ({
+            modelCosts: availableModels.map((model) => ({
+                model: model.modelKey,
+                displayName: model.displayName,
+                channelLabel: model.channelLabel,
+                description: model.description || "",
+                icon: model.icon || "",
+                capability: model.capability as ModelCapability,
+                protocol: model.protocol as any,
+                capabilityConfig: (model.capabilityConfig as ModelCapabilityConfig | undefined) || defaultModelCapabilityConfig(),
+                channelModelId: model.id,
+                channelId: channel.id,
+                modelKey: model.modelKey,
+                logicalPriceTiers: (model.priceTiers || []).map((tier) => ({
                     selector: tier.selector || {},
                     resolution: tier.resolution || "*",
                     videoSeconds: tier.videoSeconds || 0,
-                    billingMode: tier.billingMode as "fixed_request" | "per_second" | "token",
-                    unitPriceMicrocredits: tier.unitPriceMicrocredits || 0,
-                    inputTokenPriceMicrocredits: tier.inputTokenPriceMicrocredits || 0,
-                    outputTokenPriceMicrocredits: tier.outputTokenPriceMicrocredits || 0,
-                    cachedTokenPriceMicrocredits: tier.cachedTokenPriceMicrocredits || 0,
-                }));
-
-                return {
-                    model: model.modelKey,
-                    displayName: model.displayName,
-                    channelLabel: model.channelLabel,
-                    description: model.description || "",
-                    icon: model.icon || "",
-                    capability: model.capability as ModelCapability,
-                    protocol: model.protocol as any,
-                    pricePolicy: "channel" as const,
-                    billingMode: billingMode as any,
-                    unitPriceMicrocredits: unitPrice,
-                    inputTokenPriceMicrocredits: inputPrice,
-                    outputTokenPriceMicrocredits: outputPrice,
-                    cachedTokenPriceMicrocredits: cachedPrice,
-                    capabilityConfig: (model.capabilityConfig as ModelCapabilityConfig | undefined) || defaultModelCapabilityConfig(),
-                    channelModelId: model.id,
-                    channelId: channel.id,
-                    modelKey: model.modelKey,
-                    logicalPriceTiers,
-                };
-            }),
+                })),
+            })),
         };
     });
 }

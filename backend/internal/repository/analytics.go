@@ -225,37 +225,6 @@ func (r *Repository) apiCallLogQuery(filter AnalyticsFilter) *gorm.DB {
 	return query
 }
 
-func (r *Repository) ModelPricings() ([]model.ModelPricing, error) {
-	var items []model.ModelPricing
-	return items, r.db.Order("model asc, capability asc").Find(&items).Error
-}
-
-func (r *Repository) ModelPricing(channelID string, modelName string, capability string) (*model.ModelPricing, error) {
-	var pricing model.ModelPricing
-	query := r.db.Where("model = ? AND capability = ?", modelName, capability)
-	if channelID != "" {
-		query = query.Where("channel_id IN ?", []string{channelID, ""}).Order("channel_id desc")
-	} else {
-		query = query.Where("channel_id = ?", "")
-	}
-	if err := query.First(&pricing).Error; err != nil {
-		return nil, err
-	}
-	return &pricing, nil
-}
-
-func (r *Repository) ModelPricingByID(id string) (*model.ModelPricing, error) {
-	var pricing model.ModelPricing
-	if err := r.db.First(&pricing, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &pricing, nil
-}
-
-func (r *Repository) DeleteModelPricing(id string) error {
-	return r.db.Delete(&model.ModelPricing{}, "id = ?", id).Error
-}
-
 func (r *Repository) CurrentQueuedTaskCount() (int64, error) {
 	var count int64
 	err := r.db.Model(&model.Task{}).Where("status IN ?", []model.TaskStatus{model.TaskStatusQueued, model.TaskStatusRunning}).Count(&count).Error

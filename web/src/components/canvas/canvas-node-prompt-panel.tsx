@@ -7,9 +7,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, modelOptionName, resolveModelChannel, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { resolveCanvasGenerationModel } from "@/lib/canvas/canvas-project-generation";
 import { clampPromptEditorModalSize, PROMPT_EDITOR_VIEWPORT_MARGIN } from "@/lib/canvas/canvas-prompt-editor-size";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { modelQuoteDescription, modelQuoteRequest } from "@/lib/model-pricing";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
 import { modelRequestOptions, resolveCompatibleModel, resolveModelGenerationDefaults, defaultImageParamsForModel, type ModelRequirements } from "@/lib/model-selection";
 import { navigateToSettings } from "@/lib/settings-navigation";
@@ -30,7 +28,6 @@ import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins
 import { createPluginHostContext } from "@/services/plugin-host";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useResolvedCanvasResourceReferences } from "./use-resolved-canvas-resource-references";
-import { quoteModel, type LogicalModelQuote } from "@/services/api/logical-models";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -73,7 +70,6 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const globalConfig = useEffectiveConfig();
     const themeName = useActiveTheme();
     const theme = canvasThemes[themeName];
-    const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
     const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
     const simpleMode = workspaceMode === "simple";
@@ -134,20 +130,6 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     }, [globalConfig, promptOptimizerEnabled, promptOptimizerInstallation]);
     const generationCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const priceChannel = resolveModelChannel(config, config.model);
-    const configuredCredits = requestCreditCost({
-        channelMode: priceChannel.scope === "system" ? "remote" : "local",
-        modelCosts: priceChannel.modelCosts,
-        model: modelOptionName(config.model),
-        count: mode === "image" ? generationCount : 1,
-        seconds: mode === "video" ? config.videoSeconds : 1,
-        capability: mode,
-        config,
-        requirements: resolvedRequirements,
-    });
-    const quoteRequest = modelQuoteRequest(config, config.model, mode, resolvedRequirements);
-    const quoteRequestKey = JSON.stringify(quoteRequest || null);
-    const [routeQuote, setRouteQuote] = useState<LogicalModelQuote | null>(null);
-    const credits = routeQuote ? routeQuote.amountMicrocredits / 1_000_000 : configuredCredits;
     const activeReferenceCount = activeReferences.length;
     const videoFrameOptions = resolvedMentionReferences.filter((item) => item.active && item.kind === "image").map((item) => ({ nodeId: item.nodeId, label: item.label, title: item.title, previewUrl: item.previewUrl }));
     const hasVideoPromptTools = mode === "video" && !simpleMode && videoFrameOptions.length > 0;
@@ -207,23 +189,6 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
         window.addEventListener("resize", constrainSize);
         return () => window.removeEventListener("resize", constrainSize);
     }, [expandedPromptOpen]);
-
-    useEffect(() => {
-        if (!creditsEnabled || !quoteRequest) {
-            setRouteQuote(null);
-            return;
-        }
-        const controller = new AbortController();
-        setRouteQuote(null);
-        quoteModel(quoteRequest, controller.signal)
-            .then(({ quote }) => setRouteQuote(quote))
-            .catch(() => {
-                if (!controller.signal.aborted) setRouteQuote(null);
-            });
-        return () => controller.abort();
-        // quoteRequestKey captures the full normalized request without retriggering on object identity.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [creditsEnabled, quoteRequestKey]);
 
     const skillReferences = useMemo(() => resolvedMentionReferences.filter((item) => item.kind === "skill"), [resolvedMentionReferences]);
 
@@ -335,13 +300,11 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     );
 
     const renderSubmitButton = (expanded: boolean) => {
-        const showCost = creditsEnabled && credits !== null;
-        const formattedCredits = credits?.toLocaleString("zh-CN", { maximumFractionDigits: 6 });
-        const actionLabel = isRunning ? "生成中" : showCost ? `${routeQuote?.estimated ? "预估" : "消耗"} ${formattedCredits} 积分，生成` : "生成";
+        const actionLabel = isRunning ? "生成中" : "生成";
         return (
             <Button
                 type="text"
-                className={`canvas-node-composer-submit canvas-node-composer-submit-canvas ${showCost ? "has-cost" : ""}`}
+                className="canvas-node-composer-submit canvas-node-composer-submit-canvas"
                 disabled={isRunning || isSubmitDisabled}
                 style={
                     {
@@ -352,14 +315,8 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                 }
                 onClick={() => (expanded ? submitExpandedPrompt() : submit())}
                 aria-label={actionLabel}
-                title={routeQuote ? modelQuoteDescription(routeQuote) : actionLabel}
+                title={actionLabel}
             >
-                {showCost ? (
-                    <span className="canvas-node-composer-submit-cost">
-                        <CreditSymbol />
-                        <span>{routeQuote?.estimated ? `预估:${formattedCredits}` : formattedCredits}</span>
-                    </span>
-                ) : null}
                 <span className="canvas-node-composer-submit-action" aria-hidden>
                     {isRunning ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <ArrowUp className="size-3.5" strokeWidth={2.4} />}
                 </span>
@@ -396,7 +353,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                         requirements={resolvedRequirements}
                         onMissingConfig={() => navigateToSettings({ continueCreation: true })}
                         showSelectedPrice={false}
-                        showOptionPrices={creditsEnabled}
+                        showOptionPrices={false}
                         variant="creation"
                         showConfiguredModelName
                     />

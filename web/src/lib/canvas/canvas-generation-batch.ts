@@ -8,7 +8,7 @@ export function isGenerationTaskCapacityError(error: unknown) {
 
 export function isGenerationCostUncertainError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error || "");
-    return /(?:^|\D)524(?:\D|$)|费用状态不确定|扣费状态不确定|可能已经产生费用/i.test(message);
+    return /(?:^|\D)524(?:\D|$)|上游状态不确定|结果待确认/i.test(message);
 }
 
 export function generationBatchStatus(batch: CanvasGenerationBatch): CanvasGenerationBatchStatus {

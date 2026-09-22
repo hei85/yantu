@@ -17,9 +17,6 @@ export function isVolcengineArkVideoProtocol(protocol?: string) {
     return protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video";
 }
 
-export function modelProtocolSupportsTokenBilling(capability?: string, _protocol?: string) {
-    return capability === "text" || capability === "video";
-}
 
 export function protocolForModelCatalog(_endpointTypes: string[] = []): ModelProtocol | undefined {
     // A provider catalog cannot invent a protocol ID. The channel's selected

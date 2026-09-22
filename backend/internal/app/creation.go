@@ -40,14 +40,10 @@ type CreationRunOutput struct {
 	State map[string]any `json:"state"`
 }
 type CreationQuote struct {
-	Model              string         `json:"model"`
-	BillingMode        string         `json:"billingMode"`
-	Quantity           int64          `json:"quantity"`
-	AmountMicrocredits int64          `json:"amountMicrocredits"`
-	Estimated          bool           `json:"estimated"`
-	ExpiresAt          time.Time      `json:"expiresAt"`
-	QuoteHash          string         `json:"quoteHash"`
-	Options            map[string]any `json:"options,omitempty"`
+	Model     string         `json:"model"`
+	ExpiresAt time.Time      `json:"expiresAt"`
+	QuoteHash string         `json:"quoteHash"`
+	Options   map[string]any `json:"options,omitempty"`
 }
 type CreationSubmissionOutput struct {
 	model.CreationSubmission
@@ -57,15 +53,12 @@ type CreationDetail struct {
 	Run         CreationRunOutput          `json:"run"`
 	Submissions []CreationSubmissionOutput `json:"submissions"`
 }
-type creationTaskPreparation struct{ Order *model.BillingOrder }
+type creationTaskPreparation struct{}
 
 func creationConflict(message string) error {
 	return &AppError{Status: 409, Code: 409, Message: message}
 }
 func creationError(err error) error {
-	if errors.Is(err, repository.ErrInsufficientCredits) {
-		return BadAuthRequest("积分不足，请充值后重试")
-	}
 	if errors.Is(err, repository.ErrActiveTaskLimit) {
 		return BadAuthRequest("同时排队或运行的任务已达到上限")
 	}
@@ -323,17 +316,17 @@ func (s *Service) ChangeCreationRun(userID, id, action string, req CreationReque
 	return out, creationError(err)
 }
 
-func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*model.Task, *model.BillingOrder, string, error) {
+func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*model.Task, string, error) {
 	config, _ := req.Input["config"].(map[string]any)
 	if req.LogicalModelID == "" && strings.TrimSpace(stringValue(config["channelId"])) == "" {
-		return nil, nil, "", BadAuthRequest("智能创作目前仅支持后端受管模型，请在原入口使用其他渠道")
+		return nil, "", BadAuthRequest("智能创作目前仅支持后端受管模型，请在原入口使用其他渠道")
 	}
 	if taskInputUsesWorkflowProvider(req.Input) || isTextReplayTaskRequest(req.Input) {
-		return nil, nil, "", BadAuthRequest("智能创作不支持本机、工作流或文本回放任务")
+		return nil, "", BadAuthRequest("智能创作不支持本机、工作流或文本回放任务")
 	}
 	// System selectors are the only authority; discard frontend sentinel credentials.
 	safeConfig := map[string]any{}
-	for _, key := range []string{"channelId", "channelModelKey", "model", "priceTierId", "apiFormat", "interfaceType", "size", "quality", "transparentBackground", "count", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload", "systemPrompt"} {
+	for _, key := range []string{"channelId", "channelModelKey", "model", "apiFormat", "interfaceType", "size", "quality", "transparentBackground", "count", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload", "systemPrompt"} {
 		if value, ok := config[key]; ok {
 			safeConfig[key] = value
 		}
@@ -341,36 +334,36 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 	config = safeConfig
 	req.Input["config"] = safeConfig
 	if err := validateCreationJSON(req); err != nil {
-		return nil, nil, "", err
+		return nil, "", err
 	}
 	if req.Type != "canvas_text" && req.Type != "text" && req.Type != "canvas_image" && req.Type != "canvas_video" {
-		return nil, nil, "", BadAuthRequest("智能创作任务类型不受支持")
+		return nil, "", BadAuthRequest("智能创作任务类型不受支持")
 	}
 	expectedMode := map[string]string{"text": "text", "canvas_text": "text", "canvas_image": "image", "canvas_video": "video"}[req.Type]
 	if stringValue(req.Input["mode"]) != expectedMode || strings.TrimSpace(stringValue(req.Input["prompt"])) != strings.TrimSpace(req.Prompt) {
-		return nil, nil, "", BadAuthRequest("任务类型、模式和实际提示词必须一致")
+		return nil, "", BadAuthRequest("任务类型、模式和实际提示词必须一致")
 	}
 	if expectedMode != "text" && req.Input["agentRequests"] != nil {
-		return nil, nil, "", BadAuthRequest("媒体任务不允许携带独立模型协议请求")
+		return nil, "", BadAuthRequest("媒体任务不允许携带独立模型协议请求")
 	}
 	if count := stringValue(config["count"]); count != "" && count != "1" {
-		return nil, nil, "", BadAuthRequest("每个获批执行项只能生成一个产物")
+		return nil, "", BadAuthRequest("每个获批执行项只能生成一个产物")
 	}
 	if req.Input["mask"] != nil {
-		return nil, nil, "", BadAuthRequest("本期智能创作暂不支持蒙版任务")
+		return nil, "", BadAuthRequest("本期智能创作暂不支持蒙版任务")
 	}
 	if expectedMode != "text" {
 		canvas, e := s.repo.CanvasProjectForUser(userID, req.ProjectID)
 		if e != nil {
-			return nil, nil, "", creationError(e)
+			return nil, "", creationError(e)
 		}
 		doc, e := creationDocument(canvas.PayloadJSON)
 		if e != nil {
-			return nil, nil, "", e
+			return nil, "", e
 		}
 		nodes, e := creationObjects(doc["nodes"])
 		if e != nil {
-			return nil, nil, "", e
+			return nil, "", e
 		}
 		if refs, ok := req.Input["referenceImages"].([]any); ok {
 			for _, raw := range refs {
@@ -378,7 +371,7 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 				node := nodes[stringValue(ref["id"])]
 				meta, _ := node["metadata"].(map[string]any)
 				if node == nil || node["type"] != "image" || meta["status"] != "success" || stringValue(ref["storageKey"]) != stringValue(meta["storageKey"]) {
-					return nil, nil, "", creationConflict("参考素材已变化或尚未就绪")
+					return nil, "", creationConflict("参考素材已变化或尚未就绪")
 				}
 			}
 		}
@@ -388,18 +381,18 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 			for _, raw := range list {
 				media, ok := raw.(map[string]any)
 				if !ok {
-					return nil, nil, "", BadAuthRequest("素材引用格式无效")
+					return nil, "", BadAuthRequest("素材引用格式无效")
 				}
 				key := stringValue(media["storageKey"])
 				if !strings.HasPrefix(key, "resource:") {
-					return nil, nil, "", BadAuthRequest("请先将参考素材保存到当前账号资源库")
+					return nil, "", BadAuthRequest("请先将参考素材保存到当前账号资源库")
 				}
 				resource, err := s.repo.ResourceForUser(userID, strings.TrimPrefix(key, "resource:"))
 				if err != nil {
-					return nil, nil, "", creationError(err)
+					return nil, "", creationError(err)
 				}
 				if resource.Status != "ready" {
-					return nil, nil, "", BadAuthRequest("参考素材尚未就绪")
+					return nil, "", BadAuthRequest("参考素材尚未就绪")
 				}
 				delete(media, "url")
 				delete(media, "dataUrl")
@@ -412,50 +405,44 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 	req.creationPrepare = prepared
 	task, err := s.CreateTask(userID, req)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, "", err
 	}
 	var input map[string]any
 	_ = json.Unmarshal([]byte(task.InputJSON), &input)
 	resolved, _ := input["config"].(map[string]any)
 	for _, key := range []string{"size", "videoSeconds", "vquality", "quality", "count"} {
 		if requested := stringValue(config[key]); requested != "" && !strings.EqualFold(requested, stringValue(resolved[key])) {
-			return nil, nil, "", creationConflict("模型解析后的生成规格与请求不同，请调整方案后重新报价")
+			return nil, "", creationConflict("模型解析后的生成规格与请求不同，请调整方案后重新报价")
 		}
 	}
 	channel, channelErr := s.repo.SystemChannel(stringValue(resolved["channelId"]))
 	if channelErr != nil {
-		return nil, nil, "", channelErr
+		return nil, "", channelErr
 	}
 	if expectedMode == "text" {
 		var typed canvasGenerationInput
 		if err = json.Unmarshal([]byte(task.InputJSON), &typed); err != nil {
-			return nil, nil, "", err
+			return nil, "", err
 		}
 		if len(typed.ReferenceImages) > 0 {
 			cm, e := s.repo.ChannelModelByKey(channel.ID, stringValue(resolved["model"]))
 			if e != nil {
-				return nil, nil, "", e
+				return nil, "", e
 			}
 			profile, e := DecodeModelCapabilityConfig(cm.CapabilityConfigJSON)
 			if e != nil || profile == nil || profile.Text == nil || profile.Text.References.MaxImages < len(typed.ReferenceImages) {
-				return nil, nil, "", BadAuthRequest("当前文本模型未配置足够的图片理解能力")
+				return nil, "", BadAuthRequest("当前文本模型未配置足够的图片理解能力")
 			}
 		}
 		if err = validateAgentResourcePlaceholders(typed); err != nil {
-			return nil, nil, "", err
+			return nil, "", err
 		}
 	}
-	sig, err := s.repo.CreationPriceSignature(task, stringValue(resolved["channelId"]), stringValue(resolved["model"]))
-	return task, prepared.Order, sig, err
+	sig, err := s.repo.CreationConfigSignature(task, stringValue(resolved["channelId"]), stringValue(resolved["model"]))
+	return task, sig, err
 }
-func creationQuoteFor(task *model.Task, order *model.BillingOrder, signature string, expires time.Time) CreationQuote {
-	quote := CreationQuote{Model: task.Model, BillingMode: "free", Quantity: 1, ExpiresAt: expires}
-	if order != nil {
-		quote.BillingMode = order.BillingMode
-		quote.Quantity = order.Quantity
-		quote.AmountMicrocredits = order.AmountMicrocredits
-		quote.Estimated = order.BillingMode == "token"
-	}
+func creationQuoteFor(task *model.Task, signature string, expires time.Time) CreationQuote {
+	quote := CreationQuote{Model: task.Model, ExpiresAt: expires}
 	var input map[string]any
 	_ = json.Unmarshal([]byte(task.InputJSON), &input)
 	config, _ := input["config"].(map[string]any)
@@ -465,7 +452,7 @@ func creationQuoteFor(task *model.Task, order *model.BillingOrder, signature str
 			quote.Options[key] = value
 		}
 	}
-	quote.QuoteHash = creationHash([]any{signature, quote.BillingMode, quote.Quantity, quote.AmountMicrocredits, quote.Options})
+	quote.QuoteHash = creationHash([]any{signature, quote.Options})
 	return quote
 }
 func validateCreationSubmissionScope(run *model.CreationRun, version int64, req CreateTaskRequest) error {
@@ -620,12 +607,12 @@ func (s *Service) buildCreationSubmission(userID string, run *model.CreationRun,
 	if err = json.Unmarshal(b, &normalized); err != nil {
 		return model.CreationSubmission{}, normalized, err
 	}
-	task, order, signature, err := s.prepareCreationTask(userID, normalized)
+	task, signature, err := s.prepareCreationTask(userID, normalized)
 	if err != nil {
 		return model.CreationSubmission{}, normalized, err
 	}
 	expires := time.Now().Add(5 * time.Minute)
-	quote := creationQuoteFor(task, order, signature, expires)
+	quote := creationQuoteFor(task, signature, expires)
 	quoteJSON, _ := json.Marshal(quote)
 	requestJSON, _ := json.Marshal(normalized)
 	item := model.CreationSubmission{ID: newID(), UserID: userID, RunID: run.ID, ItemKey: itemKey, ProposalVersion: proposalVersion, ProposalHash: run.ApprovedProposalHash, RequestJSON: string(requestJSON), RequestHash: creationHash(normalized), QuoteJSON: string(quoteJSON), PriceSignature: signature, ExpiresAt: expires}
@@ -754,11 +741,11 @@ func (s *Service) ApproveCreationSubmissions(userID, id string, req CreationRequ
 		}
 		var request CreateTaskRequest
 		_ = json.Unmarshal([]byte(item.RequestJSON), &request)
-		task, order, sig, err := s.prepareCreationTask(userID, request)
+		task, sig, err := s.prepareCreationTask(userID, request)
 		if err != nil {
 			return nil, err
 		}
-		if creationQuoteFor(task, order, sig, item.ExpiresAt).QuoteHash != creationSubmissionOutput(*item).Quote.QuoteHash {
+		if creationQuoteFor(task, sig, item.ExpiresAt).QuoteHash != creationSubmissionOutput(*item).Quote.QuoteHash {
 			return nil, creationConflict("报价已变化，请重新准备并确认")
 		}
 		prepared[sid] = task
@@ -786,7 +773,7 @@ func (s *Service) ApproveCreationSubmissions(userID, id string, req CreationRequ
 			if item.ProposalVersion > 0 && item.ProposalHash != run.ApprovedProposalHash {
 				return repository.ErrCreationConflict
 			}
-			if e = checkCreationPriceSignature(repo, prepared[sid], signatures[sid]); e != nil {
+			if e = checkCreationConfigSignature(repo, prepared[sid], signatures[sid]); e != nil {
 				return e
 			}
 			if item.ApprovedAt == nil {
@@ -801,11 +788,11 @@ func (s *Service) ApproveCreationSubmissions(userID, id string, req CreationRequ
 	})
 	return map[string]any{"submissions": out}, creationError(err)
 }
-func checkCreationPriceSignature(repo *repository.Repository, task *model.Task, want string) error {
+func checkCreationConfigSignature(repo *repository.Repository, task *model.Task, want string) error {
 	var input map[string]any
 	_ = json.Unmarshal([]byte(task.InputJSON), &input)
 	config, _ := input["config"].(map[string]any)
-	got, err := repo.CreationPriceSignature(task, stringValue(config["channelId"]), stringValue(config["model"]))
+	got, err := repo.CreationConfigSignature(task, stringValue(config["channelId"]), stringValue(config["model"]))
 	if err != nil {
 		return err
 	}
@@ -840,11 +827,11 @@ func (s *Service) ExecuteCreationSubmission(userID, id string, req CreationReque
 	if err = validateCreationSubmissionScope(run, item.ProposalVersion, request); err != nil {
 		return nil, err
 	}
-	task, order, signature, err := s.prepareCreationTask(userID, request)
+	task, signature, err := s.prepareCreationTask(userID, request)
 	if err != nil {
 		return nil, err
 	}
-	if creationQuoteFor(task, order, signature, item.ExpiresAt).QuoteHash != creationSubmissionOutput(*item).Quote.QuoteHash {
+	if creationQuoteFor(task, signature, item.ExpiresAt).QuoteHash != creationSubmissionOutput(*item).Quote.QuoteHash {
 		return nil, creationConflict("报价已变化，请重新确认")
 	}
 	var input map[string]any
@@ -855,9 +842,6 @@ func (s *Service) ExecuteCreationSubmission(userID, id string, req CreationReque
 	b, _ := json.Marshal(input)
 	task.InputJSON = string(b)
 	task.CreationSubmissionID = &item.ID
-	if order != nil {
-		task.BillingOrderID = order.ID
-	}
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return nil, err
@@ -889,10 +873,10 @@ func (s *Service) ExecuteCreationSubmission(userID, id string, req CreationReque
 		if fresh.ProposalVersion > 0 && fresh.ProposalHash != current.ApprovedProposalHash {
 			return repository.ErrCreationConflict
 		}
-		if e = checkCreationPriceSignature(repo, task, signature); e != nil {
+		if e = checkCreationConfigSignature(repo, task, signature); e != nil {
 			return e
 		}
-		if e = createTaskWithStorageQuotaRepository(repo, task, order, policy); e != nil {
+		if e = createTaskWithStorageQuotaRepository(repo, task, policy); e != nil {
 			return e
 		}
 		fresh.TaskID = &task.ID

@@ -19,14 +19,6 @@ type TaskProgress interface {
 	Log(userID, taskID, level, message, payload string) error
 }
 
-// BillingHooks 生成路径上的计费终态钩子。
-type BillingHooks interface {
-	MarkBillingUncertain(taskID, reason string) error
-	Settle(taskID string) error
-	Refund(taskID, reason string) error
-	RestoreRefunded(taskID, reason string) error
-}
-
 // ChannelLimiter 渠道并发槽与熔断结果。
 type ChannelLimiter interface {
 	AcquireChannelSlot(ctx context.Context, channelID string) (release func(), err error)
@@ -43,7 +35,6 @@ type MediaPersister interface {
 type Deps struct {
 	Media    MediaResolver
 	Progress TaskProgress
-	Billing  BillingHooks
 	Channel  ChannelLimiter
 	Persist  MediaPersister
 	// Registry 可选；为空时 Engine 使用官方插件包回退表。

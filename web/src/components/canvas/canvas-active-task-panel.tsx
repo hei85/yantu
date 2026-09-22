@@ -2,7 +2,6 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/r
 import { ChevronDown, ChevronUp, Clock3, Coins, ListTodo, LoaderCircle, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { formatCredits } from "@/constant/credits";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { formatTaskKind, generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel } from "@/lib/generation-task-display";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -13,7 +12,6 @@ import { useUserStore } from "@/stores/use-user-store";
 // 顶栏是绝对定位浮层，面板必须按调用方传入的 topInset 避让；专注模式隐藏顶栏时传小间距。
 export function CanvasActiveTaskPanel({ tasks, align = "right", topInset = "var(--canvas-topbar-offset)", onCancelTask }: { tasks: GenerationTask[]; align?: "left" | "right"; topInset?: string; onCancelTask?: (task: GenerationTask) => void }) {
     const theme = canvasThemes[useActiveTheme()];
-    const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const reducedMotion = useReducedMotion();
     const [now, setNow] = useState(() => Date.now());
     const [open, setOpen] = useState(false);
@@ -98,7 +96,6 @@ export function CanvasActiveTaskPanel({ tasks, align = "right", topInset = "var(
                                             onToggle={() => setExpandedTaskId((current) => (current === task.id ? null : task.id))}
                                             onCancelTask={onCancelTask}
                                             reducedMotion={Boolean(reducedMotion)}
-                                            creditsEnabled={creditsEnabled}
                                         />
                                     ))}
                                 </motion.div>
@@ -119,7 +116,6 @@ function ActiveTaskCard({
     onToggle,
     onCancelTask,
     reducedMotion,
-    creditsEnabled,
 }: {
     task: GenerationTask;
     now: number;
@@ -128,14 +124,12 @@ function ActiveTaskCard({
     onToggle: () => void;
     onCancelTask?: (task: GenerationTask) => void;
     reducedMotion: boolean;
-    creditsEnabled: boolean;
 }) {
     const showsProgress = generationTaskShowsProgress(task);
     const progress = showsProgress && typeof task.progress === "number" ? Math.max(0, Math.min(100, Math.round(task.progress))) : showsProgress && task.status === "queued" ? 0 : undefined;
     const startedAt = task.startedAt || task.createdAt;
     const elapsedMs = Math.max(0, now - parseTime(startedAt));
     const durationLabel = `${task.status === "queued" ? "已等待" : "已运行"} ${formatDuration(elapsedMs)}`;
-    const billingLabel = task.billing ? `冻结 ${formatCredits(task.billing.amountMicrocredits)} 积分` : "未计费";
     const statusTone = task.status === "running" ? theme.accent.primary : theme.node.muted;
     const transition = reducedMotion ? { duration: 0 } : aceternityMotion.spring.panel;
 
@@ -193,17 +187,11 @@ function ActiveTaskCard({
                         </span>
                     </div>
                 ) : (
-                    <div className={`mt-3 grid gap-2 text-[var(--fs-tiny)] ${creditsEnabled ? "grid-cols-2" : "grid-cols-1"}`} style={{ color: theme.node.muted }}>
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
                         <span className="inline-flex min-w-0 items-center gap-1 truncate" title={durationLabel}>
                             <Clock3 className="size-3 shrink-0" />
                             {durationLabel}
                         </span>
-                        {creditsEnabled ? (
-                            <span className="inline-flex min-w-0 items-center justify-end gap-1 truncate" title={billingLabel}>
-                                <Coins className="size-3 shrink-0" />
-                                {billingLabel}
-                            </span>
-                        ) : null}
                     </div>
                 )}
             </button>

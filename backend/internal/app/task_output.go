@@ -37,7 +37,6 @@ type TaskSummary struct {
 	CompletedAt               *time.Time                 `json:"completedAt"`
 	CreatedAt                 time.Time                  `json:"createdAt"`
 	UpdatedAt                 time.Time                  `json:"updatedAt"`
-	Billing                   *TaskBillingSummary        `json:"billing,omitempty"`
 	ClientContext             *TaskClientContext         `json:"clientContext,omitempty"`
 }
 
@@ -55,44 +54,12 @@ type TaskClientContext struct {
 	ArtifactType     string `json:"artifactType,omitempty"`
 }
 
-type TaskBillingSummary struct {
-	AmountMicrocredits int64               `json:"amountMicrocredits"`
-	Status             model.BillingStatus `json:"status"`
-}
-
 func taskSummariesForOutput(tasks []model.Task) []TaskSummary {
-	return taskSummariesForOutputWithBilling(tasks, nil)
-}
-
-func taskSummariesForOutputWithBilling(tasks []model.Task, orders map[string]model.BillingOrder) []TaskSummary {
 	result := make([]TaskSummary, 0, len(tasks))
 	for _, task := range tasks {
-		summary := taskSummaryForOutput(task)
-		if order, ok := orders[task.ID]; ok {
-			summary.Billing = &TaskBillingSummary{AmountMicrocredits: order.AmountMicrocredits, Status: order.Status}
-			if summary.ProviderRequestID == "" {
-				summary.ProviderRequestID = order.ProviderRequestID
-			}
-		}
-		result = append(result, summary)
+		result = append(result, taskSummaryForOutput(task))
 	}
 	return result
-}
-
-func taskBillingTaskIDs(tasks []model.Task) []string {
-	ids := make([]string, 0, len(tasks))
-	seen := map[string]struct{}{}
-	for _, task := range tasks {
-		if task.BillingOrderID == "" {
-			continue
-		}
-		if _, ok := seen[task.ID]; ok {
-			continue
-		}
-		seen[task.ID] = struct{}{}
-		ids = append(ids, task.ID)
-	}
-	return ids
 }
 
 func taskSummaryForOutput(task model.Task) TaskSummary {

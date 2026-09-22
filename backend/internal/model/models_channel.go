@@ -89,55 +89,47 @@ type ChannelModelPriceTier struct {
 }
 
 type ApiCallLog struct {
-	ID                     string        `json:"id" gorm:"primaryKey;size:36"`
-	UserID                 string        `json:"userId" gorm:"index;size:36;index:idx_api_logs_user_created,priority:1"`
-	TraceID                string        `json:"traceId,omitempty" gorm:"index;size:96"`
-	RequestID              string        `json:"requestId,omitempty" gorm:"index;size:96"`
-	UserDisplayName        string        `json:"userDisplayName,omitempty" gorm:"-"`
-	UserAccount            string        `json:"userAccount,omitempty" gorm:"-"`
-	ChannelID              string        `json:"channelId" gorm:"index;size:36;index:idx_api_logs_channel_created,priority:1"`
-	ChannelName            string        `json:"channelName" gorm:"-"`
-	TaskID                 string        `json:"taskId,omitempty" gorm:"index;size:36"`
-	TaskStatus             TaskStatus    `json:"taskStatus,omitempty" gorm:"-"`
-	BillingOrderID         string        `json:"billingOrderId,omitempty" gorm:"index;size:36"`
-	BillingStatus          BillingStatus `json:"billingStatus,omitempty" gorm:"-"`
-	BillingAmount          int64         `json:"billingAmountMicrocredits" gorm:"-"`
-	BillingAvailable       bool          `json:"billingAvailable" gorm:"-"`
-	CreditCostConfigured   bool          `json:"creditCostConfigured" gorm:"-"`
-	CreditCostMicrocredits *int64        `json:"creditCostMicrocredits,omitempty" gorm:"-"`
-	Source                 string        `json:"source" gorm:"index;size:64"`
-	Capability             string        `json:"capability" gorm:"index;size:32"`
-	Operation              string        `json:"operation" gorm:"size:64"`
-	RequestKind            string        `json:"requestKind" gorm:"index;size:24"`
-	Billable               bool          `json:"billable" gorm:"index"`
-	APIFormat              string        `json:"apiFormat" gorm:"size:24"`
-	Method                 string        `json:"method" gorm:"size:16"`
-	Path                   string        `json:"path"`
-	Model                  string        `json:"model" gorm:"size:120;index:idx_api_logs_model_created,priority:1"`
-	Status                 ApiCallStatus `json:"status" gorm:"index;size:24;index:idx_api_logs_status_created,priority:1"`
-	StatusCode             int           `json:"statusCode"`
-	DurationMs             int64         `json:"durationMs"`
-	PollCount              int           `json:"pollCount"`
-	ProviderStatus         string        `json:"providerStatus,omitempty" gorm:"size:32"`
-	InputTokens            int64         `json:"inputTokens"`
-	OutputTokens           int64         `json:"outputTokens"`
-	CachedTokens           int64         `json:"cachedTokens"`
-	UsageAvailable         bool          `json:"usageAvailable"`
-	MediaCount             int           `json:"mediaCount"`
-	MediaPreviewURL        string        `json:"mediaPreviewUrl,omitempty" gorm:"-"`
-	MediaPreviewKind       string        `json:"mediaPreviewKind,omitempty" gorm:"-"`
-	VideoSeconds           int           `json:"videoSeconds"`
-	ProviderRequestID      string        `json:"providerRequestId" gorm:"size:160"`
-	EstimatedCostMicros    int64         `json:"estimatedCostMicros"`
-	CostAvailable          bool          `json:"costAvailable"`
-	Currency               string        `json:"currency" gorm:"size:12"`
-	ErrorCode              string        `json:"errorCode,omitempty" gorm:"index;size:80"`
-	Error                  string        `json:"error"`
-	ConcurrencyLimit       int           `json:"concurrencyLimit"`
-	UpstreamURL            string        `json:"upstreamUrl"`
-	RequestContentType     string        `json:"requestContentType,omitempty" gorm:"size:160"`
-	RequestBody            string        `json:"requestBody,omitempty" gorm:"type:text"`
-	ResponseBody           string        `json:"responseBody,omitempty" gorm:"type:text"`
-	StartedAt              time.Time     `json:"startedAt"`
-	CreatedAt              time.Time     `json:"createdAt" gorm:"index;index:idx_api_logs_user_created,priority:2;index:idx_api_logs_channel_created,priority:2;index:idx_api_logs_model_created,priority:2;index:idx_api_logs_status_created,priority:2"`
+	ID                 string        `json:"id" gorm:"primaryKey;size:36"`
+	UserID             string        `json:"userId" gorm:"index;size:36;index:idx_api_logs_user_created,priority:1"`
+	TraceID            string        `json:"traceId,omitempty" gorm:"index;size:96"`
+	RequestID          string        `json:"requestId,omitempty" gorm:"index;size:96"`
+	UserDisplayName    string        `json:"userDisplayName,omitempty" gorm:"-"`
+	UserAccount        string        `json:"userAccount,omitempty" gorm:"-"`
+	ChannelID          string        `json:"channelId" gorm:"index;size:36;index:idx_api_logs_channel_created,priority:1"`
+	ChannelName        string        `json:"channelName" gorm:"-"`
+	TaskID             string        `json:"taskId,omitempty" gorm:"index;size:36"`
+	TaskStatus         TaskStatus    `json:"taskStatus,omitempty" gorm:"-"`
+	Source             string        `json:"source" gorm:"index;size:64"`
+	Capability         string        `json:"capability" gorm:"index;size:32"`
+	Operation          string        `json:"operation" gorm:"size:64"`
+	RequestKind        string        `json:"requestKind" gorm:"index;size:24"`
+	Billable           bool          `json:"billable" gorm:"index"`
+	APIFormat          string        `json:"apiFormat" gorm:"size:24"`
+	Method             string        `json:"method" gorm:"size:16"`
+	Path               string        `json:"path"`
+	Model              string        `json:"model" gorm:"size:120;index:idx_api_logs_model_created,priority:1"`
+	Status             ApiCallStatus `json:"status" gorm:"index;size:24;index:idx_api_logs_status_created,priority:1"`
+	StatusCode         int           `json:"statusCode"`
+	DurationMs         int64         `json:"durationMs"`
+	PollCount          int           `json:"pollCount"`
+	ProviderStatus     string        `json:"providerStatus,omitempty" gorm:"size:32"`
+	InputTokens        int64         `json:"inputTokens"`
+	OutputTokens       int64         `json:"outputTokens"`
+	CachedTokens       int64         `json:"cachedTokens"`
+	UsageAvailable     bool          `json:"usageAvailable"`
+	MediaCount         int           `json:"mediaCount"`
+	MediaPreviewURL    string        `json:"mediaPreviewUrl,omitempty" gorm:"-"`
+	MediaPreviewKind   string        `json:"mediaPreviewKind,omitempty" gorm:"-"`
+	VideoSeconds       int           `json:"videoSeconds"`
+	ProviderRequestID  string        `json:"providerRequestId" gorm:"size:160"`
+	Currency           string        `json:"currency" gorm:"size:12"`
+	ErrorCode          string        `json:"errorCode,omitempty" gorm:"index;size:80"`
+	Error              string        `json:"error"`
+	ConcurrencyLimit   int           `json:"concurrencyLimit"`
+	UpstreamURL        string        `json:"upstreamUrl"`
+	RequestContentType string        `json:"requestContentType,omitempty" gorm:"size:160"`
+	RequestBody        string        `json:"requestBody,omitempty" gorm:"type:text"`
+	ResponseBody       string        `json:"responseBody,omitempty" gorm:"type:text"`
+	StartedAt          time.Time     `json:"startedAt"`
+	CreatedAt          time.Time     `json:"createdAt" gorm:"index;index:idx_api_logs_user_created,priority:2;index:idx_api_logs_channel_created,priority:2;index:idx_api_logs_model_created,priority:2;index:idx_api_logs_status_created,priority:2"`
 }

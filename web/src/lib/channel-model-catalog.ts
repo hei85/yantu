@@ -97,8 +97,6 @@ export function mergeFetchedChannelModelCosts(channel: ModelChannel, catalog: Ch
             ...(item.displayName ? { displayName: item.displayName } : {}),
             capability,
             protocol,
-            billingMode: "fixed_request",
-            unitPriceMicrocredits: 0,
             ...(capabilityConfig ? { capabilityConfig } : {}),
         });
     }

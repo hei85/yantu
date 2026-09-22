@@ -9,7 +9,7 @@ import { CONTENT_MODERATION_ERROR_CODE, generationErrorMessage, isContentModerat
 import { formatTaskKind, statusLabel } from "@/lib/generation-task-display";
 import type { GenerationTask } from "@/services/api/task-center";
 import type { AiConfig } from "@/stores/use-config-store";
-import { formatModelName, getTaskCanvasContext, isTaskFailed, statusDotClassName, taskAttentionReason, TaskBilling, TaskDate } from "./task-shared";
+import { formatModelName, getTaskCanvasContext, isTaskFailed, statusDotClassName, taskAttentionReason, TaskDate } from "./task-shared";
 import { TaskVideoThumbnail } from "./task-video-thumbnail";
 
 export function TaskListRow({
@@ -17,7 +17,6 @@ export function TaskListRow({
     canvasById,
     projectNameById,
     effectiveConfig,
-    creditsEnabled,
     actingId,
     onOpen,
     onRetry,
@@ -27,7 +26,6 @@ export function TaskListRow({
     canvasById: Map<string, { title: string; projectId?: string }>;
     projectNameById: Map<string, string>;
     effectiveConfig: AiConfig;
-    creditsEnabled: boolean;
     actingId: string;
     onOpen: () => void;
     onRetry: () => void;
@@ -78,7 +76,6 @@ export function TaskListRow({
             <div className="task-record-date">
                 <TaskDate value={task.createdAt} />
             </div>
-            {creditsEnabled ? <TaskBilling billing={task.billing} /> : <span className="task-record-billing-empty" aria-hidden="true" />}
             <div className="task-record-actions">
                 <Tooltip title="查看详情">
                     <IconButton size="sm" variant="ghost" icon={Eye} aria-label="查看详情" onClick={onOpen} />

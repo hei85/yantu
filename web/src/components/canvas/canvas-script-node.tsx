@@ -585,7 +585,7 @@ function generationBatchSummary(batch: CanvasGenerationBatch) {
 }
 
 function generationBatchItemLabel(item: CanvasGenerationBatchItem) {
-    if (item.costUncertain) return "费用待确认";
+    if (item.costUncertain) return "状态待确认";
     if (isContentModerationError(item.errorDetails)) return "审核未通过，需修改提示词";
     const labels: Record<CanvasGenerationBatchItemStatus, string> = { waiting: "等待", submitting: "提交中", queued: "排队", running: "生成中", succeeded: "成功", failed: "失败", cancelled: "已停止" };
     return labels[item.status];

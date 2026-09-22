@@ -607,9 +607,6 @@ func normalizeChannelModelTierSelector(capability string, input ChannelModelPric
 }
 
 func validateChannelModelTierPricing(capability string, protocol model.ChannelInterfaceType, billingMode string, input ChannelModelPriceTierRequest) error {
-	if err := validateCreditCostPricing(capability, billingMode, input.CostPricing); err != nil {
-		return err
-	}
 	if billingMode != "fixed_request" && billingMode != "per_second" && billingMode != "token" {
 		return BadAuthRequest("模型计费方式仅支持按次、按秒或 Token")
 	}
@@ -763,7 +760,7 @@ func (s *Service) TestAdminChannelModel(ctx context.Context, actor *model.User, 
 	testCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	testCtx = context.WithValue(testCtx, providerAnalyticsKey{}, providerAnalyticsContext{
-		Service: s, Billing: s.taskBilling(), UserID: actor.ID, ChannelID: channel.ID, Capability: capability,
+		Service: s, UserID: actor.ID, ChannelID: channel.ID, Capability: capability,
 		Operation: "admin_model_test", Model: modelKey, VideoSeconds: videoSecondsValue,
 	})
 	testCtx = withProtocolRegistry(testCtx, s.protocolRegistry())

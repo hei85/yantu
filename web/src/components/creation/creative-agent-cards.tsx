@@ -76,7 +76,7 @@ export function CreativeProposalCard({ proposal, onApprove, onModify, onRedirect
         {proposal.deliverables.length > 0 && <ul className="creative-agent-deliverables">{proposal.deliverables.map((item, index) => <li key={index}><span>产物 {index + 1}</span><strong>{item}</strong></li>)}</ul>}
         {!archived && <Button className="creative-agent-detail-toggle" aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded(!expanded)}>{expanded ? "收起完整方案" : "查看完整方案"}</Button>}
         {expanded && <div id={detailId} className="creative-agent-detail"><AIMessageMarkdown>{proposal.markdown}</AIMessageMarkdown></div>}
-        {!archived && <><div className="creative-agent-scope-note">确认后创建本阶段节点并准备参数；图片、视频等生成费用另行确认。</div>
+        {!archived && <><div className="creative-agent-scope-note">确认后创建本阶段节点并准备参数；图片、视频等生成执行前另行确认。</div>
         <div className="creative-agent-actions creative-agent-primary-actions"><Button type="primary" loading={busy} disabled={disabled || busy} onClick={onApprove}>确认方案</Button><Button disabled={disabled || busy} onClick={onModify}>修改</Button><Dropdown menu={{ items: [{ key: "redirect", label: "换个方向" }], onClick: onRedirect }} trigger={["click"]} disabled={disabled || busy}><Button disabled={disabled || busy}>更多</Button></Dropdown></div></>}
         </>}
     </section>;
@@ -101,13 +101,12 @@ export function CreativePlanBar({ plan, onLocateNode }: { plan?: CreativePlan | 
 
 export function CreativeQuoteCard({ quote, onApprove, onRefresh, busy, disabled }: { quote: CreativeQuote; onApprove: () => void; onRefresh?: () => void; busy?: boolean; disabled?: boolean }) {
     const quantity = quote.items.reduce((total, item) => total + item.quantity, 0);
-    return <section className="creative-agent-card creative-agent-quote-card" aria-label="费用确认" data-canvas-no-zoom data-canvas-wheel-scroll>
-        <div className="creative-agent-overline">本批生成 · 费用确认</div>
-        <h3>{quote.title}</h3><div className="creative-agent-quote-total"><span>本批 {quantity} 项生成</span><strong>{quote.amountLabel}</strong></div>
-        <details className="creative-agent-quote-details"><summary>查看费用明细</summary><div className="creative-agent-card-content"><ul className="creative-agent-quote-items">{quote.items.map((item) => <li key={item.id}><div><strong>{item.label}</strong><span>{item.model} · {item.specification}</span></div><b>× {item.quantity}</b></li>)}</ul><p className="creative-agent-muted">{quote.basis}</p>
+    return <section className="creative-agent-card creative-agent-quote-card" aria-label="执行确认" data-canvas-no-zoom data-canvas-wheel-scroll>
+        <div className="creative-agent-overline">本批生成 · 执行确认</div>
+        <h3>{quote.title}</h3><div className="creative-agent-quote-total"><span>本批 {quantity} 项生成</span><strong>确认后开始</strong></div>
+        <details className="creative-agent-quote-details"><summary>查看执行明细</summary><div className="creative-agent-card-content"><ul className="creative-agent-quote-items">{quote.items.map((item) => <li key={item.id}><div><strong>{item.label}</strong><span>{item.model} · {item.specification}</span></div><b>× {item.quantity}</b></li>)}</ul><p className="creative-agent-muted">{quote.basis}</p>
         {quote.expiresAt && <p>有效期至 {quote.expiresAt}</p>}{quote.approvedQuantity !== undefined && <p>已批准 {quote.approvedQuantity} 项</p>}
         {onRefresh && <Button className="creative-agent-detail-toggle" type="text" disabled={disabled || busy} onClick={onRefresh}>更新报价</Button>}</div></details>
-        {quote.externalBilling && <p>由外部渠道计费，平台无法封顶第三方账单。</p>}
-        <div className="creative-agent-actions creative-agent-primary-actions"><Button type="primary" loading={busy} disabled={disabled || busy} onClick={onApprove}>确认生成 · {quote.amountLabel}</Button></div>
+        <div className="creative-agent-actions creative-agent-primary-actions"><Button type="primary" loading={busy} disabled={disabled || busy} onClick={onApprove}>确认生成</Button></div>
     </section>;
 }

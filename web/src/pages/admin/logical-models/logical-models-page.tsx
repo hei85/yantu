@@ -49,12 +49,6 @@ type LogicalModelFormValues = {
     capability: CapabilityKind;
     enabled: boolean;
     sortOrder: number;
-    pricePolicy: LogicalModelMutation["pricePolicy"];
-    billingMode: LogicalModelMutation["billingMode"];
-    unitPriceMicrocredits: number;
-    inputPriceMicrocredits: number;
-    outputPriceMicrocredits: number;
-    cachedPriceMicrocredits: number;
     capabilitySpec: CapabilitySpec;
     defaultOptions: Record<string, unknown>;
     routes: RouteRuleRow[];
@@ -141,12 +135,6 @@ export default function LogicalModelsPage() {
                       capability,
                       enabled: true,
                       sortOrder: models.length,
-                      pricePolicy: "channel",
-                      billingMode: "fixed_request",
-                      unitPriceMicrocredits: 0,
-                      inputPriceMicrocredits: 0,
-                      outputPriceMicrocredits: 0,
-                      cachedPriceMicrocredits: 0,
                       capabilitySpec: emptyCapabilitySpec(capability),
                       defaultOptions: {},
                       routes: [],
@@ -267,7 +255,7 @@ export default function LogicalModelsPage() {
                 </div>
             ),
         },
-        { title: "用户价格", width: 160, render: (_, item) => logicalPriceLabel(item) },
+        { title: "规格档", width: 160, render: (_, item) => logicalPriceLabel(item) },
         { title: "状态", width: 130, render: (_, item) => logicalModelStatusTag(item) },
         {
             title: "操作",
@@ -443,9 +431,6 @@ export default function LogicalModelsPage() {
                                 <EditorSection icon={<GitBranch className="size-4" />} title="供应线路">
                                     <RouteFields channelModels={modelChannelModels} channelNames={channelNames} channelEnabled={channelEnabled} form={modelForm} capability={modelCapability} />
                                 </EditorSection>
-                                <EditorSection title="系统规格价格">
-                                    <PricingFields />
-                                </EditorSection>
                             </>
                         ),
                     },
@@ -478,7 +463,7 @@ export default function LogicalModelsPage() {
                         onValuesChange={(changedValues: Partial<LogicalModelFormValues>) => {
                             dirtyRef.current = true;
                             if (!changedValues.capability) return;
-                            modelForm.setFieldsValue({ routes: [], capabilitySpec: emptyCapabilitySpec(changedValues.capability), defaultOptions: {}, pricePolicy: "channel", billingMode: "fixed_request" });
+                            modelForm.setFieldsValue({ routes: [], capabilitySpec: emptyCapabilitySpec(changedValues.capability), defaultOptions: {} });
                         }}
                     >
                         <Form.Item name="enabled" hidden>
@@ -669,29 +654,15 @@ function RouteFields({
 function logicalModelStatusTag(item: AdminLogicalModel) {
     if (!item.enabled) return <AdminStatusBadge label="已停用" tone="neutral" />;
     if (item.configurationError) return <AdminStatusBadge label="能力配置需调整" tone="warning" title={item.configurationError} />;
-    if (item.availabilityError) return <AdminStatusBadge label="线路价格需调整" tone="warning" title={item.availabilityError} />;
+    if (item.availabilityError) return <AdminStatusBadge label="线路规格需调整" tone="warning" title={item.availabilityError} />;
     if (!item.available) return <AdminStatusBadge label="暂无可用线路" tone="warning" />;
     return <AdminStatusBadge label="可用" tone="success" />;
 }
 
-function PricingFields() {
-    const form = Form.useFormInstance<LogicalModelFormValues>();
-    useEffect(() => {
-        form.setFieldsValue({
-            pricePolicy: "channel",
-            billingMode: "fixed_request",
-            unitPriceMicrocredits: 0,
-            inputPriceMicrocredits: 0,
-            outputPriceMicrocredits: 0,
-            cachedPriceMicrocredits: 0,
-        });
-    }, [form]);
-    return <div className="rounded-md bg-muted/20 px-3 py-3 text-xs leading-5 text-foreground/55">价格、上游 SKU 和可用规格只在“系统渠道 / 模型管理”配置。前台模型只负责展示、能力范围和故障切换，不再保存第二份价格。</div>;
-}
 
 function logicalPriceLabel(item: AdminLogicalModel) {
     const priceTiers = item.priceTiers || [];
-    if (!priceTiers.length) return <span className="text-xs text-foreground/45">待配置系统规格价格</span>;
+    if (!priceTiers.length) return <span className="text-xs text-foreground/45">待配置系统规格</span>;
     return <span className="text-xs">{priceTiers.length} 个系统规格档</span>;
 }
 
@@ -704,12 +675,6 @@ function logicalModelToForm(item: AdminLogicalModel): LogicalModelFormValues {
         capability: item.capability,
         enabled: item.enabled,
         sortOrder: item.sortOrder,
-        pricePolicy: "channel",
-        billingMode: "fixed_request",
-        unitPriceMicrocredits: 0,
-        inputPriceMicrocredits: 0,
-        outputPriceMicrocredits: 0,
-        cachedPriceMicrocredits: 0,
         capabilitySpec: item.capabilitySpec,
         defaultOptions: item.defaultOptions,
         routes: (item.routes || []).map((route) => ({ channelModelId: route.channelModelId, enabled: route.enabled, priority: route.priority, weight: route.weight })),
@@ -726,12 +691,6 @@ function logicalModelPayload(values: LogicalModelFormValues, sourceSpecs: Capabi
         capability: values.capability,
         enabled: values.enabled,
         sortOrder: values.sortOrder || 0,
-        pricePolicy: "channel",
-        billingMode: "fixed_request",
-        unitPriceMicrocredits: 0,
-        inputPriceMicrocredits: 0,
-        outputPriceMicrocredits: 0,
-        cachedPriceMicrocredits: 0,
         capabilitySpec,
         defaultOptions: sanitizeDefaults(capabilitySpec, values.defaultOptions),
         routes: values.routes.map((route) => ({ ...route, priority: route.priority || 0, weight: route.weight || 0 })),

@@ -22,9 +22,6 @@ type (
 	PasswordResetRequest       = auth.PasswordResetRequest
 	EmailSettingRequest        = auth.EmailSettingRequest
 	PublicEmailSetting         = auth.PublicEmailSetting
-	LinuxDOSettingRequest      = auth.LinuxDOSettingRequest
-	PublicLinuxDOSetting       = auth.PublicLinuxDOSetting
-	LinuxDOCallbackResult      = auth.LinuxDOCallbackResult
 	LibTVSettingRequest        = auth.LibTVSettingRequest
 	PublicLibTVSetting         = auth.PublicLibTVSetting
 	LibTVImportRequest         = auth.LibTVImportRequest
@@ -86,7 +83,7 @@ func (h authHost) EnsureSignupBonus(userID string) error {
 	if h.svc == nil {
 		return nil
 	}
-	return h.svc.ensureSignupBonus(userID)
+	return nil
 }
 
 func (h authHost) RecordActivity(userID string, event string, count int) {
@@ -182,26 +179,6 @@ func (s *Service) SendRegistrationEmailCode(rawEmail string) error {
 
 func (s *Service) VerifyRegistrationEmailCode(email string, rawCode string) (*model.EmailVerificationCode, error) {
 	return s.authDomain().VerifyRegistrationEmailCode(email, rawCode)
-}
-
-func (s *Service) AdminLinuxDOSetting(actor *model.User) (*PublicLinuxDOSetting, error) {
-	return s.authDomain().AdminLinuxDOSetting(actor)
-}
-
-func (s *Service) UpdateLinuxDOSetting(actor *model.User, req LinuxDOSettingRequest) (*PublicLinuxDOSetting, error) {
-	return s.authDomain().UpdateLinuxDOSetting(actor, req)
-}
-
-func (s *Service) LinuxDOEnabled() bool {
-	return s.authDomain().LinuxDOEnabled()
-}
-
-func (s *Service) BeginLinuxDOLogin(nextPath string) (string, error) {
-	return s.authDomain().BeginLinuxDOLogin(nextPath)
-}
-
-func (s *Service) CompleteLinuxDOLogin(stateValue string, code string) (*LinuxDOCallbackResult, error) {
-	return s.authDomain().CompleteLinuxDOLogin(stateValue, code)
 }
 
 func (s *Service) AdminLibTVSetting(actor *model.User) (*PublicLibTVSetting, error) {

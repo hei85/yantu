@@ -8,7 +8,7 @@ import { getAdminFeatureAvailability, updateAdminFeatureAvailability } from "@/s
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
 import { AdminStatusBadge } from "./admin-ui";
 
-type FeatureKey = "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers";
+type FeatureKey = "shortDramaEnabled" | "taskCenterEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers";
 type FeatureRow = {
     key: FeatureKey;
     title: string;
@@ -17,7 +17,7 @@ type FeatureRow = {
     dependsOn?: FeatureKey;
 };
 
-const editableFeatureKeys: FeatureKey[] = ["shortDramaEnabled", "taskCenterEnabled", "creditsEnabled", "customChannelsEnabled", "frontendModelsEnabled", "pluginCenterEnabled", "systemPluginsVisibleToUsers"];
+const editableFeatureKeys: FeatureKey[] = ["shortDramaEnabled", "taskCenterEnabled", "customChannelsEnabled", "frontendModelsEnabled", "pluginCenterEnabled", "systemPluginsVisibleToUsers"];
 
 const workspaceFeatureRows: FeatureRow[] = [
     {
@@ -56,7 +56,7 @@ const pluginFeatureRows: FeatureRow[] = [
     },
 ];
 
-// 本地单用户工作站已经下线积分计费与前台模型目录，功能开放只保留创作相关开关。
+// 本地单用户工作站只保留创作相关开关。
 const allFeatureRows = [...workspaceFeatureRows, ...pluginFeatureRows];
 const featureByKey = new Map(allFeatureRows.map((item) => [item.key, item]));
 
@@ -292,7 +292,6 @@ function toEditablePayload(features: FeatureAvailability) {
     return {
         shortDramaEnabled: features.shortDramaEnabled,
         taskCenterEnabled: features.taskCenterEnabled,
-        creditsEnabled: features.creditsEnabled,
         customChannelsEnabled: features.customChannelsEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
@@ -314,7 +313,6 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         welcomeEnabled: record.welcomeEnabled as boolean,
         shortDramaEnabled: record.shortDramaEnabled as boolean,
         taskCenterEnabled: record.taskCenterEnabled as boolean,
-        creditsEnabled: record.creditsEnabled as boolean,
         customChannelsEnabled: record.customChannelsEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,

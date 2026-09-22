@@ -133,7 +133,7 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
             await reload();
             await onChanged();
             resetFetchPreview();
-            if (result.added > 0) message.success(`已导入 ${result.added} 个模型，新增模型仍需配置价格后启用`);
+            if (result.added > 0) message.success(`已导入 ${result.added} 个模型，新增模型默认停用，确认配置后再启用`);
             else message.info("所选模型均已存在，没有新增模型");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "导入模型失败");
@@ -193,44 +193,6 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                     protocol,
                     enabled: batchStatus === "keep" ? item.enabled : batchStatus === "enable",
                     capabilityConfig,
-                    billingMode: item.billingMode,
-                    unitPriceMicrocredits: item.unitPriceMicrocredits,
-                    inputTokenPriceMicrocredits: item.inputTokenPriceMicrocredits,
-                    outputTokenPriceMicrocredits: item.outputTokenPriceMicrocredits,
-                    cachedTokenPriceMicrocredits: item.cachedTokenPriceMicrocredits,
-                    priceConfigured: item.priceConfigured,
-                    // 服务端把“存在价格档”当作“这个模型已经配置完成”的标记（本地工作站不涉及计费）；
-                    // 没有这个占位档，用户配好了能力和协议也依然看不到模型。
-                    priceTiers: (item.priceTiers || []).length > 0
-                        ? (item.priceTiers || []).map((tier) => ({
-                            selector: tier.selector,
-                            resolution: tier.resolution,
-                            videoSeconds: tier.videoSeconds,
-                            providerModelKey: tier.providerModelKey,
-                            billingMode: tier.billingMode,
-                            unitPriceMicrocredits: tier.unitPriceMicrocredits,
-                            inputTokenPriceMicrocredits: tier.inputTokenPriceMicrocredits,
-                            outputTokenPriceMicrocredits: tier.outputTokenPriceMicrocredits,
-                            cachedTokenPriceMicrocredits: tier.cachedTokenPriceMicrocredits,
-                            priceConfigured: tier.priceConfigured,
-                            enabled: tier.enabled,
-                            costPricing: tier.costPricing,
-                        }))
-                        : [
-                            {
-                                selector: {},
-                                resolution: "*",
-                                videoSeconds: 0,
-                                providerModelKey: upstreamModel,
-                                billingMode: "fixed_request" as const,
-                                unitPriceMicrocredits: 0,
-                                inputTokenPriceMicrocredits: 0,
-                                outputTokenPriceMicrocredits: 0,
-                                cachedTokenPriceMicrocredits: 0,
-                                priceConfigured: true,
-                                enabled: true,
-                            },
-                        ],
                 });
                 updated += 1;
             }
@@ -312,7 +274,6 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                     <AdminStatusBadge label="待配置" tone="warning" />
                 ),
         },
-        { title: "版本", dataIndex: "priceVersion", width: 75, render: (value) => `v${value}` },
         { title: "状态", dataIndex: "enabled", width: 85, render: (enabled) => <AdminStatusBadge label={enabled ? "启用" : "停用"} tone={enabled ? "success" : "neutral"} /> },
         {
             title: "操作",
@@ -573,7 +534,7 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                 <div className="space-y-4">
                     <p className="m-0 text-sm text-foreground/65">
                         已选择 <strong>{selectedModelIds.length}</strong> 个模型。只改你在这里选中的项，其余字段（描述、能力参数）保持原样；
-                        启用时会自动补齐发布所需的占位配置（不产生任何费用），这样创作端就能选到它。
+                        启用时会自动补齐发布所需的占位配置，这样创作端就能选到它。
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-1.5 text-sm">

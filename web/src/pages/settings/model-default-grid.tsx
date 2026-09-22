@@ -28,7 +28,6 @@ const groups: Array<{
 ];
 
 export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onChange: (key: DefaultModelKey, model: string) => void }) {
-    const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     return (
         <div className="space-y-1">
             {groups.map((group) => {
@@ -71,7 +70,6 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
                                                     <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[var(--fs-tiny)] text-foreground/45">
                                                         <span className="max-w-full truncate">{channel.name || "未命名渠道"}</span>
                                                         <span className="model-default-option-scope">{channel.scope === "system" ? "系统" : "自定义"}</span>
-                                                        {creditsEnabled && cost ? <span className="model-default-price">{formatPrice(cost.billingMode === "token" ? (cost.outputTokenPriceMicrocredits || 0) : cost.unitPriceMicrocredits)} /{cost.billingMode === "token" ? "百万 Token" : cost.billingMode === "per_second" ? "秒" : "次"}</span> : null}
                                                     </span>
                                                 </span>
                                                 <span className={cn("model-default-option-check grid size-5 shrink-0 place-items-center rounded-full", selected ? "is-selected" : "text-transparent")}>
@@ -96,6 +94,3 @@ function capabilityLabel(capability: ModelCapability) {
     return { image: "图片", video: "视频", text: "文本", audio: "音频" }[capability];
 }
 
-function formatPrice(microcredits: number) {
-    return (microcredits / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 6 });
-}

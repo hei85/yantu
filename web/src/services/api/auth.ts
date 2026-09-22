@@ -1,5 +1,4 @@
 import type { ModelChannel } from "@/stores/use-config-store";
-import type { BillingOrder, CreditLedgerEntry } from "@/services/api/wallet";
 import type { GenerationTask, TaskStatus } from "@/services/api/task-center";
 import type { CanvasDrawingEngineSetting } from "@/lib/canvas/canvas-drawing-engine";
 import type { FeatureAvailability } from "@/stores/use-user-store";
@@ -31,10 +30,7 @@ export type LocalUser = {
     updatedAt: string;
 };
 
-export type AdminUser = LocalUser & {
-    availableMicrocredits: number;
-    reservedMicrocredits: number;
-};
+export type AdminUser = LocalUser;
 
 export type AuthSessionPayload = {
     user: LocalUser | null;
@@ -59,10 +55,6 @@ export type ApiCallLog = {
     channelName: string;
     taskId?: string;
     taskStatus?: TaskStatus;
-    billingOrderId?: string;
-    billingStatus?: BillingOrder["status"];
-    billingAmountMicrocredits: number;
-    billingAvailable: boolean;
     source: string;
     capability: "text" | "image" | "video" | "audio" | "";
     operation?: string;
@@ -86,11 +78,6 @@ export type ApiCallLog = {
     mediaPreviewKind?: "image" | "video";
     videoSeconds: number;
     providerRequestId?: string;
-    estimatedCostMicros: number;
-    creditCostConfigured?: boolean;
-    creditCostMicrocredits?: number;
-    costAvailable: boolean;
-    currency?: string;
     errorCode?: string;
     error?: string;
     concurrencyLimit: number;
@@ -106,7 +93,6 @@ export type AdminProviderTaskQueryResult = {
     task: GenerationTask;
     providerStatus: string;
     recovered: boolean;
-    billingSettled: boolean;
 };
 
 export type AdminAuditEvent = {
@@ -122,8 +108,7 @@ export type AdminAuditEvent = {
 
 export type AdminUserDetail = {
     user: LocalUser;
-    account: { userId: string; availableMicrocredits: number; reservedMicrocredits: number; version: number };
-    counts: { ledgerEntries: number; tasks: number; apiCalls: number; auditEvents: number };
+    counts: { tasks: number; apiCalls: number; auditEvents: number };
     storageUsage: {
         assetCount: number;
         assetBytes: number;
@@ -176,9 +161,6 @@ export type AdminAnalytics = {
         successRate: number;
         p95DurationMs: number;
         currentQueuedTasks: number;
-        estimatedCostMicros: number;
-        costAvailable: boolean;
-        currency?: string;
     };
     trend: Array<{ day: string; tasks: number; requests: number; activeUsers: number; requestSuccessRate: number }>;
     models: Array<{
@@ -197,29 +179,11 @@ export type AdminAnalytics = {
         usageAvailable: boolean;
         mediaCount: number;
         videoSeconds: number;
-        estimatedCostMicros: number;
-        costAvailable: boolean;
-        currency?: string;
     }>;
     users: Array<{ userId: string; name: string; activeDays: number; tasks: number; agentMessages: number; canvasDays: number; assets: number; resources: number; commonModel?: string }>;
     failures: Array<{ type: string; model: string; count: number; lastError?: string; lastSeenAt: string }>;
 };
 
-export type ModelPricing = {
-    id: string;
-    channelId?: string;
-    model: string;
-    capability: "text" | "image" | "video" | "audio";
-    currency: string;
-    inputPerMillionMicros: number;
-    outputPerMillionMicros: number;
-    cachedPerMillionMicros: number;
-    perRequestMicros: number;
-    perMediaMicros: number;
-    perVideoSecondMicros: number;
-    createdAt: string;
-    updatedAt: string;
-};
 
 export type PromptTemplate = {
     id: string;
@@ -398,7 +362,7 @@ export function getAdminFeatureAvailability() {
     return http.get<{ features: FeatureAvailability }>("/admin/settings/features");
 }
 
-export function updateAdminFeatureAvailability(features: Partial<Pick<FeatureAvailability, "welcomeEnabled" | "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers">>) {
+export function updateAdminFeatureAvailability(features: Partial<Pick<FeatureAvailability, "welcomeEnabled" | "shortDramaEnabled" | "taskCenterEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers">>) {
     return http.patch<{ features: FeatureAvailability }>("/admin/settings/features", features);
 }
 
@@ -447,10 +411,6 @@ export function getAdminReferences() {
 
 export function getAdminUserDetail(id: string) {
     return http.get<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}/detail`);
-}
-
-export function listAdminUserLedger(id: string, params: { page?: number; pageSize?: number; type?: string } = {}) {
-    return http.get<{ entries: CreditLedgerEntry[]; total: number; page: number; pageSize: number }>(`/admin/users/${encodeURIComponent(id)}/ledger`, { params });
 }
 
 export function listAdminUserTasks(id: string, params: { page?: number; pageSize?: number } = {}) {
@@ -593,18 +553,3 @@ export async function exportAdminAnalytics(params: AnalyticsFilters) {
     return response.data;
 }
 
-export function listAdminModelPricings() {
-    return http.get<{ pricings: ModelPricing[] }>("/admin/model-pricings");
-}
-
-export function createAdminModelPricing(input: Omit<ModelPricing, "id" | "createdAt" | "updatedAt">) {
-    return http.post<{ pricing: ModelPricing }>("/admin/model-pricings", input);
-}
-
-export function updateAdminModelPricing(id: string, input: Omit<ModelPricing, "id" | "createdAt" | "updatedAt">) {
-    return http.patch<{ pricing: ModelPricing }>(`/admin/model-pricings/${encodeURIComponent(id)}`, input);
-}
-
-export function deleteAdminModelPricing(id: string) {
-    return http.delete<{ ok: boolean }>(`/admin/model-pricings/${encodeURIComponent(id)}`);
-}

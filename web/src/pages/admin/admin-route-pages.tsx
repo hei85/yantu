@@ -9,8 +9,6 @@ import { readAnnouncementPendingReview } from "./components/admin-announcement-s
 const AnalyticsPanel = lazy(() => import("./components/analytics-panel"));
 const AdminAnnouncementsPanel = lazy(() => import("./components/admin-announcements-panel"));
 const AdminBannerAnnouncementsPanel = lazy(() => import("./components/admin-banner-announcements-panel"));
-const CreditOperationsPanel = lazy(() => import("./components/credit-operations-panel"));
-const EmailSettingsPanel = lazy(() => import("./components/email-settings-panel"));
 const FeatureAvailabilityPanel = lazy(() => import("./components/feature-availability-panel"));
 const StorageResourcesPanel = lazy(() => import("./components/storage-resources-panel"));
 const AgentLessonsPanel = lazy(() => import("./components/agent-lessons-panel"));
@@ -74,38 +72,9 @@ export function BannerAnnouncementsPage() {
     );
 }
 
-export function CreditOperationsPage() {
-    const { references } = useAdminContext();
-    const [activeOperation, setActiveOperation] = useState<"policy" | "adjustment" | null>(null);
-    return (
-        <AdminPageFrame
-            title="积分运营"
-            description="异常计费核对、积分策略与人工调账"
-            actions={
-                <>
-                    <Button icon={<Settings2 className="size-4" />} onClick={() => setActiveOperation("policy")}>
-                        积分策略
-                    </Button>
-                    <Button type="primary" icon={<UserRoundCog className="size-4" />} onClick={() => setActiveOperation("adjustment")}>
-                        人工调账
-                    </Button>
-                </>
-            }
-        >
-            <CreditOperationsPanel users={references.users} activeOperation={activeOperation} onOperationChange={setActiveOperation} />
-        </AdminPageFrame>
-    );
-}
 
 
 
-export function EmailSettingsPage() {
-    return (
-        <AdminPageFrame title="邮件服务" description="先决定是否发送注册验证码，再配置 SMTP" scroll>
-            <EmailSettingsPanel />
-        </AdminPageFrame>
-    );
-}
 
 export function FeatureAvailabilityPage() {
     return (

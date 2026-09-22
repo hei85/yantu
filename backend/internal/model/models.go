@@ -13,9 +13,6 @@ type ChannelInterfaceType string
 type ApiCallStatus string
 type ResourceStatus string
 type ResourceDeletionStatus string
-type BillingStatus string
-type CreditLedgerType string
-type RedeemCodeStatus string
 type AnnouncementStatus string
 type AnnouncementLevel string
 type ProjectStatus string
@@ -58,31 +55,31 @@ const (
 	ChannelScopeSystem ChannelScope = "system"
 	ChannelScopeUser   ChannelScope = "user"
 
-	ChannelInterfaceChatCompletion        ChannelInterfaceType = "chat-completion"
-	ChannelInterfaceOpenAIResponse        ChannelInterfaceType = "openai-response"
-	ChannelInterfaceClaudeAPI             ChannelInterfaceType = "claude-api"
-	ChannelInterfaceOpenAIImage           ChannelInterfaceType = "openai-image"
-	ChannelInterfaceGrokImage             ChannelInterfaceType = "grok-image"
-	ChannelInterfaceVolcengineArkImage           ChannelInterfaceType = "volcengine-ark-image"
-	ChannelInterfaceVolcengineArkAgentPlanImage  ChannelInterfaceType = "volcengine-ark-agent-plan-image"
-	ChannelInterfaceVolcengineJiMengImage        ChannelInterfaceType = "volcengine-jimeng-image"
-	ChannelInterfaceGeminiImage                  ChannelInterfaceType = "gemini-image"
-	ChannelInterfaceOpenAIAudio                  ChannelInterfaceType = "openai-audio"
-	ChannelInterfaceAsyncAudio                   ChannelInterfaceType = "async-audio"
-	ChannelInterfaceNewAPIVideo                  ChannelInterfaceType = "newapi"
-	ChannelInterfaceNewAPIChannel1               ChannelInterfaceType = "newapi-channel-1"
-	ChannelInterfaceNewAPIChannel2               ChannelInterfaceType = "newapi-channel-2"
-	ChannelInterfaceXAIVideo                     ChannelInterfaceType = "xai-video"
-	ChannelInterfaceVolcengineArkVideo           ChannelInterfaceType = "volcengine-ark-video"
-	ChannelInterfaceVolcengineArkAgentPlanVideo  ChannelInterfaceType = "volcengine-ark-agent-plan-video"
-	ChannelInterfaceVolcengineJiMengVideo ChannelInterfaceType = "volcengine-jimeng-video"
-	ChannelInterfaceGeminiVeo             ChannelInterfaceType = "gemini-veo"
-	ChannelInterfaceNovitaVideo           ChannelInterfaceType = "novita-video"
-	ChannelInterfaceMiniMaxVideo          ChannelInterfaceType = "minimax-video"
-	ChannelInterfaceAgnesVideo            ChannelInterfaceType = "agnes-video"
-	ChannelInterfaceRunningHubImage       ChannelInterfaceType = "runninghub-workflow-image"
-	ChannelInterfaceRunningHubVideo       ChannelInterfaceType = "runninghub-workflow-video"
-	ChannelInterfaceRunningHubAudio       ChannelInterfaceType = "runninghub-workflow-audio"
+	ChannelInterfaceChatCompletion              ChannelInterfaceType = "chat-completion"
+	ChannelInterfaceOpenAIResponse              ChannelInterfaceType = "openai-response"
+	ChannelInterfaceClaudeAPI                   ChannelInterfaceType = "claude-api"
+	ChannelInterfaceOpenAIImage                 ChannelInterfaceType = "openai-image"
+	ChannelInterfaceGrokImage                   ChannelInterfaceType = "grok-image"
+	ChannelInterfaceVolcengineArkImage          ChannelInterfaceType = "volcengine-ark-image"
+	ChannelInterfaceVolcengineArkAgentPlanImage ChannelInterfaceType = "volcengine-ark-agent-plan-image"
+	ChannelInterfaceVolcengineJiMengImage       ChannelInterfaceType = "volcengine-jimeng-image"
+	ChannelInterfaceGeminiImage                 ChannelInterfaceType = "gemini-image"
+	ChannelInterfaceOpenAIAudio                 ChannelInterfaceType = "openai-audio"
+	ChannelInterfaceAsyncAudio                  ChannelInterfaceType = "async-audio"
+	ChannelInterfaceNewAPIVideo                 ChannelInterfaceType = "newapi"
+	ChannelInterfaceNewAPIChannel1              ChannelInterfaceType = "newapi-channel-1"
+	ChannelInterfaceNewAPIChannel2              ChannelInterfaceType = "newapi-channel-2"
+	ChannelInterfaceXAIVideo                    ChannelInterfaceType = "xai-video"
+	ChannelInterfaceVolcengineArkVideo          ChannelInterfaceType = "volcengine-ark-video"
+	ChannelInterfaceVolcengineArkAgentPlanVideo ChannelInterfaceType = "volcengine-ark-agent-plan-video"
+	ChannelInterfaceVolcengineJiMengVideo       ChannelInterfaceType = "volcengine-jimeng-video"
+	ChannelInterfaceGeminiVeo                   ChannelInterfaceType = "gemini-veo"
+	ChannelInterfaceNovitaVideo                 ChannelInterfaceType = "novita-video"
+	ChannelInterfaceMiniMaxVideo                ChannelInterfaceType = "minimax-video"
+	ChannelInterfaceAgnesVideo                  ChannelInterfaceType = "agnes-video"
+	ChannelInterfaceRunningHubImage             ChannelInterfaceType = "runninghub-workflow-image"
+	ChannelInterfaceRunningHubVideo             ChannelInterfaceType = "runninghub-workflow-video"
+	ChannelInterfaceRunningHubAudio             ChannelInterfaceType = "runninghub-workflow-audio"
 
 	ApiCallStatusSucceeded ApiCallStatus = "succeeded"
 	ApiCallStatusFailed    ApiCallStatus = "failed"
@@ -101,29 +98,9 @@ const (
 	ResourceDeletionStatusPending    ResourceDeletionStatus = "pending"
 	ResourceDeletionStatusProcessing ResourceDeletionStatus = "processing"
 
-	BillingStatusReserved  BillingStatus = "reserved"
-	BillingStatusRunning   BillingStatus = "running"
-	BillingStatusSettled   BillingStatus = "settled"
-	BillingStatusRefunded  BillingStatus = "refunded"
-	BillingStatusUncertain BillingStatus = "uncertain"
-
 	ProviderCancelStatusRequested ProviderCancelStatus = "requested"
 	ProviderCancelStatusConfirmed ProviderCancelStatus = "confirmed"
 	ProviderCancelStatusUncertain ProviderCancelStatus = "uncertain"
-
-	CreditLedgerRedeem       CreditLedgerType = "redeem"
-	CreditLedgerAdminGrant   CreditLedgerType = "admin_grant"
-	CreditLedgerReserve      CreditLedgerType = "reserve"
-	CreditLedgerConsume      CreditLedgerType = "consume"
-	CreditLedgerRefund       CreditLedgerType = "refund"
-	CreditLedgerAdminAdjust  CreditLedgerType = "admin_adjustment"
-	CreditLedgerSignupBonus  CreditLedgerType = "signup_bonus"
-	CreditLedgerCheckinBonus CreditLedgerType = "checkin_bonus"
-	CreditLedgerPaymentTopup CreditLedgerType = "payment_topup"
-
-	RedeemCodeUnused   RedeemCodeStatus = "unused"
-	RedeemCodeRedeemed RedeemCodeStatus = "redeemed"
-	RedeemCodeDisabled RedeemCodeStatus = "disabled"
 
 	AnnouncementStatusActive AnnouncementStatus = "active"
 	AnnouncementStatusClosed AnnouncementStatus = "closed"

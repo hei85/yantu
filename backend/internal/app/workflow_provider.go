@@ -356,7 +356,7 @@ func (s *Service) updateWorkflowProviderState(ctx context.Context, requestID str
 }
 
 // recordWorkflowProviderRequest 只在供应商生成请求首次建立时调用，同时保存任务和账单关联。
-// 轮询状态仍走 updateWorkflowProviderState，避免每次轮询都刷新账单 updated_at，掩盖长期未结算订单。
+// 轮询状态走 updateWorkflowProviderState，避免每次轮询都刷新任务 updated_at。
 func (s *Service) recordWorkflowProviderRequest(ctx context.Context, requestID string, stage string, nextPollAt *time.Time) error {
 	metadata, ok := ctx.Value(providerAnalyticsKey{}).(providerAnalyticsContext)
 	if !ok || metadata.TaskID == "" {
@@ -365,10 +365,7 @@ func (s *Service) recordWorkflowProviderRequest(ctx context.Context, requestID s
 	if err := s.repo.UpdateTaskProviderState(metadata.TaskID, requestID, stage, nextPollAt); err != nil {
 		return err
 	}
-	if metadata.BillingOrderID == "" || strings.TrimSpace(requestID) == "" {
-		return nil
-	}
-	return s.repo.UpdateBillingProviderRequestID(metadata.BillingOrderID, strings.TrimSpace(requestID))
+	return nil
 }
 
 func (s *Service) runRunningHubWorkflow(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {

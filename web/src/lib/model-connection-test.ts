@@ -19,8 +19,6 @@ export async function testChannelModelConnection(channel: ModelChannel, model: s
                 displayName: modelCost?.displayName,
                 capability,
                 protocol: testProtocol,
-                billingMode: modelCost?.billingMode || "fixed_request",
-                unitPriceMicrocredits: modelCost?.unitPriceMicrocredits || 0,
                 capabilityConfig: modelCost?.capabilityConfig,
             },
             ...(channel.modelCosts || []).filter((item) => item.model !== model),

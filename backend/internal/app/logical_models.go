@@ -49,25 +49,16 @@ type LogicalRouteRequest struct {
 }
 
 type PublicLogicalModel struct {
-	ID                      string                        `json:"id"`
-	Code                    string                        `json:"code"`
-	Name                    string                        `json:"name"`
-	Icon                    string                        `json:"icon"`
-	Description             string                        `json:"description"`
-	Capability              string                        `json:"capability"`
-	SortOrder               int                           `json:"sortOrder"`
-	PricePolicy             string                        `json:"pricePolicy"`
-	PricingMode             string                        `json:"pricingMode"`
-	DisplayPrice            *int64                        `json:"displayPrice,omitempty"`
-	PriceLabel              string                        `json:"priceLabel"`
-	BillingMode             string                        `json:"billingMode"`
-	UnitPriceMicrocredits   int64                         `json:"unitPriceMicrocredits"`
-	InputPriceMicrocredits  int64                         `json:"inputPriceMicrocredits"`
-	OutputPriceMicrocredits int64                         `json:"outputPriceMicrocredits"`
-	CachedPriceMicrocredits int64                         `json:"cachedPriceMicrocredits"`
-	PriceTiers              []PublicLogicalModelPriceTier `json:"priceTiers"`
-	LegacyModelIDs          []string                      `json:"legacyModelIds"`
-	CapabilitySpec          CapabilitySpec                `json:"capabilitySpec"`
+	ID             string                        `json:"id"`
+	Code           string                        `json:"code"`
+	Name           string                        `json:"name"`
+	Icon           string                        `json:"icon"`
+	Description    string                        `json:"description"`
+	Capability     string                        `json:"capability"`
+	SortOrder      int                           `json:"sortOrder"`
+	PriceTiers     []PublicLogicalModelPriceTier `json:"priceTiers"`
+	LegacyModelIDs []string                      `json:"legacyModelIds"`
+	CapabilitySpec CapabilitySpec                `json:"capabilitySpec"`
 	// CapabilityProfiles 是创作端可见的匿名能力组合，不暴露其背后的供应线路关系。
 	CapabilityProfiles []CapabilitySpec `json:"capabilityProfiles"`
 	DefaultOptions     map[string]any   `json:"defaultOptions"`
@@ -77,14 +68,9 @@ type PublicLogicalModel struct {
 // PublicLogicalModelPriceTier 是创作端用于约束规格选择和展示当前报价的安全投影，
 // 不暴露供应渠道、上游模型 ID 或内部路由信息。
 type PublicLogicalModelPriceTier struct {
-	Selector                     map[string]string `json:"selector"`
-	Resolution                   string            `json:"resolution"`
-	VideoSeconds                 int               `json:"videoSeconds"`
-	BillingMode                  string            `json:"billingMode"`
-	UnitPriceMicrocredits        int64             `json:"unitPriceMicrocredits"`
-	InputTokenPriceMicrocredits  int64             `json:"inputTokenPriceMicrocredits"`
-	OutputTokenPriceMicrocredits int64             `json:"outputTokenPriceMicrocredits"`
-	CachedTokenPriceMicrocredits int64             `json:"cachedTokenPriceMicrocredits"`
+	Selector     map[string]string `json:"selector"`
+	Resolution   string            `json:"resolution"`
+	VideoSeconds int               `json:"videoSeconds"`
 }
 
 type AdminLogicalRoute struct {
@@ -180,27 +166,17 @@ func publicLogicalModel(cached cachedLogicalModel, available bool) PublicLogical
 	}
 
 	priceTiers := publicLogicalModelPriceTiers(cached)
-	pricingMode, displayPrice, priceLabel := computeModelPriceDisplay(item, priceTiers)
 
 	return PublicLogicalModel{
 		ID: item.ID, Code: item.Code, Name: item.Name, Icon: item.Icon,
 		Description: item.Description, Capability: item.Capability, SortOrder: item.SortOrder,
-		PricePolicy: item.PricePolicy, PricingMode: pricingMode, DisplayPrice: displayPrice,
-		PriceLabel: priceLabel, BillingMode: item.BillingMode,
-		UnitPriceMicrocredits:   item.UnitPriceMicrocredits,
-		InputPriceMicrocredits:  item.InputPriceMicrocredits,
-		OutputPriceMicrocredits: item.OutputPriceMicrocredits,
-		CachedPriceMicrocredits: item.CachedPriceMicrocredits,
-		PriceTiers:              priceTiers, LegacyModelIDs: decodeLegacyModelIDs(item.LegacyModelIDsJSON),
+		PriceTiers: priceTiers, LegacyModelIDs: decodeLegacyModelIDs(item.LegacyModelIDsJSON),
 		CapabilitySpec: productSpec, CapabilityProfiles: profiles,
 		DefaultOptions: cached.Defaults, Available: available,
 	}
 }
 
 func publicLogicalModelPriceTiers(cached cachedLogicalModel) []PublicLogicalModelPriceTier {
-	if cached.Model.PricePolicy != "channel" {
-		return []PublicLogicalModelPriceTier{}
-	}
 	result := make([]PublicLogicalModelPriceTier, 0)
 	seen := make(map[string]bool)
 	for _, route := range cached.Routes {
@@ -208,7 +184,7 @@ func publicLogicalModelPriceTiers(cached cachedLogicalModel) []PublicLogicalMode
 			continue
 		}
 		for _, tier := range route.ChannelModel.PriceTiers {
-			if !tier.Enabled || !tier.PriceConfigured {
+			if !tier.Enabled {
 				continue
 			}
 			selector := skuSelectorForTier(tier)
@@ -216,12 +192,12 @@ func publicLogicalModelPriceTiers(cached cachedLogicalModel) []PublicLogicalMode
 			if selectorErr != nil {
 				continue
 			}
-			key := fmt.Sprintf("%s:%s:%d:%d:%d:%d", selectorKey, tier.BillingMode, tier.UnitPriceMicrocredits, tier.InputTokenPriceMicrocredits, tier.OutputTokenPriceMicrocredits, tier.CachedTokenPriceMicrocredits)
+			key := selectorKey
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			result = append(result, PublicLogicalModelPriceTier{Selector: selector, Resolution: normalizeChannelModelTierResolution(tier.Resolution), VideoSeconds: tier.VideoSeconds, BillingMode: tier.BillingMode, UnitPriceMicrocredits: tier.UnitPriceMicrocredits, InputTokenPriceMicrocredits: tier.InputTokenPriceMicrocredits, OutputTokenPriceMicrocredits: tier.OutputTokenPriceMicrocredits, CachedTokenPriceMicrocredits: tier.CachedTokenPriceMicrocredits})
+			result = append(result, PublicLogicalModelPriceTier{Selector: selector, Resolution: normalizeChannelModelTierResolution(tier.Resolution), VideoSeconds: tier.VideoSeconds})
 		}
 	}
 	return result
@@ -1156,58 +1132,4 @@ func boolValues(supportsTrue bool) OptionConstraint {
 
 func numericRange(minimum float64, maximum float64, step float64) OptionConstraint {
 	return OptionConstraint{Min: &minimum, Max: &maximum, Step: &step}
-}
-
-// computeModelPriceDisplay 计算模型的价格展示信息
-// 返回：pricingMode, displayPrice, priceLabel
-func computeModelPriceDisplay(model model.LogicalModel, priceTiers []PublicLogicalModelPriceTier) (string, *int64, string) {
-	if model.PricePolicy == "channel" {
-		// 跟随渠道价格
-		if len(priceTiers) == 0 {
-			return "provider", nil, "未配置"
-		}
-		// 检查是否所有价格档都相同
-		if len(priceTiers) == 1 {
-			tier := priceTiers[0]
-			price := getTierDisplayPrice(tier)
-			if price > 0 {
-				return "provider", &price, ""
-			}
-		}
-		// 多个价格档或价格为0，显示"按渠道规格计费"
-		return "provider", nil, "按渠道规格计费"
-	}
-
-	// 统一定价模式
-	if model.BillingMode == "fixed_request" && model.UnitPriceMicrocredits > 0 {
-		price := model.UnitPriceMicrocredits
-		return "unified", &price, ""
-	}
-	if model.BillingMode == "per_second" && model.UnitPriceMicrocredits > 0 {
-		price := model.UnitPriceMicrocredits
-		return "unified", &price, "按秒"
-	}
-	if model.BillingMode == "token" {
-		// Token 计费显示输入/输出价格
-		if model.InputPriceMicrocredits > 0 || model.OutputPriceMicrocredits > 0 {
-			return "unified", nil, "按 Token"
-		}
-	}
-
-	return "unified", nil, "未配置"
-}
-
-// getTierDisplayPrice 获取价格档的展示价格
-func getTierDisplayPrice(tier PublicLogicalModelPriceTier) int64 {
-	if tier.BillingMode == "fixed_request" || tier.BillingMode == "per_second" {
-		return tier.UnitPriceMicrocredits
-	}
-	// Token 计费返回输出价格（如果有）
-	if tier.OutputTokenPriceMicrocredits > 0 {
-		return tier.OutputTokenPriceMicrocredits
-	}
-	if tier.InputTokenPriceMicrocredits > 0 {
-		return tier.InputTokenPriceMicrocredits
-	}
-	return 0
 }

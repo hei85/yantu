@@ -94,7 +94,7 @@ export function AdminUserEditDrawer({
                 <Form.Item name="role" label="角色" extra={editingSelf ? "不能在此修改当前管理员自己的角色。" : "角色变更会立即影响后台访问权限。"}>
                     <Select disabled={editingSelf} options={[{ label: "管理员", value: "admin" }, { label: "普通用户", value: "user" }]} />
                 </Form.Item>
-                <Form.Item name="status" label="账号状态" extra={editingSelf ? "不能停用当前登录账号。" : "停用后会清除登录态，但保留身份、任务和积分流水。"}>
+                <Form.Item name="status" label="账号状态" extra={editingSelf ? "不能停用当前登录账号。" : "停用后会清除登录态，但保留身份与任务记录。"}>
                     <Select disabled={editingSelf} options={[{ label: "已启用", value: "active" }, { label: "已停用", value: "disabled" }]} />
                 </Form.Item>
             </Form>

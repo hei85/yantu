@@ -1,6 +1,3 @@
-import { Coins } from "lucide-react";
-
-import { formatCredits } from "@/constant/credits";
 import { CONTENT_MODERATION_ERROR_CODE, generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
 import type { GenerationTask, TaskStatus } from "@/services/api/task-center";
 import { modelDisplayName, type AiConfig } from "@/stores/use-config-store";
@@ -26,13 +23,9 @@ export function taskAttentionReason(task: GenerationTask) {
 
 export function providerCancelStatusLabel(task: GenerationTask) {
     if (task.providerCancelStatus === "requested") return "已请求上游取消，正在等待确认";
-    if (task.providerCancelStatus === "confirmed") return "上游已确认取消，积分已退回";
-    if (task.providerCancelStatus === "uncertain") {
-        if (task.billing?.status === "settled") return "上游未能取消，费用已结算";
-        if (task.billing?.status === "refunded") return "上游取消结果未确认，积分已退回";
-        return task.providerCancelError || "上游无法确认取消，费用待核对";
-    }
-    return task.billing?.status === "refunded" ? "任务在调用上游前取消，积分已退回" : "任务已取消，可按原输入重新提交";
+    if (task.providerCancelStatus === "confirmed") return "上游已确认取消";
+    if (task.providerCancelStatus === "uncertain") return task.providerCancelError || "上游无法确认取消";
+    return "任务已取消，可按原输入重新提交";
 }
 
 export function statusDotClassName(status: TaskStatus) {
@@ -62,20 +55,6 @@ export function TaskDate({ value }: { value?: string }) {
     );
 }
 
-export function TaskBilling({ billing }: { billing?: GenerationTask["billing"] }) {
-    if (!billing) return <span className="task-record-billing-empty text-xs text-foreground/30">-</span>;
-    const amount = formatCredits(billing.amountMicrocredits);
-    const note = billing.status === "settled" ? "已结算" : billing.status === "refunded" ? "已退回" : billing.status === "uncertain" ? "待核对" : "预计";
-    return (
-        <div className={`task-record-billing ${billing.status === "uncertain" ? "is-uncertain" : ""}`} title={`积分${note}`}>
-            <Coins className="size-4" />
-            <span>
-                <strong>{amount}</strong>
-                <small>{note}</small>
-            </span>
-        </div>
-    );
-}
 
 export function formatModelName(config: AiConfig, task: GenerationTask) {
     const raw = (task.model || task.provider || "").trim();

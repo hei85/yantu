@@ -369,7 +369,7 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
                     <aside className="min-h-0 flex-1 overflow-y-auto" data-canvas-wheel-scroll>
                         <div className="flex min-h-full flex-col gap-4 p-4">
                             {payment.quote ? <CreativeQuoteCard quote={payment.quote} busy={payment.busy} onApprove={() => void approvalRef.current?.approve(payment.quote!.items.map((item) => item.id))} onRefresh={() => void approvalRef.current?.refresh()} /> : null}
-                            {payment.error ? <Callout tone="warning" title="费用确认未完成">{payment.error}</Callout> : null}
+                            {payment.error ? <Callout tone="warning" title="执行确认未完成">{payment.error}</Callout> : null}
                             {running || visibleState.status === "running" ? <ArtCritiqueProgress stage={progressStage} theme={theme} /> : null}
                             {draftReportVisible && visibleState.status === "running" && visibleState.report ? (
                                 <Callout tone="info" title="报告初稿已生成">

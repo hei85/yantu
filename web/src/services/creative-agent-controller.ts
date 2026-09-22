@@ -24,7 +24,7 @@ export type CreativeCanvasAdapter = { canvasId: string; read: () => CanvasSnapsh
 export type CreativeControllerView = { run?: CreationRun; state: CreativeAgentState; busy: boolean; hasControl: boolean; error?: string; quote?: CreativeQuote };
 type ControllerOptions = { clientKey?: string; config: () => AiConfig; canvas: () => CreativeCanvasAdapter | undefined; onChange: (view: CreativeControllerView) => void; onOpenCanvas: (canvasId: string, runId: string) => void; api?: typeof creationRuns; waitTask?: typeof waitForGenerationTask; queryTask?: typeof queryGenerationTask; ensureAsset?: typeof ensureCanvasNodeAsset };
 
-// 单一浏览器执行器；运行事实和费用批准以服务端记录为准，页面只提供就绪的画布适配器。
+// 单一浏览器执行器；运行事实和执行确认以服务端记录为准，页面只提供就绪的画布适配器。
 export class CreativeAgentController {
     private run?: CreationRun;
     private state = initialCreativeState();
@@ -227,12 +227,25 @@ export class CreativeAgentController {
     }
     private upsertSubmission(submission: CreationSubmission) { this.submissions = [...this.submissions.filter((item) => item.id !== submission.id), submission]; }
     private quote(): CreativeQuote | undefined {
-        // pendingPayment also retains submitted IDs for recovery; only unsubmitted items need a fee card.
+        // pendingPayment 同时保留已提交项用于恢复；只有未提交项需要执行确认卡。
         const pending = this.state.pendingPayment?.map((id) => this.submissions.find((item) => item.id === id)).filter((item): item is CreationSubmission => Boolean(item && !item.taskId && !item.revokedAt));
         if (!pending?.length) return undefined;
-        const amount = pending.reduce((sum, item) => sum + item.quote.amountMicrocredits, 0);
-        const estimated = pending.some((item) => item.quote.estimated);
-        return { id: pending.map((item) => item.id).join(":"), title: this.state.planning && !this.state.planning.consumed ? "确认本次理解与规划费用" : "确认本批生成费用", items: pending.map((item) => { const media = this.state.media.find((media) => media.submissionId === item.id); const node = this.state.proposal?.workflow.nodes.find((node) => node.ref === media?.ref); return { id: item.id, label: node?.title || "理解需求并生成问答或方案", model: item.quote.model, quantity: 1, specification: [...Object.entries(item.quote.options || {}).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => `${({ size: "比例/尺寸", videoSeconds: "时长（秒）", vquality: "清晰度", quality: "质量", count: "数量" } as Record<string, string>)[key] || key}：${String(value)}`), `${item.quote.billingMode === "token" ? "按用量" : item.quote.billingMode === "per_second" ? "按秒" : "按次"}计费，本项${item.quote.estimated ? "预计" : ""} ${(item.quote.amountMicrocredits / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 6 })} 积分`].join(" · ") }; }), amountLabel: `${estimated ? "预计 " : ""}${(amount / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 6 })} 积分`, basis: estimated ? "按实际用量结算，此金额为估算，不是费用上限。仅批准列出的调用。" : "按当前报价，仅批准本批列出的生成项。", expiresAt: pending.map((item) => item.quote.expiresAt).sort()[0], approvedQuantity: pending.filter((item) => item.approvedAt).length };
+        return {
+            id: pending.map((item) => item.id).join(":"),
+            title: this.state.planning && !this.state.planning.consumed ? "确认本次理解与规划" : "确认本批生成",
+            items: pending.map((item) => {
+                const media = this.state.media.find((media) => media.submissionId === item.id);
+                const node = this.state.proposal?.workflow.nodes.find((node) => node.ref === media?.ref);
+                const specification = Object.entries(item.quote.options || {})
+                    .filter(([, value]) => value !== undefined && value !== "")
+                    .map(([key, value]) => `${({ size: "比例/尺寸", videoSeconds: "时长（秒）", vquality: "清晰度", quality: "质量", count: "数量" } as Record<string, string>)[key] || key}：${String(value)}`)
+                    .join(" · ");
+                return { id: item.id, label: node?.title || "理解需求并生成问答或方案", model: item.quote.model, quantity: 1, specification: specification || "确认后开始执行" };
+            }),
+            basis: "仅确认本批列出的生成项；生成结果会保存到画布。",
+            expiresAt: pending.map((item) => item.quote.expiresAt).sort()[0],
+            approvedQuantity: pending.filter((item) => item.approvedAt).length,
+        };
     }
 
     async approvePayment() {
@@ -243,7 +256,7 @@ export class CreativeAgentController {
         }
         await this.action(async () => {
             const ids = this.state.pendingPayment;
-            if (!ids?.length) throw new Error("当前没有待批准费用");
+            if (!ids?.length) throw new Error("当前没有待执行的生成项");
             const unapproved = ids.filter((id) => { const item = this.submissions.find((item) => item.id === id); return item && !item.taskId && !item.approvedAt && !item.revokedAt; });
             if (this.run!.status === "paused") await this.save("waiting_payment");
             if (unapproved.length) {
@@ -255,7 +268,7 @@ export class CreativeAgentController {
     }
     async refreshQuotes() {
         await this.action(async () => {
-            if (!this.state.pendingPayment?.length) throw new Error("当前没有待更新报价");
+            if (!this.state.pendingPayment?.length) throw new Error("当前没有待更新的方案");
             for (const id of [...this.state.pendingPayment]) {
                 if (this.submissions.find((item) => item.id === id)?.taskId) continue;
                 const next = await this.api.refreshQuote(this.run!.id, { ...this.guard(), submissionId: id }, this.abort.signal);
@@ -516,7 +529,7 @@ export class CreativeAgentController {
             if (this.state.pendingRedo) throw new Error("已有待恢复的重做操作，请先核对状态并继续");
             const media = this.state.media.find((item) => item.ref === ref);
             if (!media) throw new Error("生成项不存在");
-            if (media.taskId) { const task = await this.queryTask(media.taskId, { signal: this.abort.signal }); if (["running", "queued"].includes(task.status) || task.billing?.status === "uncertain") throw new Error("原任务仍在执行或账务待核对，不能重新扣费"); }
+            if (media.taskId) { const task = await this.queryTask(media.taskId, { signal: this.abort.signal }); if (["running", "queued"].includes(task.status)) throw new Error("原任务仍在执行，不能重复提交"); }
             const canvas = this.options.canvas();
             const proposal = this.state.proposal;
             if (!canvas || !proposal) throw new Error("请先打开对应画布");

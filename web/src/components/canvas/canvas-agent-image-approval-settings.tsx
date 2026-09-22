@@ -46,6 +46,6 @@ export function CanvasAgentImageApprovalSettings({ initial, value, onChange, the
         </div>
         {model ? <ImageSettingsPanel config={{ ...config, model, imageModel: model, size: settings.size, quality: settings.quality, count: "1" }} onConfigChange={changeOption} theme={theme} showTitle={false} showCount={false} showTransparent={false} className="min-w-0 space-y-3" /> : <p className="text-xs" style={{ color: theme.node.muted }}>当前模型不在可选目录中，可重新选择；提交时将重新校验模型与规格。</p>}
         <p className="text-xs" style={{ color: theme.node.text }}>本次规格：{settings.size}{settings.quality ? ` · ${settings.quality}` : ""}</p>
-        <p className="text-xs" style={{ color: theme.node.muted }}>修改仅用于本次生成，费用按最终模型和规格计算。</p>
+        <p className="text-xs" style={{ color: theme.node.muted }}>修改仅用于本次生成，确认后按最终模型和规格执行。</p>
     </fieldset>;
 }

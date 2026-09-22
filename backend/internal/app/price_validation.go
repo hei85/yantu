@@ -2,6 +2,9 @@ package app
 
 import "infinite-canvas/backend/internal/model"
 
+// CreditScale 是历史规格档占位值使用的计量刻度；本地工作站不再有任何扣费路径。
+const CreditScale int64 = 1_000_000
+
 const maxChannelModelTokenPriceMicrocredits = int64(1_000_000) * CreditScale
 
 func validateTokenPrices(capability string, inputPrice, outputPrice, cachedPrice int64) error {

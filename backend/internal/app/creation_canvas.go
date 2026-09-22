@@ -6,10 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/canvas/capability"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 )
 
+// 画布能力注册表位于画布领域边界，创作接口直接消费它，
+// 不再依赖云端 Agent 的辅助函数。
+var creationCanvasCapabilityRegistry = capability.BuiltinRegistry()
 type CreationCanvasOp struct {
 	Type         string         `json:"type"`
 	ID           string         `json:"id,omitempty"`
@@ -44,7 +48,7 @@ func validateCreationOps(ops []CreationCanvasOp) error {
 				return BadAuthRequest("新增节点必须使用不重复的稳定 ID")
 			}
 			ids[op.ID] = true
-			if _, ok := cloudAgentNodeCapabilityForType(op.NodeType); !ok {
+			if _, ok := creationCanvasCapabilityRegistry.Resolve(op.NodeType); !ok {
 				return BadAuthRequest("该节点类型不在本期创作范围")
 			}
 		case "update_node":
@@ -426,14 +430,14 @@ func validateCreationCanvasDiff(repo *repository.Repository, userID string, run 
 	return nil
 }
 func creationAddedNode(op CreationCanvasOp) map[string]any {
-	capability, known := cloudAgentNodeCapabilityForType(op.NodeType)
+	nodeCapability, known := creationCanvasCapabilityRegistry.Resolve(op.NodeType)
 	width, height, title := 340.0, 240.0, "Note"
 	if known {
-		width, height, title = capability.DefaultWidth, capability.DefaultHeight, capability.Label
+		width, height, title = nodeCapability.DefaultWidth, nodeCapability.DefaultHeight, nodeCapability.Label
 	}
 	metadata := map[string]any{"content": "", "status": "idle"}
 	if known && op.Metadata == nil {
-		metadata = capability.Metadata("")
+		metadata = nodeCapability.Metadata("")
 	}
 	if op.Width != nil {
 		width = *op.Width

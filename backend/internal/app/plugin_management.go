@@ -22,7 +22,6 @@ const (
 
 	PluginKindProtocol    = "protocol"
 	PluginKindApplication = "application"
-	PluginKindPayment     = "payment"
 
 	PluginScopeSystem = "system"
 	PluginScopeUser   = "user"
@@ -88,17 +87,6 @@ var officialApplicationPolicies = map[string]PluginManagementView{
 	},
 }
 
-var systemPaymentPolicies = map[string]PluginManagementView{
-	PaymentPluginWeChatNative: {
-		Origin: PluginOriginSystem, Kind: PluginKindPayment,
-		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationSystem,
-	},
-	PaymentPluginAlipayPage: {
-		Origin: PluginOriginSystem, Kind: PluginKindPayment,
-		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationSystem,
-	},
-}
-
 func pluginManagement(pluginID string, source string) PluginManagementView {
 	if strings.TrimSpace(source) == PluginOriginUploaded {
 		return PluginManagementView{
@@ -109,9 +97,6 @@ func pluginManagement(pluginID string, source string) PluginManagementView {
 	if policy, ok := officialApplicationPolicies[strings.TrimSpace(pluginID)]; ok {
 		return policy
 	}
-	if policy, ok := systemPaymentPolicies[strings.TrimSpace(pluginID)]; ok {
-		return policy
-	}
 	return PluginManagementView{
 		Origin: PluginOriginOfficial, Kind: PluginKindProtocol,
 		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationSystem,
@@ -119,31 +104,13 @@ func pluginManagement(pluginID string, source string) PluginManagementView {
 }
 
 func pluginManagementFromView(plugin PluginView) PluginManagementView {
-	policy := pluginManagement(plugin.Manifest.ID, plugin.Source)
-	if policy.Kind != PluginKindProtocol || len(plugin.Manifest.Contributes.PaymentProviders) == 0 {
-		return policy
-	}
-	origin := strings.TrimSpace(plugin.Source)
-	if origin == "" {
-		origin = PluginOriginOfficial
-	}
-	return PluginManagementView{
-		Origin: origin, Kind: PluginKindPayment,
-		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationSystem,
-	}
+	return pluginManagement(plugin.Manifest.ID, plugin.Source)
 }
 
 func knownPluginIDs(items []PluginView) []string {
-	seen := make(map[string]struct{}, len(items)+len(officialApplicationPolicies)+len(systemPaymentPolicies))
-	ids := make([]string, 0, len(items)+len(officialApplicationPolicies)+len(systemPaymentPolicies))
+	seen := make(map[string]struct{}, len(items)+len(officialApplicationPolicies))
+	ids := make([]string, 0, len(items)+len(officialApplicationPolicies))
 	for id := range officialApplicationPolicies {
-		seen[id] = struct{}{}
-		ids = append(ids, id)
-	}
-	for id := range systemPaymentPolicies {
-		if _, exists := seen[id]; exists {
-			continue
-		}
 		seen[id] = struct{}{}
 		ids = append(ids, id)
 	}
@@ -338,10 +305,7 @@ func (s *Service) SetPluginPlatformAvailability(actor *model.User, pluginID stri
 }
 
 func isKnownRuntimeOptionalPlugin(pluginID string) bool {
-	if _, known := officialApplicationPolicies[pluginID]; known {
-		return true
-	}
-	_, known := systemPaymentPolicies[pluginID]
+	_, known := officialApplicationPolicies[pluginID]
 	return known
 }
 

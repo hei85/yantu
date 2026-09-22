@@ -574,7 +574,7 @@ function InfiniteCanvasPage() {
         (task: import("@/services/api/task-center").GenerationTask) => {
             modal.confirm({
                 title: "取消生成任务？",
-                content: "任务会立即停止本地执行；如果已经提交到上游，系统会继续核对取消结果和积分状态。",
+                content: "任务会立即停止本地执行；如果已经提交到上游，系统会继续核对上游取消结果。",
                 okText: "取消任务",
                 okButtonProps: { danger: true },
                 cancelText: "继续等待",
@@ -1725,7 +1725,7 @@ function InfiniteCanvasPage() {
             if (shouldPreferCopiedNodes() && pasteCopiedNodes(position)) return;
             void (async () => {
                 try {
-                    // 标记写入成功时仍优先系统图片，兼容截图和从外部应用复制的媒体。
+                    // 标记写入成功时仍优先统统图片，兼容截图和从外部应用复制的媒体。
                     const handled = await pasteSystemClipboard(position);
                     if (!handled) pasteCopiedNodes(position);
                 } catch {
@@ -1820,7 +1820,7 @@ function InfiniteCanvasPage() {
                 if (!resourceID) {
                     const uploaded = await uploadImage(node.metadata.content);
                     resourceID = resourceIdFromStorageKey(uploaded.storageKey);
-                    if (!resourceID) throw new Error("图片未能保存到系统素材库，请检查对象存储配置后重试");
+                    if (!resourceID) throw new Error("图片未能保存到统统素材库，请检查对象存储配置后重试");
                     handleConfigNodeChange(node.id, imageMetadata(uploaded));
                     persistedNode = { ...node, metadata: { ...node.metadata, ...imageMetadata(uploaded) } };
                 }

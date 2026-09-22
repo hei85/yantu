@@ -66,8 +66,6 @@ export function ModelQuickConnectPane({ onOpenAdvanced }: Props) {
                     channelLabel: channel.name,
                     capability,
                     protocol: connection.protocol,
-                    billingMode: "fixed_request",
-                    unitPriceMicrocredits: 0,
                     ...(capability === "image" || capability === "video" ? { capabilityConfig: defaultModelCapabilityConfig(connection.protocol, model) } : {}),
                 },
             ],

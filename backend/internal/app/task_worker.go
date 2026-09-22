@@ -38,17 +38,12 @@ func (w *taskWorkerCoordinator) start(ctx context.Context) {
 	s := w.service
 	s.startTextReplayCleanup(ctx)
 	s.startProviderCancellationReconciliation(ctx)
-	s.startBillingReviewAudit(ctx)
-	s.startAgentMemoryCompactScheduler()
 	s.runWorkerLoop(func(ctx context.Context) {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			if ctx.Err() != nil {
 				return
-			}
-			if !s.IsDraining() {
-				s.advanceCloudAgents()
 			}
 			select {
 			case <-ctx.Done():
@@ -186,7 +181,6 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		return w.processTimelineRender(task, ctx)
 	}
 
-	s.markAgentMemoryCompactRunning(*task)
 	task.Stage = "调用生成模型"
 	task.Progress = 35
 	if taskUsesUpstreamReportedProgress(task.Type) {
@@ -201,9 +195,6 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	routeAttempt, err := s.beginTaskRouteAttempt(task)
 	if err != nil {
 		return terminal.markPreparationFailure(task, "路由准备失败", err, isRouteDispatchUncertain(err), "路由准备失败，上游请求未发出")
-	}
-	if err := s.taskBilling().MarkBillingRunning(task.BillingOrderID); err != nil {
-		return terminal.markPreparationFailure(task, "计费准备失败", err, false, "计费准备失败，上游请求未发出")
 	}
 	routeResult, stateErr := s.routeExecutor().execute(ctx, task, routeAttempt)
 	if stateErr != nil {
@@ -254,7 +245,6 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = errors.New(taskTimeoutMessage(task.Type))
 		}
-		s.noteAgentMemoryCompactTask(*task, nil, err)
 		return terminal.handleExecutionFailure(task, err, providerSucceeded, channelSlotFailedBeforeRequest)
 	}
 	latest, err := s.repo.Task(task.ID)
@@ -262,27 +252,22 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		return err
 	}
 	if latest.Status == model.TaskStatusCancelled {
-		s.noteAgentMemoryCompactTask(*task, nil, errors.New("压缩任务已取消"))
 		return terminal.handleCancelledResult(*latest)
 	}
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
-		s.noteAgentMemoryCompactTask(*task, nil, err)
 		_, terminalErr := terminal.handleResultPersistenceFailure(task, fmt.Errorf("序列化任务结果失败：%w", err))
 		return terminalErr
 	}
 	opsJSON, err := json.Marshal(canvasOps)
 	if err != nil {
-		s.noteAgentMemoryCompactTask(*task, nil, err)
 		_, terminalErr := terminal.handleResultPersistenceFailure(task, fmt.Errorf("序列化画布操作失败：%w", err))
 		return terminalErr
 	}
 	if err := s.saveTaskCompletionWithinStorageQuota(task, resultJSON, opsJSON, len(canvasOps) > 0); err != nil {
-		s.noteAgentMemoryCompactTask(*task, nil, err)
 		_, terminalErr := terminal.handleResultPersistenceFailure(task, err)
 		return terminalErr
 	}
-	s.noteAgentMemoryCompactTask(*task, result, nil)
 	return terminal.handleSuccess(task)
 }
 

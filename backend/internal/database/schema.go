@@ -16,8 +16,6 @@ import (
 // Models 是应用持久化表的唯一清单，服务启动和跨数据库迁移必须共用它。
 func Models() []any {
 	return []any{
-		&model.CloudAgentExecution{},
-		&model.CloudAgentCanvasMutation{},
 		&model.AgentProfile{},
 		&model.AgentLesson{},
 		&model.AgentMemorySetting{},
@@ -35,18 +33,6 @@ func Models() []any {
 		&model.LogicalModelRoute{},
 		&model.RouteAttempt{},
 		&model.ApiCallLog{},
-		&model.ModelPricing{},
-		&model.CreditAccount{},
-		&model.CreditLedgerEntry{},
-		&model.BillingOrder{},
-		&model.TopupProduct{},
-		&model.PaymentProviderConfig{},
-		&model.PaymentOrder{},
-		&model.PaymentNotification{},
-		&model.PaymentReconciliationRun{},
-		&model.PaymentReconciliationItem{},
-		&model.RedeemBatch{},
-		&model.RedeemCode{},
 		&model.AdminAuditEvent{},
 		&model.UserDailyActivity{},
 		&model.SystemSetting{},

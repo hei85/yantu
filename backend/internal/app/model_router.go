@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/model"
-	"infinite-canvas/backend/internal/repository"
 )
 
 type CapabilityImageSizePreset struct {
@@ -1188,33 +1187,7 @@ func (s *Service) switchTaskToNextRoute(task *model.Task, attempts []model.Route
 	if err != nil {
 		return nil, err
 	}
-	var replacement *model.BillingOrder
-	if logicalModel.PricePolicy == "channel" && task.BillingOrderID != "" {
-		config, _ := nextInput["config"].(map[string]any)
-		capability := normalizeCapability(fmt.Sprint(nextInput["mode"]))
-		if capability == "" {
-			capability = capabilityFromTaskType(task.Type)
-		}
-		priceTierID, _ := config["priceTierId"].(string)
-		replacement, err = s.newBillingOrderWithPriceTier(task.UserID, task.ID, "route-switch:"+task.ID+":"+selected.Route.ID, selected.ChannelModel.ChannelID, selected.ChannelModel.ModelKey, capability, firstNonEmpty(strings.TrimSpace(task.Operation), task.Type), billingQuantity(capability, config["videoSeconds"]), estimateTaskBillingTokens(nextInput, capability), strings.TrimSpace(priceTierID), intent)
-		if err != nil {
-			return nil, err
-		}
-		replacement.Model = logicalModel.Code
-	}
-	previousRouteID := task.RouteID
-	var costOrder model.BillingOrder
-	if replacement != nil {
-		costOrder.BillingCostSnapshot = replacement.BillingCostSnapshot
-	} else if task.BillingOrderID != "" {
-		config, _ := nextInput["config"].(map[string]any)
-		capability := selected.ChannelModel.Capability
-		snapshotCreditCost(&costOrder, channelModelPriceTierForIntent(selected.ChannelModel, intent), billingQuantity(capability, config["videoSeconds"]), estimateTaskBillingTokens(nextInput, capability))
-	}
-	if err := s.repo.SwitchTaskLogicalRoute(task.ID, previousRouteID, selected.Route.ID, string(encoded), task.BillingOrderID, selected.ChannelModel.ChannelID, selected.ChannelModel.ID, replacement, costOrder.BillingCostSnapshot); err != nil {
-		if errors.Is(err, repository.ErrInsufficientCredits) {
-			return nil, BadAuthRequest("模型服务价格发生变化，当前积分余额不足")
-		}
+	if err := s.repo.SwitchTaskLogicalRoute(task.ID, task.RouteID, selected.Route.ID, string(encoded), selected.ChannelModel.ID); err != nil {
 		return nil, err
 	}
 	task.RouteID = selected.Route.ID

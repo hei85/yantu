@@ -56,6 +56,6 @@ func (r *Repository) CreateOAuthUser(user *model.User, identity *model.UserIdent
 		if err := tx.Create(identity).Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.CreditAccount{UserID: user.ID}).Error
+		return nil
 	})
 }

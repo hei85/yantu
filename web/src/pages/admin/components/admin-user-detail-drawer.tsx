@@ -3,21 +3,16 @@ import { App, Button, Descriptions, Progress, Skeleton, Tabs } from "antd";
 import { AdminDrawer } from "@/pages/admin/ui/overlays";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { formatCredits } from "@/constant/credits";
 import { IconButton } from "@/pages/admin/ui/controls";
 import { AdminDataTable, AdminEmpty, AdminStatusBadge, AdminTableEmpty, PaginationBar, type AdminStatusTone } from "./admin-ui";
-import { getAdminUserDetail, listAdminUserAuditEvents, listAdminUserLedger, listAdminUserTasks, type AdminAuditEvent, type AdminUserDetail, type AdminUserTask } from "@/services/api/auth";
-import type { CreditLedgerEntry } from "@/services/api/wallet";
+import { getAdminUserDetail, listAdminUserAuditEvents, listAdminUserTasks, type AdminAuditEvent, type AdminUserDetail, type AdminUserTask } from "@/services/api/auth";
 
 export function AdminUserDetailDrawer({ userId, onClose, previousUserId, nextUserId, onNavigate }: { userId: string | null; onClose: () => void; previousUserId?: string; nextUserId?: string; onNavigate?: (userId: string) => void }) {
     const { message } = App.useApp();
     const [detail, setDetail] = useState<AdminUserDetail | null>(null);
-    const [ledger, setLedger] = useState<CreditLedgerEntry[]>([]);
     const [tasks, setTasks] = useState<AdminUserTask[]>([]);
     const [events, setEvents] = useState<AdminAuditEvent[]>([]);
     const [loading, setLoading] = useState(false);
-    const [ledgerPage, setLedgerPage] = useState(1);
-    const [ledgerTotal, setLedgerTotal] = useState(0);
     const [taskPage, setTaskPage] = useState(1);
     const [taskTotal, setTaskTotal] = useState(0);
     const [auditPage, setAuditPage] = useState(1);
@@ -28,7 +23,6 @@ export function AdminUserDetailDrawer({ userId, onClose, previousUserId, nextUse
         let active = true;
         setLoading(true);
         setDetail(null);
-        setLedgerPage(1);
         setTaskPage(1);
         setAuditPage(1);
         void getAdminUserDetail(userId)
@@ -42,21 +36,6 @@ export function AdminUserDetailDrawer({ userId, onClose, previousUserId, nextUse
         };
     }, [message, userId]);
 
-    useEffect(() => {
-        if (!userId) return;
-        let active = true;
-        void listAdminUserLedger(userId, { page: ledgerPage, pageSize: 20 })
-            .then((result) => {
-                if (active) {
-                    setLedger(result.entries);
-                    setLedgerTotal(result.total);
-                }
-            })
-            .catch((error) => active && message.error(error instanceof Error ? error.message : "读取积分流水失败"));
-        return () => {
-            active = false;
-        };
-    }, [ledgerPage, message, userId]);
     useEffect(() => {
         if (!userId) return;
         let active = true;
@@ -121,14 +100,12 @@ export function AdminUserDetailDrawer({ userId, onClose, previousUserId, nextUse
                                             { key: "email", label: "邮箱", children: detail.user.email || "未填写" },
                                             { key: "role", label: "角色", children: detail.user.role === "admin" ? "管理员" : "普通用户" },
                                             { key: "status", label: "状态", children: <AdminStatusBadge label={detail.user.status === "active" ? "启用" : "停用"} tone={detail.user.status === "active" ? "success" : "neutral"} /> },
-                                            { key: "available", label: "可用积分", children: formatCredits(detail.account.availableMicrocredits) },
-                                            { key: "reserved", label: "冻结积分", children: formatCredits(detail.account.reservedMicrocredits) },
                                             { key: "created", label: "注册时间", children: formatTime(detail.user.createdAt) },
                                             { key: "login", label: "最后登录", children: formatTime(detail.user.lastLoginAt) },
                                         ]}
                                     />
                                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                        {Object.entries({ 积分流水: detail.counts.ledgerEntries, 生成任务: detail.counts.tasks, 上游请求: detail.counts.apiCalls, 管理操作: detail.counts.auditEvents }).map(([label, value]) => (
+                                        {Object.entries({ 生成任务: detail.counts.tasks, 上游请求: detail.counts.apiCalls, 管理操作: detail.counts.auditEvents }).map(([label, value]) => (
                                             <div key={label} className="rounded-md border border-border p-3">
                                                 <div className="text-xs text-foreground/50">{label}</div>
                                                 <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
@@ -150,29 +127,6 @@ export function AdminUserDetailDrawer({ userId, onClose, previousUserId, nextUse
                                         </div>
                                     </div>
                                 </div>
-                            ),
-                        },
-                        {
-                            key: "ledger",
-                            label: `积分流水 ${detail.counts.ledgerEntries}`,
-                            children: (
-                                <AdminDataTable
-                                    table={{
-                                        rowKey: "id",
-                                        size: "small",
-                                        dataSource: ledger,
-                                        pagination: false,
-                                        columns: [
-                                        { title: "时间", dataIndex: "createdAt", width: 170, render: formatTime },
-                                        { title: "类型", dataIndex: "type", width: 130 },
-                                        { title: "变化", dataIndex: "amountMicrocredits", width: 120, align: "right", render: (value) => formatCredits(value) },
-                                        { title: "说明", dataIndex: "note", ellipsis: true },
-                                        ],
-                                        scroll: { x: 720 },
-                                    }}
-                                    empty={<AdminTableEmpty />}
-                                    footer={<PaginationBar alwaysShow current={ledgerPage} pageSize={20} total={ledgerTotal} onChange={(page) => setLedgerPage(page)} pageSizeOptions={[20]} />}
-                                />
                             ),
                         },
                         {

@@ -110,7 +110,6 @@ func run(ctx context.Context) error {
 	api := r.Group("/api")
 	status := newSystemStatus(db, svc)
 	registerSystemStatusRoutes(api, status)
-	handler.RegisterOAuthCallbackRoutes(r, svc)
 	handler.RegisterCanvasAPI(api, svc)
 	r.NoRoute(handler.SystemProxyNoRouteHandler(svc))
 

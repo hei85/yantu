@@ -24,7 +24,6 @@ const (
 	CodeTooManyRequests                = app.CodeTooManyRequests
 	CodeUnauthorized                   = app.CodeUnauthorized
 	CodeUnavailable                    = app.CodeUnavailable
-	CreditScale                        = app.CreditScale
 	CustomRelayHeadersHeader           = app.CustomRelayHeadersHeader
 	DefaultOutboundUserAgent           = app.DefaultOutboundUserAgent
 	DrawingEngineExcalidraw            = app.DrawingEngineExcalidraw
@@ -35,7 +34,6 @@ const (
 	ErrCodeModelPriceNotConfigured     = app.ErrCodeModelPriceNotConfigured
 	ErrCodeModelRouteUnavailable       = app.ErrCodeModelRouteUnavailable
 	ErrCodeProviderRequestFailed       = app.ErrCodeProviderRequestFailed
-	FeatureCredits                     = app.FeatureCredits
 	FeatureCustomChannels              = app.FeatureCustomChannels
 	FeatureFrontendModels              = app.FeatureFrontendModels
 	FeaturePluginCenter                = app.FeaturePluginCenter
@@ -44,17 +42,12 @@ const (
 	FeatureTaskCenter                  = app.FeatureTaskCenter
 	FeatureTimelineTranscription       = app.FeatureTimelineTranscription
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
-	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage
-	PaymentPluginWeChatNative          = app.PaymentPluginWeChatNative
-	PaymentProviderAlipay              = app.PaymentProviderAlipay
-	PaymentProviderWeChat              = app.PaymentProviderWeChat
 	PluginAIArtCritique                = app.PluginAIArtCritique
 	PluginConfigurationNone            = app.PluginConfigurationNone
 	PluginConfigurationSystem          = app.PluginConfigurationSystem
 	PluginConfigurationUser            = app.PluginConfigurationUser
 	PluginEagleAssetConnector          = app.PluginEagleAssetConnector
 	PluginKindApplication              = app.PluginKindApplication
-	PluginKindPayment                  = app.PluginKindPayment
 	PluginKindProtocol                 = app.PluginKindProtocol
 	PluginMediaConversion              = app.PluginMediaConversion
 	PluginOriginOfficial               = app.PluginOriginOfficial

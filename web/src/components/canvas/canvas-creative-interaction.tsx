@@ -133,8 +133,8 @@ export function CanvasCreativeInteraction(props: Props) {
     const rawError = proposalFailure || error || view.error;
     const failedGenerations = view.state.media.filter((item) => item.status === "failed" && item.failureKind !== "observation");
     const onlyFailedRemaining = failedGenerations.length > 0 && !view.state.media.some((item) => ["queued", "running", "write_failed"].includes(item.status) || item.failureKind === "observation" && item.status === "failed");
-    const feedback = onlyFailedRemaining ? "部分作品生成失败。请在失败作品下方重新生成，先核对费用；已成功的作品会保留。" : rawError ? /恢复|连接|网络|接管|执行权|代次/.test(rawError) ? "状态读取未完成，可以继续处理重试。已有作品会保留。"
-        : /报价|费用|价格|过期/.test(rawError) ? "生成费用需要重新确认，继续后会显示最新价格。"
+    const feedback = onlyFailedRemaining ? "部分作品生成失败。请在失败作品下方重新生成；已成功的作品会保留。" : rawError ? /恢复|连接|网络|接管|执行权|代次/.test(rawError) ? "状态读取未完成，可以继续处理重试。已有作品会保留。"
+        : /报价|过期|方案/.test(rawError) ? "执行方案已更新，请重新确认。"
         : /素材|参考|引用/.test(rawError) ? "参考素材还需要核对，助手会继续处理，必要时请你选择。"
         : "这一步还没有完成。已有内容已保留，可以继续处理或修改要求。" : undefined;
     const submitAnswers = async (submitted: CreativeAnswers) => {
@@ -153,23 +153,23 @@ export function CanvasCreativeInteraction(props: Props) {
         {view.state.proposal && <CreativeProposalCard proposal={view.state.proposal} archived={!props.active || !awaitingProposal} modifiable={!view.busy} disabled={props.active ? blocked : false} busy={view.busy} onApprove={() => invoke(controller.current?.approveProposal())} onModify={() => modify(`请修改方案《${view.state.proposal!.title}》：`)} onRedirect={() => modify("保留已确认的要求和素材，换一个创意方向。")} />}
         {view.state.pendingEdits && <div className="creative-agent-card"><p>将调整 {view.state.pendingEdits.length} 个节点的指定字段。</p><Button disabled={blocked} onClick={() => invoke(controller.current?.approveEdits())}>确认节点调整</Button></div>}
         {props.active && view.quote && <CreativeQuoteCard quote={view.quote} busy={view.busy} disabled={blocked} onApprove={() => invoke(controller.current?.approvePayment())} onRefresh={() => invoke(controller.current?.refreshQuotes())} />}
-        {(detail.quotes || []).filter((quote) => !props.active || quote.id !== view.quote?.id).map((quote) => <details key={quote.id} className="creative-agent-receipt"><summary>{quote.approvedQuantity ? "已确认生成" : "历史报价"} · {quote.amountLabel} · {quote.items.length} 项</summary><p>{quote.basis}</p><ul>{quote.items.map((item) => <li key={item.id}>{item.label} · {item.model} · {item.specification}</li>)}</ul></details>)}
+        {(detail.quotes || []).filter((quote) => !props.active || quote.id !== view.quote?.id).map((quote) => <details key={quote.id} className="creative-agent-receipt"><summary>{quote.approvedQuantity ? "已确认生成" : "历史执行方案"} · {quote.items.length} 项</summary><p>{quote.basis}</p><ul>{quote.items.map((item) => <li key={item.id}>{item.label} · {item.model} · {item.specification}</li>)}</ul></details>)}
         {view.state.media.filter((item) => item.taskId || item.storageKey || item.error).map((item) => {
             const resource = resourceIdFromStorageKey(item.storageKey), url = resource ? resourceFileUrl(resource) : "";
             const video = view.state.proposal?.generationItems.find((entry) => entry.ref === item.ref)?.mode === "video";
             return <div className="creative-agent-card" key={item.ref}>
                 <strong>{view.state.proposal?.workflow.nodes.find((node) => node.ref === item.ref)?.title || item.ref}</strong>
-                {!item.error && !url && item.taskId && <p className="creative-agent-muted">{view.busy ? item.status === "running" ? "正在生成，完成后自动显示。" : "已提交，正在等待生成结果。" : "任务已提交。点击下方“继续处理”读取最新结果，无需重复确认费用。"}</p>}
+                {!item.error && !url && item.taskId && <p className="creative-agent-muted">{view.busy ? item.status === "running" ? "正在生成，完成后自动显示。" : "已提交，正在等待生成结果。" : "任务已提交。点击下方“继续处理”读取最新结果。"}</p>}
                 {url && (video ? <video className="w-full max-h-80 object-contain" src={url} controls preload="metadata" /> : <img className="w-full max-h-80 object-contain" src={url} alt={item.ref} />)}
                 {item.error && <p className="creative-agent-muted">这项作品还需要处理，已有结果会保留。</p>}
                 {item.error && <details className="creative-agent-receipt"><summary>查看失败原因</summary><p>{item.error}</p></details>}
-                {props.active && item.status === "failed" && item.failureKind !== "observation" && <Button type="primary" disabled={blocked} onClick={() => invoke(controller.current?.redo(item.ref))}>重新生成此项 · 先确认费用</Button>}
-                <div className="creative-agent-actions">{url && <a href={url} target="_blank" rel="noreferrer">查看作品</a>}{props.active && <Dropdown trigger={["click"]} disabled={blocked} menu={{ items: [{ key: "adjust", label: "调整作品" }, { key: "redo", label: "重新生成（费用另行确认）" }], onClick: ({ key }) => key === "redo" ? invoke(controller.current?.redo(item.ref)) : modify(`请调整《${view.state.proposal?.workflow.nodes.find((entry) => entry.ref === item.ref)?.title || item.ref}》，保留其他作品：`) }}><Button type="text" disabled={blocked}>更多</Button></Dropdown>}</div>
+                {props.active && item.status === "failed" && item.failureKind !== "observation" && <Button type="primary" disabled={blocked} onClick={() => invoke(controller.current?.redo(item.ref))}>重新生成此项</Button>}
+                <div className="creative-agent-actions">{url && <a href={url} target="_blank" rel="noreferrer">查看作品</a>}{props.active && <Dropdown trigger={["click"]} disabled={blocked} menu={{ items: [{ key: "adjust", label: "调整作品" }, { key: "redo", label: "重新生成" }], onClick: ({ key }) => key === "redo" ? invoke(controller.current?.redo(item.ref)) : modify(`请调整《${view.state.proposal?.workflow.nodes.find((entry) => entry.ref === item.ref)?.title || item.ref}》，保留其他作品：`) }}><Button type="text" disabled={blocked}>更多</Button></Dropdown>}</div>
             </div>;
         })}
         {!props.active && rawError && <details className="creative-agent-receipt"><summary>这一步未完成，后续对话中可继续调整</summary><p>{feedback}</p></details>}
         {props.active && <div className="creative-agent-next" role="status">
-            <p>{view.busy ? "正在处理，请稍候…" : !view.hasControl ? rawError ? "暂时无法恢复当前创作，可以重试连接。已有作品会保留。" : "正在恢复当前创作，请稍候…" : view.state.modificationRequested ? "在下方告诉我想改哪里，调整后再确认。" : feedback || (view.quote ? "确认费用后，就开始本批制作。" : awaitingProposal ? "看看方案是否符合你的想法，确认后继续。" : question?.status === "pending" ? "选择一个答案，也可以在下方直接补充。" : status === "completed" ? "本阶段已完成。可以查看作品，或告诉我想改哪里。" : "准备好了，可以继续。")}</p>
+            <p>{view.busy ? "正在处理，请稍候…" : !view.hasControl ? rawError ? "暂时无法恢复当前创作，可以重试连接。已有作品会保留。" : "正在恢复当前创作，请稍候…" : view.state.modificationRequested ? "在下方告诉我想改哪里，调整后再确认。" : feedback || (view.quote ? "确认后就开始本批制作。" : awaitingProposal ? "看看方案是否符合你的想法，确认后继续。" : question?.status === "pending" ? "选择一个答案，也可以在下方直接补充。" : status === "completed" ? "本阶段已完成。可以查看作品，或告诉我想改哪里。" : "准备好了，可以继续。")}</p>
             <div className="creative-agent-actions">
                 {!view.busy && !view.hasControl && <Button onClick={() => invoke(view.run ? controller.current?.takeControl() : controller.current?.load(detail.runId, detail.state))}>重试连接</Button>}
                 {view.busy && ["running", "waiting_task", "waiting_canvas"].includes(status || "") ? <Button onClick={() => invoke(controller.current?.pause())}>停止后续制作</Button>

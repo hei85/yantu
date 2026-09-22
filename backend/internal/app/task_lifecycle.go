@@ -51,12 +51,6 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	if task.ProviderCancelStatus == model.ProviderCancelStatusRequested {
 		return nil, BadAuthRequest("上游取消状态仍在确认中，请确认费用结果后再重试")
 	}
-	if err := s.taskBilling().CheckRetryEligibility(task.BillingOrderID); err != nil {
-		if errors.Is(err, errTaskBillingReview) {
-			return nil, BadAuthRequest("上一次调用费用仍在核对中，处理完成前不能重复提交")
-		}
-		return nil, err
-	}
 	if isContentModerationFailure(task.Error) {
 		return nil, BadAuthRequest(contentModerationRetryMessage)
 	}
@@ -74,10 +68,6 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	if err := s.requireCustomChannelsForTaskInput(billingInput); err != nil {
 		return nil, err
 	}
-	billingOrder, err := s.taskBillingOrder(userID, task, billingInput)
-	if err != nil {
-		return nil, err
-	}
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return nil, err
@@ -85,10 +75,7 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	if err := s.ensureTaskProjectActive(userID, task.ProjectID); err != nil {
 		return nil, err
 	}
-	task, err = s.repo.RetryTaskWithBilling(userID, task, billingOrder, policy.Task.ActiveTaskLimit)
-	if errors.Is(err, repository.ErrInsufficientCredits) {
-		return nil, BadAuthRequest("积分不足，请先使用兑换码充值")
-	}
+	task, err = s.repo.RetryTask(userID, task, policy.Task.ActiveTaskLimit)
 	if errors.Is(err, repository.ErrActiveTaskLimit) {
 		return nil, BadAuthRequest(fmt.Sprintf("同时排队或运行的任务最多 %d 个，请等待已有任务完成", policy.Task.ActiveTaskLimit))
 	}
@@ -118,7 +105,6 @@ func (w *taskLifecycleCoordinator) cancelTask(_ context.Context, userID string, 
 	// 先从账单和请求日志补齐上游 ID，再做条件更新。取消与 worker 完成之间
 	// 以数据库终态为准，避免“用户已取消但迟到结果又把任务写成成功”。
 	s.hydrateTaskProviderRequestID(task)
-	originalStatus := task.Status
 	now := time.Now()
 	cancelled, err := s.repo.CancelTaskIfStatus(userID, id, task.Status, now)
 	if err != nil {
@@ -169,17 +155,6 @@ func (w *taskLifecycleCoordinator) cancelTask(_ context.Context, userID string, 
 			cancel()
 		}
 	} else {
-		var billingErr error
-		if originalStatus == model.TaskStatusQueued {
-			billingErr = s.taskBilling().RefundBilling(task.BillingOrderID, "用户主动取消，且任务尚未开始执行")
-		} else {
-			// running 任务可能已经发起上游调用但尚未把 request ID 写回，不能
-			// 直接退款后放任上游继续生成，先冻结为待核对更安全。
-			billingErr = s.taskBilling().MarkBillingUncertain(task.BillingOrderID, "用户取消时上游请求 ID 尚未确认，费用待核对")
-		}
-		if billingErr != nil {
-			_ = s.log(task.UserID, task.ID, "error", "取消任务后处理积分失败，已保留人工核对线索", billingErr.Error())
-		}
 	}
 
 	return taskForOutput(*task), nil

@@ -292,8 +292,8 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             };
             if (retryableItems.some((item) => item.costUncertain)) {
                 modal.confirm({
-                    title: "重试费用状态不确定的任务？",
-                    content: "部分上游请求返回 524，原任务可能已经产生费用。重试会再次提交外部模型任务。",
+                    title: "重试上游状态不确定的任务？",
+                    content: "部分上游请求返回 524，原任务可能已经在上游执行。重试会再次提交外部模型任务。",
                     okText: "仍然重试",
                     cancelText: "暂不重试",
                     onOk: retry,

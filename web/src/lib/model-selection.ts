@@ -199,12 +199,7 @@ export function compatibleModelInGroup(config: AiConfig, models: string[], requi
     const compatible = models.filter((model) => !modelCompatibilityError(config, model, requirements));
     if (!compatible.length) return "";
     if (compatible.length === 1) return compatible[0];
-    const priceOf = (model: string) => {
-        const channel = resolveModelChannel(config, model);
-        const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
-        return cost && Number.isFinite(cost.unitPriceMicrocredits) ? cost.unitPriceMicrocredits : Number.POSITIVE_INFINITY;
-    };
-    return compatible.sort((left, right) => priceOf(left) - priceOf(right) || (left === preferred ? -1 : right === preferred ? 1 : 0))[0];
+    return compatible.sort((left, right) => (left === preferred ? -1 : right === preferred ? 1 : 0))[0];
 }
 
 export function resolveCompatibleModel(config: AiConfig, selected: string, requirements?: ModelRequirements) {

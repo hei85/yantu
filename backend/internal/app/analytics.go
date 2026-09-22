@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"log"
 	"sort"
 	"strconv"
@@ -14,8 +13,6 @@ import (
 
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
-
-	"gorm.io/gorm"
 )
 
 type AnalyticsQuery struct {
@@ -38,18 +35,15 @@ type AnalyticsOverview struct {
 }
 
 type AnalyticsKPI struct {
-	ActiveUsers         int     `json:"activeUsers"`
-	DAU                 int     `json:"dau"`
-	WAU                 int     `json:"wau"`
-	MAU                 int     `json:"mau"`
-	GenerationTasks     int     `json:"generationTasks"`
-	UpstreamRequests    int     `json:"upstreamRequests"`
-	SuccessRate         float64 `json:"successRate"`
-	P95DurationMs       int64   `json:"p95DurationMs"`
-	CurrentQueuedTasks  int64   `json:"currentQueuedTasks"`
-	EstimatedCostMicros int64   `json:"estimatedCostMicros"`
-	CostAvailable       bool    `json:"costAvailable"`
-	Currency            string  `json:"currency"`
+	ActiveUsers        int     `json:"activeUsers"`
+	DAU                int     `json:"dau"`
+	WAU                int     `json:"wau"`
+	MAU                int     `json:"mau"`
+	GenerationTasks    int     `json:"generationTasks"`
+	UpstreamRequests   int     `json:"upstreamRequests"`
+	SuccessRate        float64 `json:"successRate"`
+	P95DurationMs      int64   `json:"p95DurationMs"`
+	CurrentQueuedTasks int64   `json:"currentQueuedTasks"`
 }
 
 type AnalyticsTrendPoint struct {
@@ -61,24 +55,21 @@ type AnalyticsTrendPoint struct {
 }
 
 type AnalyticsModelRow struct {
-	Model               string  `json:"model"`
-	Capability          string  `json:"capability"`
-	Tasks               int     `json:"tasks"`
-	Requests            int     `json:"requests"`
-	UniqueUsers         int     `json:"uniqueUsers"`
-	TaskSuccessRate     float64 `json:"taskSuccessRate"`
-	RequestSuccessRate  float64 `json:"requestSuccessRate"`
-	P50DurationMs       int64   `json:"p50DurationMs"`
-	P95DurationMs       int64   `json:"p95DurationMs"`
-	InputTokens         int64   `json:"inputTokens"`
-	OutputTokens        int64   `json:"outputTokens"`
-	CachedTokens        int64   `json:"cachedTokens"`
-	UsageAvailable      bool    `json:"usageAvailable"`
-	MediaCount          int     `json:"mediaCount"`
-	VideoSeconds        int     `json:"videoSeconds"`
-	EstimatedCostMicros int64   `json:"estimatedCostMicros"`
-	CostAvailable       bool    `json:"costAvailable"`
-	Currency            string  `json:"currency"`
+	Model              string  `json:"model"`
+	Capability         string  `json:"capability"`
+	Tasks              int     `json:"tasks"`
+	Requests           int     `json:"requests"`
+	UniqueUsers        int     `json:"uniqueUsers"`
+	TaskSuccessRate    float64 `json:"taskSuccessRate"`
+	RequestSuccessRate float64 `json:"requestSuccessRate"`
+	P50DurationMs      int64   `json:"p50DurationMs"`
+	P95DurationMs      int64   `json:"p95DurationMs"`
+	InputTokens        int64   `json:"inputTokens"`
+	OutputTokens       int64   `json:"outputTokens"`
+	CachedTokens       int64   `json:"cachedTokens"`
+	UsageAvailable     bool    `json:"usageAvailable"`
+	MediaCount         int     `json:"mediaCount"`
+	VideoSeconds       int     `json:"videoSeconds"`
 }
 
 type AnalyticsUserRow struct {
@@ -116,19 +107,6 @@ type APICallLogPage struct {
 	Total int64              `json:"total"`
 	Page  int                `json:"page"`
 	Limit int                `json:"pageSize"`
-}
-
-type ModelPricingRequest struct {
-	ChannelID              string `json:"channelId"`
-	Model                  string `json:"model"`
-	Capability             string `json:"capability"`
-	Currency               string `json:"currency"`
-	InputPerMillionMicros  int64  `json:"inputPerMillionMicros"`
-	OutputPerMillionMicros int64  `json:"outputPerMillionMicros"`
-	CachedPerMillionMicros int64  `json:"cachedPerMillionMicros"`
-	PerRequestMicros       int64  `json:"perRequestMicros"`
-	PerMediaMicros         int64  `json:"perMediaMicros"`
-	PerVideoSecondMicros   int64  `json:"perVideoSecondMicros"`
 }
 
 func (s *Service) AdminAnalytics(actor *model.User, query AnalyticsQuery) (*AnalyticsOverview, error) {
@@ -234,17 +212,9 @@ func (s *Service) decorateAPICallLogs(logs []model.ApiCallLog) error {
 	for _, user := range users {
 		userByID[user.ID] = user
 	}
-	billingOrderIDs := make([]string, 0, len(logs))
-	seenBillingOrderIDs := make(map[string]struct{}, len(logs))
 	taskIDs := make([]string, 0, len(logs))
 	seenTaskIDs := make(map[string]struct{}, len(logs))
 	for _, log := range logs {
-		if log.Billable && log.BillingOrderID != "" {
-			if _, exists := seenBillingOrderIDs[log.BillingOrderID]; !exists {
-				seenBillingOrderIDs[log.BillingOrderID] = struct{}{}
-				billingOrderIDs = append(billingOrderIDs, log.BillingOrderID)
-			}
-		}
 		if (log.Capability != "image" && log.Capability != "video") || log.TaskID == "" {
 			continue
 		}
@@ -262,10 +232,6 @@ func (s *Service) decorateAPICallLogs(logs []model.ApiCallLog) error {
 	for _, task := range tasks {
 		taskByID[task.ID] = task
 	}
-	billingOrderByID, err := s.repo.BillingOrdersByIDs(billingOrderIDs)
-	if err != nil {
-		return err
-	}
 	for index := range logs {
 		if logs[index].StartedAt.IsZero() {
 			logs[index].StartedAt = logs[index].CreatedAt
@@ -281,25 +247,7 @@ func (s *Service) decorateAPICallLogs(logs []model.ApiCallLog) error {
 			logs[index].UserDisplayName = user.DisplayName
 			logs[index].UserAccount = user.Username
 		}
-		if logs[index].Billable {
-			if order, exists := billingOrderByID[logs[index].BillingOrderID]; exists && order.UserID == logs[index].UserID {
-				logs[index].BillingAvailable = true
-				logs[index].BillingStatus = order.Status
-				if order.ChannelID == logs[index].ChannelID {
-					logs[index].CreditCostConfigured = order.CostPricing.Configured
-					cost, costErr := billingCreditCost(order)
-					if costErr != nil {
-						return costErr
-					}
-					logs[index].CreditCostMicrocredits = cost
-				}
-				if order.Status == model.BillingStatusSettled {
-					logs[index].BillingAmount = order.ActualAmountMicrocredits
-				} else if order.Status != model.BillingStatusRefunded {
-					logs[index].BillingAmount = order.ReservedAmountMicrocredits
-				}
-			}
-		}
+
 		if task, exists := taskByID[logs[index].TaskID]; exists && task.UserID == logs[index].UserID {
 			logs[index].TaskStatus = task.Status
 			previewURL, previewKind := taskMediaPreview(task.ResultJSON, task.Type)
@@ -411,26 +359,14 @@ func (s *Service) AdminAPICallLogsCSV(actor *model.User, query APICallLogQuery) 
 	var buffer bytes.Buffer
 	buffer.WriteString("\xEF\xBB\xBF")
 	writer := csv.NewWriter(&buffer)
-	_ = writer.Write([]string{"时间", "用户", "用户账号", "渠道", "模型", "能力", "状态", "轮询次数", "耗时毫秒", "输入Token", "输出Token", "缓存Token", "销售价格(微积分)", "积分计费状态", "成本价格(微积分)", "上游估算费用(微单位)", "币种", "错误码", "错误"})
+	_ = writer.Write([]string{"时间", "用户", "用户账号", "渠道", "模型", "能力", "状态", "轮询次数", "耗时毫秒", "输入Token", "输出Token", "缓存Token", "错误码", "错误"})
 	for _, log := range logs {
 		startedAt := log.StartedAt
 		if startedAt.IsZero() {
 			startedAt = log.CreatedAt
 		}
-		billingAmount, billingStatus := "", ""
-		if log.BillingAvailable {
-			billingAmount = strconv.FormatInt(log.BillingAmount, 10)
-			billingStatus = string(log.BillingStatus)
-		}
-		upstreamCost := ""
-		creditCost := ""
-		if log.CreditCostMicrocredits != nil {
-			creditCost = strconv.FormatInt(*log.CreditCostMicrocredits, 10)
-		}
-		if log.CostAvailable {
-			upstreamCost = strconv.FormatInt(log.EstimatedCostMicros, 10)
-		}
-		_ = writer.Write([]string{startedAt.UTC().Format(time.RFC3339), log.UserDisplayName, log.UserAccount, log.ChannelName, log.Model, log.Capability, string(log.Status), strconv.Itoa(log.PollCount), strconv.FormatInt(log.DurationMs, 10), strconv.FormatInt(log.InputTokens, 10), strconv.FormatInt(log.OutputTokens, 10), strconv.FormatInt(log.CachedTokens, 10), billingAmount, billingStatus, creditCost, upstreamCost, log.Currency, log.ErrorCode, log.Error})
+
+		_ = writer.Write([]string{startedAt.UTC().Format(time.RFC3339), log.UserDisplayName, log.UserAccount, log.ChannelName, log.Model, log.Capability, string(log.Status), strconv.Itoa(log.PollCount), strconv.FormatInt(log.DurationMs, 10), strconv.FormatInt(log.InputTokens, 10), strconv.FormatInt(log.OutputTokens, 10), strconv.FormatInt(log.CachedTokens, 10), log.ErrorCode, log.Error})
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
@@ -451,81 +387,19 @@ func (s *Service) AdminAnalyticsCSV(actor *model.User, query AnalyticsQuery) ([]
 	var buffer bytes.Buffer
 	buffer.WriteString("\xEF\xBB\xBF")
 	writer := csv.NewWriter(&buffer)
-	_ = writer.Write([]string{"时间", "用户ID", "渠道ID", "任务ID", "能力", "请求阶段", "模型", "状态", "状态码", "耗时毫秒", "输入Token", "输出Token", "缓存Token", "媒体数量", "视频秒数", "估算费用(微单位)", "币种", "错误类型"})
+	_ = writer.Write([]string{"时间", "用户ID", "渠道ID", "任务ID", "能力", "请求阶段", "模型", "状态", "状态码", "耗时毫秒", "输入Token", "输出Token", "缓存Token", "媒体数量", "视频秒数", "错误类型"})
 	for _, log := range logs {
-		cost := ""
-		if log.CostAvailable {
-			cost = strconv.FormatInt(log.EstimatedCostMicros, 10)
-		}
+
 		inputTokens, outputTokens, cachedTokens := "", "", ""
 		if log.UsageAvailable {
 			inputTokens = strconv.FormatInt(log.InputTokens, 10)
 			outputTokens = strconv.FormatInt(log.OutputTokens, 10)
 			cachedTokens = strconv.FormatInt(log.CachedTokens, 10)
 		}
-		_ = writer.Write([]string{log.CreatedAt.Format(time.RFC3339), log.UserID, log.ChannelID, log.TaskID, log.Capability, log.RequestKind, log.Model, string(log.Status), strconv.Itoa(log.StatusCode), strconv.FormatInt(log.DurationMs, 10), inputTokens, outputTokens, cachedTokens, strconv.Itoa(log.MediaCount), strconv.Itoa(log.VideoSeconds), cost, log.Currency, classifyAPICallError(log)})
+		_ = writer.Write([]string{log.CreatedAt.Format(time.RFC3339), log.UserID, log.ChannelID, log.TaskID, log.Capability, log.RequestKind, log.Model, string(log.Status), strconv.Itoa(log.StatusCode), strconv.FormatInt(log.DurationMs, 10), inputTokens, outputTokens, cachedTokens, strconv.Itoa(log.MediaCount), strconv.Itoa(log.VideoSeconds), classifyAPICallError(log)})
 	}
 	writer.Flush()
 	return buffer.Bytes(), writer.Error()
-}
-
-func (s *Service) AdminModelPricings(actor *model.User) ([]model.ModelPricing, error) {
-	if err := s.RequireAdmin(actor); err != nil {
-		return nil, err
-	}
-	return s.repo.ModelPricings()
-}
-
-func (s *Service) SaveModelPricing(actor *model.User, id string, req ModelPricingRequest) (*model.ModelPricing, error) {
-	if err := s.RequireAdmin(actor); err != nil {
-		return nil, err
-	}
-	req.Model = strings.TrimSpace(req.Model)
-	req.Capability = normalizeCapability(req.Capability)
-	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
-	if req.Model == "" || req.Capability == "" {
-		return nil, BadAuthRequest("请填写模型并选择能力类型")
-	}
-	if req.Currency == "" {
-		req.Currency = "USD"
-	}
-	if len(req.Currency) > 12 || hasNegativePricing(req) {
-		return nil, BadAuthRequest("价格配置格式无效")
-	}
-	pricing := &model.ModelPricing{ID: newID(), CreatedAt: time.Now()}
-	if id != "" {
-		current, err := s.repo.ModelPricingByID(id)
-		if err != nil {
-			return nil, err
-		}
-		pricing = current
-	}
-	pricing.ChannelID = strings.TrimSpace(req.ChannelID)
-	pricing.Model = req.Model
-	pricing.Capability = req.Capability
-	pricing.Currency = req.Currency
-	pricing.InputPerMillionMicros = req.InputPerMillionMicros
-	pricing.OutputPerMillionMicros = req.OutputPerMillionMicros
-	pricing.CachedPerMillionMicros = req.CachedPerMillionMicros
-	pricing.PerRequestMicros = req.PerRequestMicros
-	pricing.PerMediaMicros = req.PerMediaMicros
-	pricing.PerVideoSecondMicros = req.PerVideoSecondMicros
-	pricing.UpdatedAt = time.Now()
-	if err := s.repo.Save(pricing); err != nil {
-		return nil, err
-	}
-	return pricing, nil
-}
-
-func (s *Service) DeleteModelPricing(actor *model.User, id string) error {
-	if err := s.RequireAdmin(actor); err != nil {
-		return err
-	}
-	return s.repo.DeleteModelPricing(id)
-}
-
-func hasNegativePricing(req ModelPricingRequest) bool {
-	return req.InputPerMillionMicros < 0 || req.OutputPerMillionMicros < 0 || req.CachedPerMillionMicros < 0 || req.PerRequestMicros < 0 || req.PerMediaMicros < 0 || req.PerVideoSecondMicros < 0
 }
 
 func normalizeAnalyticsFilter(query AnalyticsQuery) repository.AnalyticsFilter {
@@ -598,16 +472,9 @@ func buildAnalyticsOverview(filter repository.AnalyticsFilter, tasks []model.Tas
 	result.KPI.DAU = rollingActiveUsers(rollingActivities, rollingTasks, rollingLogs, filter.To.AddDate(0, 0, -1), filter.To)
 	result.KPI.WAU = rollingActiveUsers(rollingActivities, rollingTasks, rollingLogs, filter.To.AddDate(0, 0, -7), filter.To)
 	result.KPI.MAU = rollingActiveUsers(rollingActivities, rollingTasks, rollingLogs, filter.To.AddDate(0, 0, -30), filter.To)
-	currency := ""
 	for _, log := range logs {
 		durations = append(durations, log.DurationMs)
-		if log.CostAvailable {
-			result.KPI.CostAvailable = true
-			result.KPI.EstimatedCostMicros += log.EstimatedCostMicros
-			currency = mergeCurrency(currency, log.Currency)
-		}
 	}
-	result.KPI.Currency = currency
 	result.KPI.P95DurationMs = percentile(durations, 0.95)
 	result.Trend = buildAnalyticsTrend(filter, tasks, logs, activities)
 	result.Models = buildAnalyticsModels(tasks, logs)
@@ -724,11 +591,7 @@ func buildAnalyticsModels(tasks []model.Task, logs []model.ApiCallLog) []Analyti
 		}
 		item.row.MediaCount += log.MediaCount
 		item.row.VideoSeconds += log.VideoSeconds
-		if log.CostAvailable {
-			item.row.CostAvailable = true
-			item.row.EstimatedCostMicros += log.EstimatedCostMicros
-			item.row.Currency = mergeCurrency(item.row.Currency, log.Currency)
-		}
+
 	}
 	result := make([]AnalyticsModelRow, 0, len(items))
 	for _, item := range items {
@@ -917,16 +780,6 @@ func percentile(values []int64, quantile float64) int64 {
 	return items[index]
 }
 
-func mergeCurrency(current string, next string) string {
-	if next == "" {
-		return current
-	}
-	if current == "" || current == next {
-		return next
-	}
-	return "MIXED"
-}
-
 func capabilityFromTaskType(taskType string) string {
 	value := strings.ToLower(taskType)
 	for _, capability := range []string{"video", "image", "audio", "text"} {
@@ -958,31 +811,6 @@ func tasksWithLoggedRequests(tasks []model.Task, logs []model.ApiCallLog) []mode
 		}
 	}
 	return result
-}
-
-func (s *Service) estimateCallCost(log *model.ApiCallLog) {
-	if log.Status == model.ApiCallStatusFailed && !log.UsageAvailable {
-		return
-	}
-	pricing, err := s.repo.ModelPricing(log.ChannelID, log.Model, log.Capability)
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return
-		}
-		return
-	}
-	cost := int64(0)
-	if log.Billable {
-		cost = pricing.PerRequestMicros
-	}
-	cost += log.InputTokens * pricing.InputPerMillionMicros / 1_000_000
-	cost += log.OutputTokens * pricing.OutputPerMillionMicros / 1_000_000
-	cost += log.CachedTokens * pricing.CachedPerMillionMicros / 1_000_000
-	cost += int64(log.MediaCount) * pricing.PerMediaMicros
-	cost += int64(log.VideoSeconds) * pricing.PerVideoSecondMicros
-	log.EstimatedCostMicros = cost
-	log.CostAvailable = true
-	log.Currency = pricing.Currency
 }
 
 func (s *Service) EnrichAPICallLog(log *model.ApiCallLog, responseBody []byte) {
