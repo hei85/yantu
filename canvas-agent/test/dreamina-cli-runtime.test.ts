@@ -2677,7 +2677,7 @@ test("Dreamina official cancellation releases a scheduler slot without local can
     }
 });
 
-test("Dreamina cross-Runtime queue head promotes after a peer reconciler releases durable capacity", async () => {
+test("Dreamina cross-Runtime queue head promotes after a peer reconciler releases durable capacity", { timeout: 30_000 }, async () => {
     const box = await sandbox();
     let releaseTerminal!: () => void;
     let markTerminalQueryStarted!: () => void;

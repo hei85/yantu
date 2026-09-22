@@ -78,9 +78,14 @@ test("Dreamina safe staging rejects traversal, root escape, links, oversize, hea
             }
 
             const symbolic = path.join(owned, `symbolic-${media.kind}${media.extension}`);
-            await fs.symlink(valid, symbolic, "file");
-            if (await rejectedCode(media, symbolic, owned, stateRoot) !== "dreamina_reference_invalid") {
-                failures.push(`${media.kind}:symlink`);
+            try {
+                await fs.symlink(valid, symbolic, "file");
+                if (await rejectedCode(media, symbolic, owned, stateRoot) !== "dreamina_reference_invalid") {
+                    failures.push(`${media.kind}:symlink`);
+                }
+            } catch (error) {
+                // Windows 默认不允许创建符号链接（需要开发者模式/管理员权限）；无权限时跳过该项，其余安全检查照常执行。
+                if ((error as { code?: string }).code !== "EPERM") throw error;
             }
 
             const hardSource = path.join(owned, `hard-source-${media.kind}${media.extension}`);

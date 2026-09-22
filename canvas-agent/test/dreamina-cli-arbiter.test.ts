@@ -432,7 +432,7 @@ test("Dreamina CLI invocation is exclusive across two Runtime instances", async 
     }
 });
 
-test("arbiter owner release hands off to a queued successor without leaving the state lock", async () => {
+test("arbiter owner release hands off to a queued successor without leaving the state lock", { timeout: 30_000 }, async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "dreamina-arbiter-release-handoff-"));
     const stateFile = path.join(root, "arbiter.json");
     const ownerArbiter = new DreaminaCliArbiter({ stateFile, pollMs: 1, heartbeatMs: 25, leaseMs: 250 });

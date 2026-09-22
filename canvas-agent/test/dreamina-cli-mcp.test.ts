@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 
@@ -13,6 +13,19 @@ import {
     parseDreaminaPublicRuntimeResult,
     projectDreaminaPublicRuntimeResult,
 } from "../src/dreamina-public-result.js";
+
+// Windows 上 closeAllConnections() 后再 close() 会抛 ERR_SERVER_NOT_RUNNING；测试夹具允许两种时序。
+async function closeTestServer(server: Server) {
+    if (!server.listening) return;
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+            const code = (error as { code?: string } | undefined)?.code;
+            if (error && code !== "ERR_SERVER_NOT_RUNNING") reject(error);
+            else resolve();
+        });
+    });
+}
 
 const input = {
     operation: "text2image" as const,
@@ -63,8 +76,7 @@ test("Dreamina MCP default composition serializes one HTTP public accepted resul
         assert.equal(requests, 1);
         assert.deepEqual(JSON.parse(requestBody), input);
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -115,8 +127,7 @@ test("Dreamina MCP rejects malformed HTTP public results without replaying submi
             assert.equal(requests, index + 1);
         }
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -156,8 +167,7 @@ test("Dreamina MCP maps hostile unknown HTTP error envelopes to submission unkno
         );
         assert.equal(requests, 1);
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -201,8 +211,7 @@ test("Dreamina MCP rejects contradictory or non-exact HTTP envelopes after one d
             assert.equal(requests, index + 1);
         }
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -235,8 +244,7 @@ test("Dreamina MCP preserves only an exact trusted pre-submit HTTP error envelop
         );
         assert.equal(requests, 1);
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -265,8 +273,7 @@ test("Dreamina MCP accepts an exact public success on another 2xx status", async
         assert.deepEqual(result, { state: "accepted", receiptRecorded: true });
         assert.equal(requests, 1);
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -312,8 +319,7 @@ test("Dreamina MCP rejects status and exact public envelope contradictions witho
             assert.equal(requests, index + 1);
         }
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -357,8 +363,7 @@ test("Dreamina MCP refuses HTTP redirects without replaying a submission", async
         );
         assert.equal(requests, 1);
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -616,8 +621,7 @@ test("Dreamina public MCP rejects query_result before the default HTTP dispatch"
         await assert.rejects(httpHandler!({ operation: "query_result", submitId: "receipt-public-query-0002" }, {}));
         assert.equal(requests, 0);
     } finally {
-        runtimeServer.closeAllConnections();
-        await new Promise<void>((resolve, reject) => runtimeServer.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(runtimeServer);
     }
 });
 
@@ -687,7 +691,6 @@ test("Dreamina MCP treats a lost response after dispatch as submission unknown",
         );
         assert.equal(requests, 1);
     } finally {
-        server.closeAllConnections();
-        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await closeTestServer(server);
     }
 });

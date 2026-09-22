@@ -13,6 +13,11 @@ import {
 } from "../src/config.js";
 import { startLocalRuntime } from "../src/local-runtime-host.js";
 
+// tsx 需要 Node 才能真正稳定运行：在 Bun 测试 runner 下 process.execPath 是 bun，Windows 上会触发 preload 解析问题。
+function nodeExecutable() {
+    return process.env.CANVAS_TEST_NODE_BIN || (process.versions.bun ? "node" : process.execPath);
+}
+
 test("Runtime owner is generated once while browser registrations remain separate public-key records", () => {
     const config = normalizeLocalRuntimeConfig({
         url: "http://127.0.0.1:17371",
@@ -212,7 +217,7 @@ function importConfigInChild(configDir: string) {
     const tsxCli = fileURLToPath(new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url));
     const configModule = pathToFileURL(path.join(canvasAgentRoot, "src", "config.ts")).href;
     const source = `import(${JSON.stringify(configModule)}).then((value)=>process.stdout.write(JSON.stringify({configDir:value.CONFIG_DIR,configFile:value.CONFIG_FILE})))`;
-    const result = spawnSync(process.execPath, [tsxCli, "-e", source], {
+    const result = spawnSync(nodeExecutable(), [tsxCli, "-e", source], {
         cwd: canvasAgentRoot,
         encoding: "utf8",
         env: { ...process.env, FRAMEFIELD_LOCAL_RUNTIME_CONFIG_DIR: configDir },
@@ -233,7 +238,7 @@ function loadConfigInChild(configDir: string, trustedWebOrigins?: string) {
     const env = { ...process.env, FRAMEFIELD_LOCAL_RUNTIME_CONFIG_DIR: configDir };
     delete env.FRAMEFIELD_TRUSTED_WEB_ORIGINS;
     if (trustedWebOrigins !== undefined) env.FRAMEFIELD_TRUSTED_WEB_ORIGINS = trustedWebOrigins;
-    const result = spawnSync(process.execPath, [tsxCli, "-e", source], {
+    const result = spawnSync(nodeExecutable(), [tsxCli, "-e", source], {
         cwd: canvasAgentRoot,
         encoding: "utf8",
         env,
