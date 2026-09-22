@@ -59,7 +59,7 @@ export function ResponseInterceptionPane() {
 }
 
 export function RuntimePolicyPane() {
-    return <SystemSettingsPane><RuntimePolicySettingsPage /></SystemSettingsPane>;
+    return <SystemSettingsPane><AdminProvider><RuntimePolicySettingsPage /></AdminProvider></SystemSettingsPane>;
 }
 
 export function SystemUpdatePane() {
