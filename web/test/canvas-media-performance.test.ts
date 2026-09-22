@@ -10,14 +10,16 @@ import { collectImageStorageKeys } from "../src/services/image-storage";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 import { detectVideoAudioTrack, detectVideoAudioTrackFromBlob, detectVideoAudioTrackFromUrl } from "../src/lib/video-poster";
 
-const canvasNodeContentSource = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-node-content.tsx"), "utf8");
-const canvasAudioPlayerSource = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-audio-player.tsx"), "utf8");
-const canvasMentionSource = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-resource-mention-textarea.tsx"), "utf8");
-const canvasNodeSource = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-node.tsx"), "utf8");
-const canvasVideoPreviewSource = readFileSync(resolve(import.meta.dir, "../src/services/canvas-video-preview.ts"), "utf8");
-const videoPlayerSource = readFileSync(resolve(import.meta.dir, "../src/components/video-player.tsx"), "utf8");
-const canvasProjectSource = readFileSync(resolve(import.meta.dir, "../src/pages/canvas/project.tsx"), "utf8");
-const globalStylesSource = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8");
+// Windows 检出会把 LF 转成 CRLF；这里的源码断言先统一行尾，避免跨平台误报。
+const readSource = (path: string) => readFileSync(resolve(import.meta.dir, "../src", path), "utf8").replace(/\r\n/g, "\n");
+const canvasNodeContentSource = readSource("components/canvas/canvas-node-content.tsx");
+const canvasAudioPlayerSource = readSource("components/canvas/canvas-audio-player.tsx");
+const canvasMentionSource = readSource("components/canvas/canvas-resource-mention-textarea.tsx");
+const canvasNodeSource = readSource("components/canvas/canvas-node.tsx");
+const canvasVideoPreviewSource = readSource("services/canvas-video-preview.ts");
+const videoPlayerSource = readSource("components/video-player.tsx");
+const canvasProjectSource = readSource("pages/canvas/project.tsx");
+const globalStylesSource = readSource("styles/globals.css");
 
 function node(id: string, type: CanvasNodeType): CanvasNodeData {
     return { id, type, title: id, position: { x: 0, y: 0 }, width: 320, height: 180, metadata: {} };
