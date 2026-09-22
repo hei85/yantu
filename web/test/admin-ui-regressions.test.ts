@@ -120,15 +120,15 @@ test("analytics keeps fixed range presets distinct and uses enabled channel mode
 });
 
 test("system settings group only exposes the kept panels", async () => {
-    const settings = await Bun.file(new URL("../src/pages/settings/index.tsx", import.meta.url)).text();
+    const { configSections } = await import("../src/pages/settings/settings-sections");
+    const keys = configSections.map((section) => section.key);
 
-    expect(settings).toContain('{ key: "prompt-templates"');
-    expect(settings).toContain('{ key: "features"');
-    expect(settings).toContain('{ key: "drawing-engine"');
-    expect(settings).toContain('{ key: "third-party"');
+    for (const key of ["prompt-templates", "features", "drawing-engine", "third-party"]) {
+        expect(keys).toContain(key);
+    }
     // 存储资源、系统性能已下线，不再出现在设置导航里。
-    expect(settings).not.toContain('{ key: "resources"');
-    expect(settings).not.toContain('{ key: "system-performance"');
+    expect(keys).not.toContain("resources");
+    expect(keys).not.toContain("system-performance");
 });
 
 test("nested admin pages return to their own parent entry", async () => {

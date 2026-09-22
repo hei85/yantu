@@ -1,6 +1,7 @@
 import { App, Button, InputNumber } from "antd";
 import { SettingsRow } from "@/components/ui/product/settings-row";
-import { ArrowLeft, Boxes, Bug, KeyRound, MessageSquareText, Paintbrush, RadioTower, SlidersHorizontal, ToggleLeft, Zap } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { configSections, isConfigSection, type ConfigSectionKey } from "./settings-sections";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -12,39 +13,8 @@ import { ModelDefaultGrid } from "./model-default-grid";
 import { PromptPreferencesPane } from "./prompt-preferences-pane";
 import { ModelQuickConnectPane } from "./model-quick-connect-pane";
 import DiagnosticsPanel from "./diagnostics-panel";
-import { DrawingEnginePane, FeatureAvailabilityPane, PromptTemplatesPane, ThirdPartySettingsPane } from "./system-settings-pane";
-
-type ConfigSectionKey =
-    | "quick"
-    | "channels"
-    | "models"
-    | "preferences"
-    | "prompts"
-    | "diagnostics"
-    // 原管理后台页面并入设置后的系统分区。
-    | "prompt-templates"
-    | "features"
-    | "drawing-engine"
-    | "third-party";
-
-type ConfigSection = { key: ConfigSectionKey; label: string; description: string; icon: ReactNode; group: "创作设置" | "系统"; };
-
-const configSections: ConfigSection[] = [
-    { key: "quick", label: "快速接入", description: "只填 API 地址、API Key 和模型名", icon: <Zap className="size-4" />, group: "创作设置" },
-    { key: "channels", label: "模型接入", description: "接入你自己的模型 API", icon: <RadioTower className="size-4" />, group: "创作设置" },
-    { key: "models", label: "模型选择", description: "按领域选择默认模型", icon: <Boxes className="size-4" />, group: "创作设置" },
-    { key: "preferences", label: "生成偏好", description: "画布生成默认值", icon: <SlidersHorizontal className="size-4" />, group: "创作设置" },
-    { key: "prompts", label: "提示词偏好", description: "按任务定制平台模板", icon: <MessageSquareText className="size-4" />, group: "创作设置" },
-    { key: "diagnostics", label: "问题诊断", description: "导出日志协助排查", icon: <Bug className="size-4" />, group: "创作设置" },
-    { key: "prompt-templates", label: "提示词模板", description: "平台创作策略版本", icon: <MessageSquareText className="size-4" />, group: "系统" },
-    { key: "features", label: "功能开放", description: "工作台入口与插件开放范围", icon: <ToggleLeft className="size-4" />, group: "系统" },
-    { key: "drawing-engine", label: "绘图工具", description: "画布绘图节点默认引擎", icon: <Paintbrush className="size-4" />, group: "系统" },
-    { key: "third-party", label: "第三方参数配置", description: "第三方凭据与集成参数", icon: <KeyRound className="size-4" />, group: "系统" },
-];
-
-export function isConfigSection(value: string | null): value is ConfigSectionKey {
-    return configSections.some((section) => section.key === value);
-}
+import { AnalyticsSettingsPane, AppearanceSettingsPane, DrawingEnginePane, FeatureAvailabilityPane, PromptTemplatesPane, RequestLogsPane, ResponseInterceptionPane, RuntimePolicyPane, StorageSettingsPane, SystemUpdatePane, ThirdPartySettingsPane } from "./system-settings-pane";
+import { RunningHubSettingsPane } from "./runninghub-settings-pane";
 
 export default function SettingsPage() {
     const { message } = App.useApp();
@@ -166,6 +136,14 @@ export default function SettingsPage() {
         features: <FeatureAvailabilityPane />,
         "drawing-engine": <DrawingEnginePane />,
         "third-party": <ThirdPartySettingsPane />,
+        appearance: <AppearanceSettingsPane />,
+        storage: <StorageSettingsPane />,
+        interception: <ResponseInterceptionPane />,
+        "runtime-policy": <RuntimePolicyPane />,
+        "system-update": <SystemUpdatePane />,
+        runninghub: <SettingsPane><RunningHubSettingsPane /></SettingsPane>,
+        analytics: <AnalyticsSettingsPane />,
+        logs: <RequestLogsPane />,
     };
 
     return (
