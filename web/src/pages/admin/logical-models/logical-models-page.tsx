@@ -661,9 +661,9 @@ function logicalModelStatusTag(item: AdminLogicalModel) {
 
 
 function logicalPriceLabel(item: AdminLogicalModel) {
-    const priceTiers = item.priceTiers || [];
-    if (!priceTiers.length) return <span className="text-xs text-foreground/45">待配置系统规格</span>;
-    return <span className="text-xs">{priceTiers.length} 个系统规格档</span>;
+    const variants = item.variants || [];
+    if (!variants.length) return <span className="text-xs text-foreground/45">待配置系统规格</span>;
+    return <span className="text-xs">{variants.length} 个系统规格档</span>;
 }
 
 function logicalModelToForm(item: AdminLogicalModel): LogicalModelFormValues {

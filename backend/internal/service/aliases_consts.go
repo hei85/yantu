@@ -31,7 +31,7 @@ const (
 	ErrCodeInvalidModelSelection       = app.ErrCodeInvalidModelSelection
 	ErrCodeModelCapabilityNotSupported = app.ErrCodeModelCapabilityNotSupported
 	ErrCodeModelCatalogMismatch        = app.ErrCodeModelCatalogMismatch
-	ErrCodeModelPriceNotConfigured     = app.ErrCodeModelPriceNotConfigured
+	ErrCodeModelVariantNotConfigured   = app.ErrCodeModelVariantNotConfigured
 	ErrCodeModelRouteUnavailable       = app.ErrCodeModelRouteUnavailable
 	ErrCodeProviderRequestFailed       = app.ErrCodeProviderRequestFailed
 	FeatureCustomChannels              = app.FeatureCustomChannels

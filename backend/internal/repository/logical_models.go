@@ -91,7 +91,7 @@ func (r *Repository) ChannelModelsByIDs(ids []string) ([]model.ChannelModel, err
 	if err := r.db.Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return nil, err
 	}
-	return items, r.PopulateChannelModelPriceTiers(items)
+	return items, r.PopulateChannelModelVariants(items)
 }
 
 func (r *Repository) SystemChannelsByIDs(ids []string, includeDisabled bool) ([]model.ModelChannel, error) {
@@ -111,7 +111,7 @@ func (r *Repository) ChannelModel(id string) (*model.ChannelModel, error) {
 	if err := r.db.First(&item, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
-	if err := r.PopulateChannelModelPriceTier(&item); err != nil {
+	if err := r.PopulateChannelModelVariant(&item); err != nil {
 		return nil, err
 	}
 	return &item, nil
@@ -299,22 +299,16 @@ func (r *Repository) SaveLogicalModelBundle(item *model.LogicalModel, revision *
 			}
 		} else {
 			result := tx.Model(&model.LogicalModel{}).Where("id = ?", item.ID).Updates(map[string]any{
-				"code":                      item.Code,
-				"name":                      item.Name,
-				"icon":                      item.Icon,
-				"description":               item.Description,
-				"capability":                item.Capability,
-				"enabled":                   item.Enabled,
-				"sort_order":                item.SortOrder,
-				"source_channel_model_id":   item.SourceChannelModelID,
-				"price_policy":              item.PricePolicy,
-				"billing_mode":              item.BillingMode,
-				"unit_price_microcredits":   item.UnitPriceMicrocredits,
-				"input_price_microcredits":  item.InputPriceMicrocredits,
-				"output_price_microcredits": item.OutputPriceMicrocredits,
-				"cached_price_microcredits": item.CachedPriceMicrocredits,
-				"legacy_model_ids_json":     item.LegacyModelIDsJSON,
-				"updated_at":                item.UpdatedAt,
+				"code":                    item.Code,
+				"name":                    item.Name,
+				"icon":                    item.Icon,
+				"description":             item.Description,
+				"capability":              item.Capability,
+				"enabled":                 item.Enabled,
+				"sort_order":              item.SortOrder,
+				"source_channel_model_id": item.SourceChannelModelID,
+				"legacy_model_ids_json":   item.LegacyModelIDsJSON,
+				"updated_at":              item.UpdatedAt,
 			})
 			if result.Error != nil {
 				return result.Error

@@ -3,7 +3,7 @@ import type { CanvasOperation } from "@/lib/canvas/canvas-operation-contract";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CreateTaskInput, GenerationTask } from "./task-center";
 
-export type CreationStatus = "idle" | "running" | "waiting_answer" | "waiting_proposal" | "waiting_canvas" | "waiting_payment" | "waiting_task" | "paused" | "completed" | "cancelled";
+export type CreationStatus = "idle" | "running" | "waiting_answer" | "waiting_proposal" | "waiting_canvas" | "waiting_confirmation" | "waiting_task" | "paused" | "completed" | "cancelled";
 export type CreationGuard = { executionEpoch: number; owner: string };
 export type CreationRun = {
     id: string; userId: string; canvasId?: string; revision: number;

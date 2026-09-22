@@ -27,8 +27,6 @@ var ErrTextReplayQuotaExceeded = errors.New("text replay quota exceeded")
 
 var ErrTextReplayClosed = errors.New("text replay task is closed")
 
-var ErrEmailVerificationCodeInvalid = errors.New("email verification code is no longer valid")
-
 var ErrProjectAssetFolderNotEmpty = errors.New("project asset folder is not empty")
 
 var ErrProjectHasActiveTasks = errors.New("project has active tasks")
@@ -195,7 +193,7 @@ func (r *Repository) User(id string) (*model.User, error) {
 
 func (r *Repository) UserByAccount(account string) (*model.User, error) {
 	var user model.User
-	if err := r.db.Where("lower(username) = lower(?) OR lower(email) = lower(?)", account, account).First(&user).Error; err != nil {
+	if err := r.db.Where("lower(username) = lower(?)", account).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -204,14 +202,6 @@ func (r *Repository) UserByAccount(account string) (*model.User, error) {
 func (r *Repository) UserByUsername(username string) (*model.User, error) {
 	var user model.User
 	if err := r.db.Where("lower(username) = lower(?)", username).First(&user).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
-func (r *Repository) UserByEmail(email string) (*model.User, error) {
-	var user model.User
-	if err := r.db.Where("email <> '' AND lower(email) = lower(?)", email).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -229,7 +219,7 @@ func (r *Repository) AdminUsers(keyword string, role model.UserRole, status mode
 	query := r.db.Model(&model.User{})
 	if value := strings.TrimSpace(keyword); value != "" {
 		pattern := "%" + strings.ToLower(value) + "%"
-		query = query.Where("lower(username) LIKE ? OR lower(display_name) LIKE ? OR lower(email) LIKE ?", pattern, pattern, pattern)
+		query = query.Where("lower(username) LIKE ? OR lower(display_name) LIKE ?", pattern, pattern)
 	}
 	if role == model.UserRoleAdmin || role == model.UserRoleUser {
 		query = query.Where("role = ?", role)
@@ -280,69 +270,6 @@ func (r *Repository) DeleteExpiredAuthSessions() error {
 
 func (r *Repository) DeleteUserAuthSessions(userID string) error {
 	return r.db.Delete(&model.AuthSession{}, "user_id = ?", userID).Error
-}
-
-func (r *Repository) LatestEmailVerificationCode(email string, purpose string) (*model.EmailVerificationCode, error) {
-	var code model.EmailVerificationCode
-	if err := r.db.Where("email = ? AND purpose = ? AND used_at IS NULL", email, purpose).Order("created_at desc").First(&code).Error; err != nil {
-		return nil, err
-	}
-	return &code, nil
-}
-
-func (r *Repository) MarkEmailVerificationCodeUsed(id string, usedAt time.Time) error {
-	return r.db.Model(&model.EmailVerificationCode{}).Where("id = ? AND used_at IS NULL", id).Update("used_at", usedAt).Error
-}
-
-func (r *Repository) DeleteEmailVerificationCode(id string) error {
-	return r.db.Delete(&model.EmailVerificationCode{}, "id = ?", id).Error
-}
-
-func (r *Repository) CreateUserWithEmailVerification(user *model.User, verificationCodeID string, usedAt time.Time) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&model.EmailVerificationCode{}).Where("id = ? AND used_at IS NULL AND expires_at > ?", verificationCodeID, usedAt).Update("used_at", usedAt)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return errors.New("email verification code is no longer valid")
-		}
-		return tx.Create(user).Error
-	})
-}
-
-func (r *Repository) ResetUserPasswordWithEmailVerification(userID string, email string, purpose string, verificationCodeID string, passwordHash string, usedAt time.Time) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		codeResult := tx.Model(&model.EmailVerificationCode{}).
-			Where("id = ? AND email = ? AND purpose = ? AND used_at IS NULL AND expires_at > ?", verificationCodeID, email, purpose, usedAt).
-			Update("used_at", usedAt)
-		if codeResult.Error != nil {
-			return codeResult.Error
-		}
-		if codeResult.RowsAffected != 1 {
-			return ErrEmailVerificationCodeInvalid
-		}
-
-		userResult := tx.Model(&model.User{}).
-			Where("id = ? AND email <> '' AND lower(email) = lower(?) AND status = ? AND password_hash <> ''", userID, email, model.UserStatusActive).
-			Updates(map[string]any{"password_hash": passwordHash, "updated_at": usedAt})
-		if userResult.Error != nil {
-			return userResult.Error
-		}
-		if userResult.RowsAffected != 1 {
-			return ErrEmailVerificationCodeInvalid
-		}
-		if err := tx.Delete(&model.AuthSession{}, "user_id = ?", userID).Error; err != nil {
-			return err
-		}
-		return tx.Model(&model.EmailVerificationCode{}).
-			Where("email = ? AND purpose = ? AND used_at IS NULL", email, purpose).
-			Update("used_at", usedAt).Error
-	})
-}
-
-func (r *Repository) DeleteExpiredEmailVerificationCodes(now time.Time) error {
-	return r.db.Delete(&model.EmailVerificationCode{}, "expires_at <= ? OR used_at IS NOT NULL", now).Error
 }
 
 func (r *Repository) Task(id string) (*model.Task, error) {

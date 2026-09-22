@@ -18,14 +18,12 @@ import (
 type CreateAdminUserRequest struct {
 	Username    string           `json:"username"`
 	DisplayName string           `json:"displayName"`
-	Email       string           `json:"email"`
 	Password    string           `json:"password"`
 	Role        model.UserRole   `json:"role"`
 	Status      model.UserStatus `json:"status"`
 }
 type UpdateUserRequest struct {
 	DisplayName string           `json:"displayName"`
-	Email       string           `json:"email"`
 	Password    string           `json:"password"`
 	Role        model.UserRole   `json:"role"`
 	Status      model.UserStatus `json:"status"`
@@ -98,39 +96,34 @@ type ChannelRequest struct {
 }
 
 type PublicModelChannel struct {
-	ID               string                    `json:"id"`
-	UserID           string                    `json:"userId"`
-	Scope            model.ChannelScope        `json:"scope"`
-	Enabled          bool                      `json:"enabled"`
-	Name             string                    `json:"name"`
-	SortOrder        int                       `json:"sortOrder"`
-	BaseURL          string                    `json:"baseUrl"`
-	APIKey           string                    `json:"apiKey"`
-	APIFormat        string                    `json:"apiFormat"`
-	ConcurrencyLimit int                       `json:"concurrencyLimit"`
-	Models           []string                  `json:"models"`
-	ModelCosts       []PublicChannelModelPrice `json:"modelCosts"`
-	Headers          []OutboundHeader          `json:"headers,omitempty"`
-	HasAPIKey        bool                      `json:"hasApiKey"`
-	HasSecretKey     bool                      `json:"hasSecretKey"`
-	CreatedAt        time.Time                 `json:"createdAt"`
-	UpdatedAt        time.Time                 `json:"updatedAt"`
+	ID               string                   `json:"id"`
+	UserID           string                   `json:"userId"`
+	Scope            model.ChannelScope       `json:"scope"`
+	Enabled          bool                     `json:"enabled"`
+	Name             string                   `json:"name"`
+	SortOrder        int                      `json:"sortOrder"`
+	BaseURL          string                   `json:"baseUrl"`
+	APIKey           string                   `json:"apiKey"`
+	APIFormat        string                   `json:"apiFormat"`
+	ConcurrencyLimit int                      `json:"concurrencyLimit"`
+	Models           []string                 `json:"models"`
+	ModelCosts       []PublicChannelModelSpec `json:"modelCosts"`
+	Headers          []OutboundHeader         `json:"headers,omitempty"`
+	HasAPIKey        bool                     `json:"hasApiKey"`
+	HasSecretKey     bool                     `json:"hasSecretKey"`
+	CreatedAt        time.Time                `json:"createdAt"`
+	UpdatedAt        time.Time                `json:"updatedAt"`
 }
 
-type PublicChannelModelPrice struct {
-	Model                        string                     `json:"model"`
-	DisplayName                  string                     `json:"displayName"`
-	ChannelLabel                 string                     `json:"channelLabel"`
-	Description                  string                     `json:"description"`
-	Icon                         string                     `json:"icon"`
-	Capability                   string                     `json:"capability"`
-	Protocol                     model.ChannelInterfaceType `json:"protocol"`
-	BillingMode                  string                     `json:"billingMode"`
-	UnitPriceMicrocredits        int64                      `json:"unitPriceMicrocredits"`
-	InputTokenPriceMicrocredits  int64                      `json:"inputTokenPriceMicrocredits"`
-	OutputTokenPriceMicrocredits int64                      `json:"outputTokenPriceMicrocredits"`
-	CachedTokenPriceMicrocredits int64                      `json:"cachedTokenPriceMicrocredits"`
-	CapabilityConfig             *ModelCapabilityConfig     `json:"capabilityConfig,omitempty"`
+type PublicChannelModelSpec struct {
+	Model            string                     `json:"model"`
+	DisplayName      string                     `json:"displayName"`
+	ChannelLabel     string                     `json:"channelLabel"`
+	Description      string                     `json:"description"`
+	Icon             string                     `json:"icon"`
+	Capability       string                     `json:"capability"`
+	Protocol         model.ChannelInterfaceType `json:"protocol"`
+	CapabilityConfig *ModelCapabilityConfig     `json:"capabilityConfig,omitempty"`
 }
 
 func (s *Service) RequireAdmin(user *model.User) error {
@@ -197,18 +190,12 @@ func (s *Service) CreateAdminUser(actor *model.User, req CreateAdminUserRequest)
 		return nil, err
 	}
 	username := normalizeUsername(req.Username)
-	email := normalizeEmail(req.Email)
 	displayName := normalizeDisplayName(req.DisplayName, username)
 	if err := validateUsername(username); err != nil {
 		return nil, err
 	}
 	if err := validatePassword(req.Password); err != nil {
 		return nil, err
-	}
-	if email != "" {
-		if err := validateEmail(email); err != nil {
-			return nil, err
-		}
 	}
 	if req.Role != model.UserRoleAdmin && req.Role != model.UserRoleUser {
 		return nil, BadAuthRequest("\u7528\u6237\u89d2\u8272\u65e0\u6548")
@@ -221,13 +208,6 @@ func (s *Service) CreateAdminUser(actor *model.User, req CreateAdminUserRequest)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	if email != "" {
-		if _, err := s.repo.UserByEmail(email); err == nil {
-			return nil, BadAuthRequest("\u90ae\u7bb1\u5df2\u88ab\u6ce8\u518c")
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
-	}
 	passwordHash, err := hashPassword(req.Password)
 	if err != nil {
 		return nil, err
@@ -236,7 +216,6 @@ func (s *Service) CreateAdminUser(actor *model.User, req CreateAdminUserRequest)
 	user := &model.User{
 		ID:           newID(),
 		Username:     username,
-		Email:        email,
 		DisplayName:  displayName,
 		Role:         req.Role,
 		Status:       req.Status,
@@ -292,20 +271,6 @@ func (s *Service) UpdateUser(actor *model.User, userID string, req UpdateUserReq
 	}
 	if strings.TrimSpace(req.DisplayName) != "" {
 		user.DisplayName = normalizeDisplayName(req.DisplayName, user.Username)
-	}
-	if req.Email != "" {
-		email := normalizeEmail(req.Email)
-		if err := validateEmail(email); err != nil {
-			return nil, err
-		}
-		existing, err := s.repo.UserByEmail(email)
-		if err == nil && existing.ID != user.ID {
-			return nil, BadAuthRequest("邮箱已被注册")
-		}
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
-		user.Email = email
 	}
 	if req.Password != "" {
 		if err := validatePassword(req.Password); err != nil {
@@ -527,7 +492,7 @@ func (s *Service) DuplicateSystemChannel(actor *model.User, id string) (*PublicM
 	}
 	if len(sourceModels) == 0 {
 		for _, name := range channelModelNames(*source) {
-			sourceModels = append(sourceModels, model.ChannelModel{ModelKey: name, ProviderModelKey: name, DisplayName: name, BillingMode: "fixed_request", Enabled: false, PriceVersion: 1})
+			sourceModels = append(sourceModels, model.ChannelModel{ModelKey: name, ProviderModelKey: name, DisplayName: name, Enabled: false})
 		}
 	}
 	channelID, err := s.repo.NextPrefixedID("CHANNEL")
@@ -547,7 +512,7 @@ func (s *Service) DuplicateSystemChannel(actor *model.User, id string) (*PublicM
 	}
 
 	channelModels := make([]model.ChannelModel, 0, len(sourceModels))
-	priceTiers := make([]model.ChannelModelPriceTier, 0)
+	variants := make([]model.ChannelModelVariant, 0)
 	for _, sourceModel := range sourceModels {
 		modelID, idErr := s.repo.NextPrefixedID("MODEL")
 		if idErr != nil {
@@ -559,24 +524,24 @@ func (s *Service) DuplicateSystemChannel(actor *model.User, id string) (*PublicM
 		channelModel.CreatedAt = time.Time{}
 		channelModel.UpdatedAt = time.Time{}
 		channelModel.DeletedAt = gorm.DeletedAt{}
-		channelModel.PriceTiers = nil
+		channelModel.Variants = nil
 		channelModels = append(channelModels, channelModel)
-		for _, sourceTier := range sourceModel.PriceTiers {
+		for _, sourceVariant := range sourceModel.Variants {
 			tierID, tierErr := s.repo.NextPrefixedID("PTIER")
 			if tierErr != nil {
 				return nil, tierErr
 			}
-			priceTier := sourceTier
-			priceTier.ID = tierID
-			priceTier.ChannelModelID = channelModel.ID
-			priceTier.Selector = nil
-			priceTier.CreatedAt = time.Time{}
-			priceTier.UpdatedAt = time.Time{}
-			priceTier.DeletedAt = gorm.DeletedAt{}
-			priceTiers = append(priceTiers, priceTier)
+			variant := sourceVariant
+			variant.ID = tierID
+			variant.ChannelModelID = channelModel.ID
+			variant.Selector = nil
+			variant.CreatedAt = time.Time{}
+			variant.UpdatedAt = time.Time{}
+			variant.DeletedAt = gorm.DeletedAt{}
+			variants = append(variants, variant)
 		}
 	}
-	if err := s.repo.CreateDuplicatedSystemChannel(&channel, channelModels, priceTiers); err != nil {
+	if err := s.repo.CreateDuplicatedSystemChannel(&channel, channelModels, variants); err != nil {
 		return nil, err
 	}
 	s.invalidateRouteCatalog()
@@ -895,20 +860,20 @@ func mergeChannelRequest(req ChannelRequest, channel model.ModelChannel) Channel
 
 func publicChannel(channel model.ModelChannel, admin bool, channelModels []model.ChannelModel) PublicModelChannel {
 	models := make([]string, 0, len(channelModels))
-	modelCosts := make([]PublicChannelModelPrice, 0, len(channelModels))
+	modelSpecs := make([]PublicChannelModelSpec, 0, len(channelModels))
 	for _, item := range channelModels {
 		if !item.Enabled {
 			continue
 		}
 		models = append(models, item.ModelKey)
-		if item.Enabled && item.PriceConfigured {
+		if item.Enabled {
 			capabilityConfig, decodeErr := DecodeModelCapabilityConfig(item.CapabilityConfigJSON)
 			if decodeErr == nil && capabilityConfig != nil {
 				if normalized, normalizeErr := NormalizeModelCapabilityConfigForModel(item.Capability, string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), capabilityConfig); normalizeErr == nil {
 					capabilityConfig = normalized
 				}
 			}
-			modelCosts = append(modelCosts, PublicChannelModelPrice{Model: item.ModelKey, DisplayName: item.DisplayName, ChannelLabel: item.ChannelLabel, Description: item.Description, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, BillingMode: item.BillingMode, UnitPriceMicrocredits: item.UnitPriceMicrocredits, InputTokenPriceMicrocredits: item.InputTokenPriceMicrocredits, OutputTokenPriceMicrocredits: item.OutputTokenPriceMicrocredits, CachedTokenPriceMicrocredits: item.CachedTokenPriceMicrocredits, CapabilityConfig: capabilityConfig})
+			modelSpecs = append(modelSpecs, PublicChannelModelSpec{Model: item.ModelKey, DisplayName: item.DisplayName, ChannelLabel: item.ChannelLabel, Description: item.Description, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, CapabilityConfig: capabilityConfig})
 		}
 	}
 	if len(models) == 0 {
@@ -940,7 +905,7 @@ func publicChannel(channel model.ModelChannel, admin bool, channelModels []model
 		APIFormat:        channel.APIFormat,
 		ConcurrencyLimit: channel.ConcurrencyLimit,
 		Models:           models,
-		ModelCosts:       modelCosts,
+		ModelCosts:       modelSpecs,
 		Headers:          headers,
 		HasAPIKey:        strings.TrimSpace(channel.APIKey) != "",
 		HasSecretKey:     strings.TrimSpace(channel.SecretKey) != "",

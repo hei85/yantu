@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"strings"
-	"sync"
 	"time"
 
 	"infinite-canvas/backend/internal/model"
@@ -19,7 +18,6 @@ type Host interface {
 	DecryptSecret(value string) (string, error)
 	SettingsEncryptionKey() ([]byte, error)
 	BrandName() string
-	EnsureSignupBonus(userID string) error
 	RecordActivity(userID string, event string, count int)
 	AllowRequest(ctx context.Context, key string, limit int, window time.Duration) (bool, error)
 	RequestRetryAfter(ctx context.Context, key string, window time.Duration) time.Duration
@@ -36,7 +34,6 @@ func (nopHost) DecryptSecret(value string) (string, error) {
 }
 func (nopHost) SettingsEncryptionKey() ([]byte, error) { return nil, nil }
 func (nopHost) BrandName() string                      { return DefaultBrandName }
-func (nopHost) EnsureSignupBonus(string) error         { return nil }
 func (nopHost) RecordActivity(string, string, int)     {}
 func (nopHost) AllowRequest(context.Context, string, int, time.Duration) (bool, error) {
 	return true, nil
@@ -46,25 +43,15 @@ func (nopHost) RequestRetryAfter(context.Context, string, time.Duration) time.Du
 }
 
 type Service struct {
-	repo           *repository.Repository
-	host           Host
-	mailSender     func(EmailSettingValue, string, string, string) error
-	emailCodeMu    sync.Mutex
-	registrationMu sync.Mutex
+	repo *repository.Repository
+	host Host
 }
 
-func New(repo *repository.Repository, host Host, mailSender func(EmailSettingValue, string, string, string) error) *Service {
+func New(repo *repository.Repository, host Host) *Service {
 	if host == nil {
 		host = nopHost{}
 	}
-	return &Service{repo: repo, host: host, mailSender: mailSender}
-}
-
-func (s *Service) SetMailSender(fn func(EmailSettingValue, string, string, string) error) {
-	if s == nil {
-		return
-	}
-	s.mailSender = fn
+	return &Service{repo: repo, host: host}
 }
 
 type brandHost struct {

@@ -106,7 +106,7 @@ func TestResumableVideoDeadlineUsesResolvedSystemChannelProtocol(t *testing.T) {
 	}
 	channelModel := model.ChannelModel{
 		ID: "model-video", ChannelID: channel.ID, ModelKey: "video-model", Capability: "video",
-		Protocol: model.ChannelInterfaceNewAPIChannel2, Enabled: true, PriceConfigured: true,
+		Protocol: model.ChannelInterfaceNewAPIChannel2, Enabled: true,
 	}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatal(err)

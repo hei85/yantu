@@ -17,7 +17,7 @@ export type CreativeAgentState = {
     questions?: CreativeQuestionRequest; answers?: CreativeAnswers; proposal?: CreativeProposal;
     operations?: CanvasOperation[]; canvasApplied?: boolean; pendingEdits?: CanvasOperation[];
     pendingRedo?: { ref: string; attempt: number; proposalVersion: number };
-    media: CreativeMediaState[]; pendingPayment?: string[];
+    media: CreativeMediaState[]; pendingConfirmations?: string[];
     planning?: { itemKey: string; submissionId?: string; protocol: ResponseInputMessage[]; model?: string; prompt?: string; consumed?: boolean };
     modelCalls: number; error?: string; externalInteractionPresented?: boolean;
     dynamicPlan?: CreativeDynamicPlan;

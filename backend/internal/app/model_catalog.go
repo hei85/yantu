@@ -35,22 +35,22 @@ type PublicChannelCatalog struct {
 
 // PublicChannelModel 公开的渠道模型信息（脱敏）
 type PublicChannelModel struct {
-	ID               string                        `json:"id"`
-	ModelKey         string                        `json:"modelKey"`
-	ChannelLabel     string                        `json:"channelLabel"`
-	Description      string                        `json:"description"`
-	DisplayName      string                        `json:"displayName"`
-	SortOrder        int                           `json:"sortOrder"`
-	Icon             string                        `json:"icon"`
-	Capability       string                        `json:"capability"`
-	Protocol         model.ChannelInterfaceType    `json:"protocol"`
-	CapabilityConfig map[string]any                `json:"capabilityConfig,omitempty"`
-	PriceTiers       []PublicChannelModelPriceTier `json:"priceTiers"`
-	Available        bool                          `json:"available"`
+	ID               string                      `json:"id"`
+	ModelKey         string                      `json:"modelKey"`
+	ChannelLabel     string                      `json:"channelLabel"`
+	Description      string                      `json:"description"`
+	DisplayName      string                      `json:"displayName"`
+	SortOrder        int                         `json:"sortOrder"`
+	Icon             string                      `json:"icon"`
+	Capability       string                      `json:"capability"`
+	Protocol         model.ChannelInterfaceType  `json:"protocol"`
+	CapabilityConfig map[string]any              `json:"capabilityConfig,omitempty"`
+	Variants         []PublicChannelModelVariant `json:"variants"`
+	Available        bool                        `json:"available"`
 }
 
-// PublicChannelModelPriceTier 公开的渠道模型价格档（脱敏）
-type PublicChannelModelPriceTier struct {
+// PublicChannelModelVariant 公开的渠道模型规格档（脱敏）
+type PublicChannelModelVariant struct {
 	ID           string            `json:"id"`
 	Selector     map[string]string `json:"selector,omitempty"`
 	Resolution   string            `json:"resolution"`
@@ -58,7 +58,7 @@ type PublicChannelModelPriceTier struct {
 }
 
 // ModelCatalog 的创作端目录始终来自系统渠道模型，不反查逻辑模型或路由。
-// 系统渠道目录只负责安全发布可解释的读模型；任务创建仍会用持久化能力与价格档再次强校验。
+// 系统渠道目录只负责安全发布可解释的读模型；任务创建仍会用持久化能力与规格档再次强校验。
 func (s *Service) ModelCatalog(intent *ModelRequestIntent) (*ModelCatalogResponse, error) {
 	// 两个集合都初始化成非 nil 空切片：空目录要发 []，不能因为“没有模型”而丢掉字段。
 	response := &ModelCatalogResponse{Models: []PublicLogicalModel{}, Channels: []PublicChannelCatalog{}}
@@ -138,18 +138,18 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		return PublicChannelModel{}, fmt.Errorf("渠道模型为空")
 	}
 	// 仓储层已预加载规格档；这里只发布当前启用的可执行档位。
-	priceTiers := cm.PriceTiers
+	variants := cm.Variants
 
-	publicTiers := make([]PublicChannelModelPriceTier, 0, len(priceTiers))
-	for _, tier := range priceTiers {
-		if !tier.Enabled {
+	publicVariants := make([]PublicChannelModelVariant, 0, len(variants))
+	for _, variant := range variants {
+		if !variant.Enabled {
 			continue
 		}
-		publicTiers = append(publicTiers, PublicChannelModelPriceTier{
-			ID:           tier.ID,
-			Selector:     model.DecodeSKUSelector(tier.SelectorJSON),
-			Resolution:   tier.Resolution,
-			VideoSeconds: tier.VideoSeconds,
+		publicVariants = append(publicVariants, PublicChannelModelVariant{
+			ID:           variant.ID,
+			Selector:     model.DecodeSKUSelector(variant.SelectorJSON),
+			Resolution:   variant.Resolution,
+			VideoSeconds: variant.VideoSeconds,
 		})
 	}
 
@@ -176,7 +176,7 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		Capability:       cm.Capability,
 		Protocol:         cm.Protocol,
 		CapabilityConfig: capabilityConfig,
-		PriceTiers:       publicTiers,
+		Variants:         publicVariants,
 		Available:        cm.Enabled,
 	}, nil
 }

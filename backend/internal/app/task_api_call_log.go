@@ -71,7 +71,6 @@ func (s *Service) ensureFailedProviderAttemptLogged(task model.Task, taskErr err
 		Capability:        metadata.Capability,
 		Operation:         metadata.Operation,
 		RequestKind:       "create",
-		Billable:          false,
 		APIFormat:         "internal",
 		Method:            "INTERNAL",
 		Path:              path,

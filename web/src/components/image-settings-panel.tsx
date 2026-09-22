@@ -53,11 +53,11 @@ type ImageSettingsPanelProps = {
     className?: string;
     maxCount?: number;
     quickCount?: number;
-    /** 局部编辑等场景需要先允许选择参数，由后端负责最终计费校验。 */
-    bypassPriceGuard?: boolean;
+    /** 局部编辑等场景需要先允许选择参数，由后端负责最终规格校验。 */
+    bypassVariantGuard?: boolean;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, showQuality = true, showTransparent = true, showSize = true, showCount = true, className = "w-[304px] space-y-3 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 3, bypassPriceGuard = false }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, showQuality = true, showTransparent = true, showSize = true, showCount = true, className = "w-[304px] space-y-3 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 3, bypassVariantGuard = false }: ImageSettingsPanelProps) {
     const profile = mergedImageCapabilityConfig(config, config.model || config.imageModel);
     const normalized = normalizeImageValue(profile, config);
     const quality = normalized.quality;
@@ -66,7 +66,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const count = Math.max(1, Math.min(effectiveMaxCount, Number(normalized.count)));
     const activeSize = normalized.size;
     const activeQualityOptions = profile.quality.values.map((value) => qualityOptions.find((item) => item.value === value) || { value, label: value });
-    const priceTiers = imageModelPriceTiers(config);
+    const variants = imageModelVariants(config);
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -84,7 +84,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     <SettingTitle color={theme.node.muted}>{isGrokResolutionQuality(profile) ? "分辨率" : "质量"}</SettingTitle>
                     <div className={`grid gap-1.5 ${activeQualityOptions.length <= 2 ? "grid-cols-2" : "grid-cols-4"}`}>
 						{activeQualityOptions.map((item) => (
-                            <OptionPill key={item.value} selected={quality === item.value} disabled={!bypassPriceGuard && !hasPriceTierForImageSelection(priceTiers, item.value, activeSize)} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                            <OptionPill key={item.value} selected={quality === item.value} disabled={!bypassVariantGuard && !hasVariantForImageSelection(variants, item.value, activeSize)} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
@@ -156,13 +156,13 @@ export function imageSizeLabel(size: string) {
     return resolutionLabel !== size ? resolutionLabel : aspectOptions.find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
 }
 
-function imageModelPriceTiers(config: AiConfig) {
+function imageModelVariants(config: AiConfig) {
 	const channel = resolveModelChannel(config, config.model || config.imageModel);
 	const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(config.model || config.imageModel));
-	return cost?.logicalPriceTiers || [];
+	return cost?.logicalVariants || [];
 }
 
-function hasPriceTierForImageSelection(tiers: ReturnType<typeof imageModelPriceTiers>, quality: string, size: string) {
+function hasVariantForImageSelection(tiers: ReturnType<typeof imageModelVariants>, quality: string, size: string) {
 	if (!tiers.length) return true;
 	return tiers.some((tier) => {
 		const selector = tier.selector || {};

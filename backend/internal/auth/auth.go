@@ -5,13 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"infinite-canvas/backend/internal/kernel"
 	"log"
-	"net/mail"
 	"regexp"
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 
 	"golang.org/x/crypto/bcrypt"
@@ -29,8 +28,6 @@ type AuthError = kernel.AppError
 
 type RegisterRequest struct {
 	Username    string `json:"username"`
-	Email       string `json:"email"`
-	EmailCode   string `json:"emailCode"`
 	DisplayName string `json:"displayName"`
 	Password    string `json:"password"`
 }
@@ -43,8 +40,6 @@ type LoginRequest struct {
 type PublicAuthSettings struct {
 	FirstUser           bool `json:"firstUser"`
 	RegistrationEnabled bool `json:"registrationEnabled"`
-	EmailEnabled        bool `json:"emailEnabled"`
-	EmailCodeRequired   bool `json:"emailCodeRequired"`
 }
 
 type AuthSessionResult struct {
@@ -55,10 +50,6 @@ type AuthSessionResult struct {
 
 type AuthUser struct {
 	model.User
-	AvatarURL        string `json:"avatarUrl,omitempty"`
-	IdentityProvider string `json:"identityProvider,omitempty"`
-	IdentityID       string `json:"identityId,omitempty"`
-	IdentityUsername string `json:"identityUsername,omitempty"`
 }
 
 func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
@@ -69,20 +60,12 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 	if count == 0 {
 		return &PublicAuthSettings{FirstUser: true, RegistrationEnabled: true}, nil
 	}
-	registrationEnabled, err := s.RegistrationEnabled()
-	if err != nil {
-		return nil, err
-	}
-	emailEnabled, err := s.EmailEnabled()
-	if err != nil {
-		return nil, err
-	}
-	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: registrationEnabled, EmailEnabled: emailEnabled, EmailCodeRequired: true}, nil
+	return &PublicAuthSettings{FirstUser: false, RegistrationEnabled: false}, nil
 }
 
+// Register 只用于全新数据库的首次管理员初始化；后续账号由管理员在后台创建。
 func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	username := NormalizeUsername(req.Username)
-	email := NormalizeEmail(req.Email)
 	displayName := NormalizeDisplayName(req.DisplayName, username)
 	if err := ValidateUsername(username); err != nil {
 		return nil, err
@@ -90,48 +73,17 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	if err := ValidatePassword(req.Password); err != nil {
 		return nil, err
 	}
-	if email != "" {
-		if err := ValidateEmail(email); err != nil {
-			return nil, err
-		}
-	}
-	s.registrationMu.Lock()
-	defer s.registrationMu.Unlock()
 	count, err := s.repo.UserCount()
 	if err != nil {
 		return nil, err
 	}
-	var verifiedCode *model.EmailVerificationCode
 	if count > 0 {
-		registrationEnabled, err := s.RegistrationEnabled()
-		if err != nil {
-			return nil, err
-		}
-		if !registrationEnabled {
-			return nil, kernel.Forbidden("管理员未开放新用户注册")
-		}
-		if email == "" {
-			return nil, kernel.BadAuthRequest("请输入邮箱")
-		}
-		if err := s.validateRegistrationEmailDomain(email); err != nil {
-			return nil, err
-		}
-		verifiedCode, err = s.VerifyRegistrationEmailCode(email, req.EmailCode)
-		if err != nil {
-			return nil, err
-		}
+		return nil, kernel.Forbidden("本地工作站不支持自助注册")
 	}
 	if _, err := s.repo.UserByUsername(username); err == nil {
 		return nil, kernel.BadAuthRequest("用户名已存在")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
-	}
-	if email != "" {
-		if _, err := s.repo.UserByEmail(email); err == nil {
-			return nil, kernel.BadAuthRequest("邮箱已被注册")
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
 	}
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
@@ -141,25 +93,14 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 	user := model.User{
 		ID:           kernel.NewID(),
 		Username:     username,
-		Email:        email,
 		DisplayName:  displayName,
-		Role:         model.UserRoleUser,
+		Role:         model.UserRoleAdmin,
 		Status:       model.UserStatusActive,
 		PasswordHash: passwordHash,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if count == 0 {
-		user.Role = model.UserRoleAdmin
-	}
-	if verifiedCode != nil {
-		if err := s.repo.CreateUserWithEmailVerification(&user, verifiedCode.ID, time.Now()); err != nil {
-			return nil, err
-		}
-	} else if err := s.repo.Create(&user); err != nil {
-		return nil, err
-	}
-	if err := s.host.EnsureSignupBonus(user.ID); err != nil {
+	if err := s.repo.Create(&user); err != nil {
 		return nil, err
 	}
 	return s.createAuthSession(&user)
@@ -170,7 +111,7 @@ func (s *Service) Login(req LoginRequest) (*AuthSessionResult, error) {
 	user, err := s.repo.UserByAccount(account)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, kernel.Unauthorized("用户名、邮箱或密码不正确")
+			return nil, kernel.Unauthorized("用户名或密码不正确")
 		}
 		return nil, err
 	}
@@ -178,15 +119,12 @@ func (s *Service) Login(req LoginRequest) (*AuthSessionResult, error) {
 		return nil, kernel.Forbidden("该账号已被禁用")
 	}
 	if !verifyPassword(req.Password, user.PasswordHash) {
-		return nil, kernel.Unauthorized("用户名、邮箱或密码不正确")
+		return nil, kernel.Unauthorized("用户名或密码不正确")
 	}
 	now := time.Now()
 	user.LastLoginAt = &now
 	user.UpdatedAt = now
 	if err := s.repo.Save(user); err != nil {
-		return nil, err
-	}
-	if err := s.host.EnsureSignupBonus(user.ID); err != nil {
 		return nil, err
 	}
 	s.host.RecordActivity(user.ID, "login", 1)
@@ -229,21 +167,8 @@ func (s *Service) CurrentUser(cookieValue string) (*model.User, error) {
 	return user, nil
 }
 
-// 认证响应只补充当前用户自己的第三方公开身份，不把身份表或密钥字段暴露给其他列表接口。
 func (s *Service) PublicAuthUser(user *model.User) (AuthUser, error) {
-	result := AuthUser{User: *user}
-	identity, err := s.repo.UserIdentityForUser(user.ID, "linuxdo")
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return result, nil
-	}
-	if err != nil {
-		return AuthUser{}, err
-	}
-	result.AvatarURL = identity.AvatarURL
-	result.IdentityProvider = identity.Provider
-	result.IdentityID = identity.Subject
-	result.IdentityUsername = identity.ProviderUsername
-	return result, nil
+	return AuthUser{User: *user}, nil
 }
 
 func (s *Service) createAuthSession(user *model.User) (*AuthSessionResult, error) {
@@ -301,10 +226,6 @@ func NormalizeUsername(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func NormalizeEmail(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
-
 func NormalizeDisplayName(value string, fallback string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -327,13 +248,6 @@ func ValidateUsername(value string) error {
 func ValidatePassword(value string) error {
 	if len([]rune(value)) < 8 {
 		return kernel.BadAuthRequest("密码至少 8 位")
-	}
-	return nil
-}
-
-func ValidateEmail(value string) error {
-	if _, err := mail.ParseAddress(value); err != nil {
-		return kernel.BadAuthRequest("邮箱格式不正确")
 	}
 	return nil
 }

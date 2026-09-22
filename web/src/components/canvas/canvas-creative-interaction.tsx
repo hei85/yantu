@@ -126,7 +126,7 @@ export function CanvasCreativeInteraction(props: Props) {
         await instance.takeControl();
         if (proposalFailure) { props.onContinue("请根据当前真实素材和校验反馈调整方案。能自行修正的请修正，需要我提供信息时请直接提问，仍须确认后才制作。"); return; }
         if (detail.input.proposal && !view.state.proposal) { await instance.presentInteraction(detail.input, true); return; }
-        if (view.quote && Date.parse(view.quote.expiresAt || "") <= Date.now()) { await instance.refreshQuotes(); return; }
+        if (view.quote && Date.parse(view.quote.expiresAt || "") <= Date.now()) { await instance.refreshConfirmations(); return; }
         if (["running", "paused", "waiting_canvas", "waiting_task"].includes(status || "")) { await instance.resume(); return; }
         props.onContinue("保留已确认的要求，在已授权范围内继续当前任务，自行处理常规选择和技术问题；确实阻塞时再询问。");
     };
@@ -152,7 +152,7 @@ export function CanvasCreativeInteraction(props: Props) {
         {question && <CreativeQuestionCard request={props.superseded && question.status === "pending" ? { ...question, status: "superseded" } : question} answers={answers} assets={view.state.references.map((ref) => ({ id: ref.id, label: ref.title }))} busy={view.busy} disabled={!props.active || !view.hasControl} onModify={() => modify(`我想修改之前的回答（${question.questions.map((item) => item.title).join("、")}）：`)} onAnswersChange={(next) => { answersEdited.current = true; setAnswers(next); invoke(localforage.setItem(answerKey, next)); }} onSubmit={submitAnswers} />}
         {view.state.proposal && <CreativeProposalCard proposal={view.state.proposal} archived={!props.active || !awaitingProposal} modifiable={!view.busy} disabled={props.active ? blocked : false} busy={view.busy} onApprove={() => invoke(controller.current?.approveProposal())} onModify={() => modify(`请修改方案《${view.state.proposal!.title}》：`)} onRedirect={() => modify("保留已确认的要求和素材，换一个创意方向。")} />}
         {view.state.pendingEdits && <div className="creative-agent-card"><p>将调整 {view.state.pendingEdits.length} 个节点的指定字段。</p><Button disabled={blocked} onClick={() => invoke(controller.current?.approveEdits())}>确认节点调整</Button></div>}
-        {props.active && view.quote && <CreativeQuoteCard quote={view.quote} busy={view.busy} disabled={blocked} onApprove={() => invoke(controller.current?.approvePayment())} onRefresh={() => invoke(controller.current?.refreshQuotes())} />}
+        {props.active && view.quote && <CreativeQuoteCard quote={view.quote} busy={view.busy} disabled={blocked} onApprove={() => invoke(controller.current?.approveConfirmation())} onRefresh={() => invoke(controller.current?.refreshConfirmations())} />}
         {(detail.quotes || []).filter((quote) => !props.active || quote.id !== view.quote?.id).map((quote) => <details key={quote.id} className="creative-agent-receipt"><summary>{quote.approvedQuantity ? "已确认生成" : "历史执行方案"} · {quote.items.length} 项</summary><p>{quote.basis}</p><ul>{quote.items.map((item) => <li key={item.id}>{item.label} · {item.model} · {item.specification}</li>)}</ul></details>)}
         {view.state.media.filter((item) => item.taskId || item.storageKey || item.error).map((item) => {
             const resource = resourceIdFromStorageKey(item.storageKey), url = resource ? resourceFileUrl(resource) : "";

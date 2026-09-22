@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState, type ReactNode } from "react";
-import { App, Button, Divider, Input } from "antd";
+import { App, Button, Input } from "antd";
 import { ArrowRight, LockKeyhole, UserRound } from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { getAuthSession, login } from "@/services/api/auth";
 import { useUserStore } from "@/stores/use-user-store";
@@ -14,7 +14,6 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const next = safeNext(params.get("next"));
-    const forgotPasswordURL = `/forgot-password?next=${encodeURIComponent(next)}`;
     const user = useUserStore((state) => state.user);
     const hydrated = useUserStore((state) => state.hydrated);
 
@@ -24,11 +23,6 @@ export default function LoginPage() {
             navigate(next, { replace: true });
         }
     }, [hydrated, user, next, navigate]);
-
-    useEffect(() => {
-        const oauthError = params.get("oauth_error");
-        if (oauthError) message.error(oauthError);
-    }, [message, params]);
 
     const submit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -48,21 +42,10 @@ export default function LoginPage() {
 
     return (
         <form onSubmit={submit} className="space-y-5">
-            <AuthField label="用户名 / 邮箱" htmlFor="login-account">
-                <Input id="login-account" size="large" prefix={<UserRound className="size-4 text-white/35" />} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名或邮箱" autoComplete="username" required />
+            <AuthField label="用户名" htmlFor="login-account">
+                <Input id="login-account" size="large" prefix={<UserRound className="size-4 text-white/35" />} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入用户名" autoComplete="username" required />
             </AuthField>
-            <AuthField
-                label="密码"
-                htmlFor="login-password"
-                action={
-                    <Link
-                        to={forgotPasswordURL}
-                        className="-my-2 inline-flex min-h-8 items-center rounded-sm text-xs font-medium text-blue-300/80 transition-colors hover:text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/45"
-                    >
-                        忘记密码？
-                    </Link>
-                }
-            >
+            <AuthField label="密码" htmlFor="login-password">
                 <Input.Password
                     id="login-password"
                     size="large"
@@ -81,15 +64,12 @@ export default function LoginPage() {
     );
 }
 
-function AuthField({ label, htmlFor, action, children }: { label: string; htmlFor: string; action?: ReactNode; children: ReactNode }) {
+function AuthField({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
     return (
         <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-                <label htmlFor={htmlFor} className="text-xs font-medium text-white/62">
-                    {label}
-                </label>
-                {action}
-            </div>
+            <label htmlFor={htmlFor} className="text-xs font-medium text-white/62">
+                {label}
+            </label>
             {children}
         </div>
     );

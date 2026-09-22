@@ -38,7 +38,7 @@ export type PublicLogicalModel = {
     description: string;
     capability: CapabilitySpec["capability"];
     sortOrder: number;
-    priceTiers: PublicLogicalModelPriceTier[];
+    variants: PublicLogicalModelVariant[];
     legacyModelIds: string[];
     capabilitySpec: CapabilitySpec;
     capabilityProfiles: CapabilitySpec[];
@@ -47,7 +47,7 @@ export type PublicLogicalModel = {
 };
 
 /** 规格档只描述可执行的输入组合，不包含任何价格信息。 */
-export type PublicLogicalModelPriceTier = {
+export type PublicLogicalModelVariant = {
     selector: Record<string, string>;
     resolution: string;
     videoSeconds: number;
@@ -83,7 +83,7 @@ export type AdminLogicalModel = PublicLogicalModel & {
 export function normalizeAdminLogicalModel(model: AdminLogicalModel): AdminLogicalModel {
     return {
         ...model,
-        priceTiers: Array.isArray(model.priceTiers) ? model.priceTiers : [],
+        variants: Array.isArray(model.variants) ? model.variants : [],
         legacyModelIds: Array.isArray(model.legacyModelIds) ? model.legacyModelIds : [],
         capabilityProfiles: Array.isArray(model.capabilityProfiles) ? model.capabilityProfiles : [],
         defaultOptions: model.defaultOptions && typeof model.defaultOptions === "object" ? model.defaultOptions : {},
@@ -131,11 +131,11 @@ export type PublicChannelModel = {
     capability: string;
     protocol?: string;
     capabilityConfig?: Record<string, any>;
-    priceTiers: PublicChannelModelPriceTier[];
+    variants: PublicChannelModelVariant[];
     available: boolean;
 };
 
-export type PublicChannelModelPriceTier = {
+export type PublicChannelModelVariant = {
     id: string;
     selector?: Record<string, string>;
     resolution: string;

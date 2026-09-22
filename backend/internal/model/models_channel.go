@@ -30,63 +30,48 @@ type ModelChannel struct {
 }
 
 type ChannelModel struct {
-	ID                           string               `json:"id" gorm:"primaryKey;size:36"`
-	ChannelID                    string               `json:"channelId" gorm:"size:36;index;uniqueIndex:idx_channel_model_key_active,priority:1,where:deleted_at IS NULL"`
-	ModelKey                     string               `json:"modelKey" gorm:"size:120;uniqueIndex:idx_channel_model_key_active,priority:2,where:deleted_at IS NULL"`
-	ProviderModelKey             string               `json:"providerModelKey" gorm:"size:120"`
-	DisplayName                  string               `json:"displayName" gorm:"size:160"`
-	ChannelLabel                 string               `json:"channelLabel" gorm:"size:80;not null;default:''"`
-	Description                  string               `json:"description" gorm:"size:500;not null;default:''"`
-	SortOrder                    int                  `json:"sortOrder" gorm:"not null;default:0"`
-	Icon                         string               `json:"icon" gorm:"size:80"`
-	Capability                   string               `json:"capability" gorm:"size:32;index"`
-	Protocol                     ChannelInterfaceType `json:"protocol" gorm:"size:32;index"`
-	BillingMode                  string               `json:"billingMode" gorm:"size:32"`
-	UnitPriceMicrocredits        int64                `json:"unitPriceMicrocredits"`
-	InputTokenPriceMicrocredits  int64                `json:"inputTokenPriceMicrocredits"`
-	OutputTokenPriceMicrocredits int64                `json:"outputTokenPriceMicrocredits"`
-	CachedTokenPriceMicrocredits int64                `json:"cachedTokenPriceMicrocredits"`
-	PriceConfigured              bool                 `json:"priceConfigured" gorm:"index"`
-	Enabled                      bool                 `json:"enabled" gorm:"index"`
-	PriceVersion                 int64                `json:"priceVersion"`
-	CapabilityConfigJSON         string               `json:"-" gorm:"type:text"`
-	CapabilityVersion            int64                `json:"capabilityVersion"`
-	CapabilityConfig             map[string]any       `json:"capabilityConfig,omitempty" gorm:"-"`
-	// PriceTiers 是系统渠道模型的价格真相。标量价格仅为旧调用与历史数据兼容，
-	// 新的创作端报价必须按所选规格命中一个价格档。
-	PriceTiers []ChannelModelPriceTier `json:"priceTiers" gorm:"-"`
-	CreatedAt  time.Time               `json:"createdAt"`
-	UpdatedAt  time.Time               `json:"updatedAt"`
-	DeletedAt  gorm.DeletedAt          `json:"-" gorm:"index"`
+	ID                   string               `json:"id" gorm:"primaryKey;size:36"`
+	ChannelID            string               `json:"channelId" gorm:"size:36;index;uniqueIndex:idx_channel_model_key_active,priority:1,where:deleted_at IS NULL"`
+	ModelKey             string               `json:"modelKey" gorm:"size:120;uniqueIndex:idx_channel_model_key_active,priority:2,where:deleted_at IS NULL"`
+	ProviderModelKey     string               `json:"providerModelKey" gorm:"size:120"`
+	DisplayName          string               `json:"displayName" gorm:"size:160"`
+	ChannelLabel         string               `json:"channelLabel" gorm:"size:80;not null;default:''"`
+	Description          string               `json:"description" gorm:"size:500;not null;default:''"`
+	SortOrder            int                  `json:"sortOrder" gorm:"not null;default:0"`
+	Icon                 string               `json:"icon" gorm:"size:80"`
+	Capability           string               `json:"capability" gorm:"size:32;index"`
+	Protocol             ChannelInterfaceType `json:"protocol" gorm:"size:32;index"`
+	Enabled              bool                 `json:"enabled" gorm:"index"`
+	CapabilityConfigJSON string               `json:"-" gorm:"type:text"`
+	CapabilityVersion    int64                `json:"capabilityVersion"`
+	CapabilityConfig     map[string]any       `json:"capabilityConfig,omitempty" gorm:"-"`
+	// Variants 是系统渠道模型的规格真相：每个请求规格组合命中一个可执行上游模型。
+	Variants  []ChannelModelVariant `json:"variants" gorm:"-"`
+	CreatedAt time.Time             `json:"createdAt"`
+	UpdatedAt time.Time             `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt        `json:"-" gorm:"index"`
 }
 
-// ChannelModelPriceTier 表示渠道模型在一个规格组合下的可执行上游 SKU 和用户价格。
+// ChannelModelVariant 表示渠道模型在一个规格组合下的可执行上游模型。
 // SelectorJSON 是规格选择器真相，例如 {"operation":"image_to_video","vquality":"720p",
 // "videoSeconds":"10"} 或 {"operation":"text_to_image","quality":"2k"}。
-// SelectorKey 是规范化 JSON，用于 PostgreSQL 的活动规格唯一约束。旧的 Resolution / VideoSeconds
-// 仅保留给历史 API 与升级回填，不能再作为 SKU 唯一性依据。
-type ChannelModelPriceTier struct {
-	CostPricing                  CreditCostPricing `json:"-" gorm:"embedded;embeddedPrefix:cost_"`
-	ID                           string            `json:"id" gorm:"primaryKey;size:36"`
-	ChannelModelID               string            `json:"channelModelId" gorm:"size:36;index;uniqueIndex:idx_channel_model_price_tier_active,priority:1,where:deleted_at IS NULL"`
-	SelectorKey                  string            `json:"selectorKey" gorm:"size:500;not null;default:{};uniqueIndex:idx_channel_model_price_tier_active,priority:2,where:deleted_at IS NULL"`
-	SelectorJSON                 string            `json:"-" gorm:"type:text;not null;default:{}"`
-	Selector                     map[string]string `json:"selector,omitempty" gorm:"-"`
-	Resolution                   string            `json:"resolution" gorm:"size:24;not null;default:*"`
-	VideoSeconds                 int               `json:"videoSeconds" gorm:"not null;default:0"`
-	ProviderModelKey             string            `json:"providerModelKey" gorm:"size:120"`
-	BillingMode                  string            `json:"billingMode" gorm:"size:32"`
-	UnitPriceMicrocredits        int64             `json:"unitPriceMicrocredits"`
-	InputTokenPriceMicrocredits  int64             `json:"inputTokenPriceMicrocredits"`
-	OutputTokenPriceMicrocredits int64             `json:"outputTokenPriceMicrocredits"`
-	CachedTokenPriceMicrocredits int64             `json:"cachedTokenPriceMicrocredits"`
-	PriceConfigured              bool              `json:"priceConfigured" gorm:"index"`
-	Enabled                      bool              `json:"enabled" gorm:"index"`
-	PriceVersion                 int64             `json:"priceVersion"`
-	CreatedAt                    time.Time         `json:"createdAt"`
-	UpdatedAt                    time.Time         `json:"updatedAt"`
-	DeletedAt                    gorm.DeletedAt    `json:"-" gorm:"index"`
+type ChannelModelVariant struct {
+	ID               string            `json:"id" gorm:"primaryKey;size:36"`
+	ChannelModelID   string            `json:"channelModelId" gorm:"size:36;index;uniqueIndex:idx_channel_model_price_tier_active,priority:1,where:deleted_at IS NULL"`
+	SelectorKey      string            `json:"selectorKey" gorm:"size:500;not null;default:{};uniqueIndex:idx_channel_model_price_tier_active,priority:2,where:deleted_at IS NULL"`
+	SelectorJSON     string            `json:"-" gorm:"type:text;not null;default:{}"`
+	Selector         map[string]string `json:"selector,omitempty" gorm:"-"`
+	Resolution       string            `json:"resolution" gorm:"size:24;not null;default:*"`
+	VideoSeconds     int               `json:"videoSeconds" gorm:"not null;default:0"`
+	ProviderModelKey string            `json:"providerModelKey" gorm:"size:120"`
+	Enabled          bool              `json:"enabled" gorm:"index"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	UpdatedAt        time.Time         `json:"updatedAt"`
+	DeletedAt        gorm.DeletedAt    `json:"-" gorm:"index"`
 }
+
+// TableName 保留历史物理表名，避免升级时迁移或丢失已有规格档数据。
+func (ChannelModelVariant) TableName() string { return "channel_model_price_tiers" }
 
 type ApiCallLog struct {
 	ID                 string        `json:"id" gorm:"primaryKey;size:36"`
@@ -103,7 +88,6 @@ type ApiCallLog struct {
 	Capability         string        `json:"capability" gorm:"index;size:32"`
 	Operation          string        `json:"operation" gorm:"size:64"`
 	RequestKind        string        `json:"requestKind" gorm:"index;size:24"`
-	Billable           bool          `json:"billable" gorm:"index"`
 	APIFormat          string        `json:"apiFormat" gorm:"size:24"`
 	Method             string        `json:"method" gorm:"size:16"`
 	Path               string        `json:"path"`
@@ -122,7 +106,6 @@ type ApiCallLog struct {
 	MediaPreviewKind   string        `json:"mediaPreviewKind,omitempty" gorm:"-"`
 	VideoSeconds       int           `json:"videoSeconds"`
 	ProviderRequestID  string        `json:"providerRequestId" gorm:"size:160"`
-	Currency           string        `json:"currency" gorm:"size:12"`
 	ErrorCode          string        `json:"errorCode,omitempty" gorm:"index;size:80"`
 	Error              string        `json:"error"`
 	ConcurrencyLimit   int           `json:"concurrencyLimit"`

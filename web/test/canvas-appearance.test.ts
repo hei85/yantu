@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
     DEFAULT_CANVAS_BACKGROUND_MODE,
@@ -15,6 +15,7 @@ import {
 } from "../src/lib/canvas/canvas-appearance";
 import { canvasThemes } from "../src/lib/canvas-theme";
 
+const originalWindow = globalThis.window;
 const values = new Map<string, string>();
 
 beforeEach(() => {
@@ -29,6 +30,10 @@ beforeEach(() => {
             },
         },
     });
+});
+
+afterEach(() => {
+    Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
 });
 
 describe("canvas custom appearance", () => {

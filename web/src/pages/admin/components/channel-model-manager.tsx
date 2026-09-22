@@ -8,7 +8,7 @@ import { ModelIcon } from "@/components/model-picker";
 import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
-import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, updateAdminChannelModel, type ChannelModel, type ChannelModelPriceTier } from "@/services/api/wallet";
+import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, updateAdminChannelModel, type ChannelModel, type ChannelModelVariant } from "@/services/api/wallet";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { ChannelModelEditor } from "./channel-model-editor";
 import { AdminPageFrame } from "./admin-shell";

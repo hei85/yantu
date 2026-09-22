@@ -59,7 +59,7 @@ func (s *Service) terminalCoordinator() *taskTerminalCoordinator {
 	return newTaskTerminalCoordinator(s)
 }
 
-func (c *taskTerminalCoordinator) markPreparationFailure(task *model.Task, stage string, err error, billingUncertain bool, refundReason string) error {
+func (c *taskTerminalCoordinator) markPreparationFailure(task *model.Task, stage string, err error) error {
 	c.ensureFailedAttemptLogged(task, err)
 	task.Status = model.TaskStatusFailed
 	task.Stage = stage

@@ -6,7 +6,7 @@ import (
 )
 
 // CanonicalSKUSelector stores selector values as strings so an API number and its
-// textual equivalent cannot create two price rows for the same purchasable SKU.
+// textual equivalent cannot create two variant rows for the same spec.
 func CanonicalSKUSelector(raw map[string]string) (map[string]string, string, error) {
 	selector := make(map[string]string, len(raw))
 	for rawKey, rawValue := range raw {

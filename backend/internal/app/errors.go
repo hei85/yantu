@@ -46,8 +46,8 @@ type ModelErrorCode string
 const (
 	// ErrCodeModelCapabilityNotSupported 当前模型能力不支持请求
 	ErrCodeModelCapabilityNotSupported ModelErrorCode = "model_capability_not_supported"
-	// ErrCodeModelPriceNotConfigured 当前模型未配置该能力组合价格
-	ErrCodeModelPriceNotConfigured ModelErrorCode = "model_price_not_configured"
+	// ErrCodeModelVariantNotConfigured 当前模型未配置该能力组合规格
+	ErrCodeModelVariantNotConfigured ModelErrorCode = "model_variant_not_configured"
 	// ErrCodeModelRouteUnavailable 没有可用供应线路
 	ErrCodeModelRouteUnavailable ModelErrorCode = "model_route_unavailable"
 	// ErrCodeProviderRequestFailed 供应商异常、响应格式错误或上游失败
@@ -98,12 +98,12 @@ func ModelCapabilityNotSupported(message string) error {
 	return NewModelError(ErrCodeModelCapabilityNotSupported, message)
 }
 
-// ModelPriceNotConfigured 当前模型未配置价格
-func ModelPriceNotConfigured(message string) error {
+// ModelVariantNotConfigured 当前模型未配置规格
+func ModelVariantNotConfigured(message string) error {
 	if message == "" {
 		message = "当前模型未配置该能力组合价格"
 	}
-	return NewModelError(ErrCodeModelPriceNotConfigured, message)
+	return NewModelError(ErrCodeModelVariantNotConfigured, message)
 }
 
 // ModelRouteUnavailable 没有可用供应线路

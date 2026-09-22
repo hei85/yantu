@@ -34,19 +34,13 @@ test("announcement editor preserves image and pinned fields through edit and sav
 });
 
 test("plugin upload owns native drops and price availability text remains readable", async () => {
-    const [pluginSource, adminCss] = await Promise.all([Bun.file(new URL("../src/pages/plugins/plugin-documentation-modals.tsx", import.meta.url)).text(), Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text()]);
-    const toggleCss = sourceSection(adminCss, ".admin-price-tier-toggle span {", ".admin-model-editor-add-tier.ant-btn {");
-
+    const pluginSource = await Bun.file(new URL("../src/pages/plugins/plugin-documentation-modals.tsx", import.meta.url)).text();
     expect(pluginSource).toContain("event.preventDefault()");
     expect(pluginSource).toContain("onDragOver={(event)");
     expect(pluginSource).toContain("onDrop={handlePluginDrop}");
     expect(pluginSource).toContain("点击选择插件文件，也可拖拽到此处");
     expect(pluginSource).toContain("释放文件以上传插件");
     expect(pluginSource).toContain("isDraggingPlugin");
-    expect(compactSource(adminCss)).toContain(".admin-price-tier-controls { margin-left: auto;");
-    expect(toggleCss).toContain("overflow-wrap: anywhere;");
-    expect(toggleCss).toContain("white-space: normal;");
-    expect(toggleCss).not.toContain("text-overflow: ellipsis;");
 });
 
 test("model reference limits use compact rows only inside the admin editor", async () => {
@@ -123,26 +117,6 @@ test("analytics keeps fixed range presets distinct and uses enabled channel mode
     expect(source).toContain('["60d", "60 天"]');
     expect(source).toContain('next.set("rangePreset", rangePreset)');
     expect(source).toContain("setRangePreset(undefined)");
-    expect(source).toContain('placeholder={pricingModelOptions.length ? "选择已启用模型" : "暂无已启用模型"}');
-    expect(source).toContain("onValuesChange={handlePricingValuesChange}");
-    expect(source).toContain("onChange={handlePricingModelChange}");
-    expect(source).toContain('hasOwnProperty.call(changedValues, "model")');
-    expect(source).toContain('if (matchingChannels.length) form.setFieldValue("channelId", matchingChannels[0].id)');
-    expect(source).toContain("const sourceChannels = channels.filter(");
-    expect(source).toContain('Form.useWatch("channelId", form)');
-    expect(source).toContain("pricingChannelId");
-    expect(source).toContain("channel.id === pricingChannelId");
-    expect(source).toContain('inputMode="decimal"');
-    expect(source).toContain('className="admin-analytics-price-input"');
-    expect(source).toContain('className="admin-analytics-price-field"');
-    expect(source).toContain('rootClassName="admin-modal-root admin-analytics-pricing-modal"');
-    expect(source).toContain("zIndex={1200}");
-    expect(source).toContain("setPricingWorkspaceOpen(false)");
-    expect(source).toContain("validator: validatePriceInput");
-    expect(source).toContain("请输入非负价格，最多 6 位小数");
-    expect(source).toContain("function formatPriceInput(micros: number)");
-    expect(source).toContain("function toMicros(value?: string | number)");
-    expect(source).not.toContain("<InputNumber");
 });
 
 test("storage settings keep generic S3 controls and connection validation", async () => {
@@ -209,9 +183,8 @@ test("admin settings use full-width summaries without selected-card side stripes
 
 test("task-first settings reveal dependent configuration only after the primary choice", async () => {
     // 本地单用户工作站已移除多用户接入设置面板，不再断言该页面。
-    const [storageSource, emailSource, featureSource, appearanceSource, welcomeSource, drawingSource, arkSource, interceptionSource, thirdPartySource, cssSource] = await Promise.all([
+    const [storageSource, featureSource, appearanceSource, welcomeSource, drawingSource, arkSource, interceptionSource, thirdPartySource, cssSource] = await Promise.all([
         Bun.file(new URL("../src/pages/admin/settings/storage-settings-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/email-settings-panel.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/components/feature-availability-panel.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/settings/appearance-settings-page.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/settings/components/welcome-setting.tsx", import.meta.url)).text(),
@@ -225,12 +198,6 @@ test("task-first settings reveal dependent configuration only after the primary 
     expect(storageSource).toContain('title="1. 选择新资源存储位置"');
     expect(storageSource).toContain("选择后继续完成第 2 步并保存");
     expect(sourceSection(storageSource, "const requestModeChange", "const save")).not.toContain("save(values)");
-
-    expect(emailSource).toContain("{draftEnabled ? (");
-    expect(emailSource).toContain('id="admin-email-smtp"');
-    expect(emailSource).toContain('title="1. 是否发送账户安全邮件"');
-    expect(emailSource).toContain('title="2. 配置 SMTP 连接与发件身份"');
-
 
     expect(featureSource).toContain('title="1. 用户工作台入口"');
     expect(featureSource).toContain('title="2. 插件开放范围"');
@@ -268,10 +235,7 @@ test("task-first settings reveal dependent configuration only after the primary 
 });
 
 test("admin tables keep requested filters and actions in the intended positions", async () => {
-    const [storageSource, creditSource] = await Promise.all([
-        Bun.file(new URL("../src/pages/admin/components/storage-resources-panel.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/components/credit-operations-panel.tsx", import.meta.url)).text(),
-    ]);
+    const storageSource = await Bun.file(new URL("../src/pages/admin/components/storage-resources-panel.tsx", import.meta.url)).text();
 
     const storageToolbar = sourceSection(storageSource, "toolbar={", "toolbarActiveFilters=");
     expect(storageToolbar).toContain('className="admin-storage-resource-filters"');
@@ -281,9 +245,6 @@ test("admin tables keep requested filters and actions in the intended positions"
     expect(storageToolbar).toContain('aria-label="筛选资源类型"');
     expect(storageToolbar).toContain('aria-label="筛选资源状态"');
     expect(storageToolbar).toContain('aria-label="筛选存储类型"');
-
-    const operationColumn = sourceSection(creditSource, 'title: "操作"', "const hasFilters");
-    expect(operationColumn).toContain('fixed: "right"');
 });
 
 test("request logs hide credit billing now that the local workstation drops charging", async () => {
@@ -304,8 +265,8 @@ test("request logs hide credit billing now that the local workstation drops char
     expect(detailSource).not.toContain("销售价格");
     expect(detailSource).not.toContain("成本价格");
     expect(detailSource).not.toContain("上游成本");
-    expect(apiSource).toContain("billingAmountMicrocredits: number");
-    expect(apiSource).toContain("billingAvailable: boolean");
+    expect(apiSource).not.toContain("billingAmountMicrocredits");
+    expect(apiSource).not.toContain("billingAvailable");
 });
 
 test("banner announcement editor keeps title styles through edit, save and status toggle", async () => {
@@ -404,17 +365,16 @@ test("admin console tokens and shell stay isolated from the user workspace", asy
     expect(chrome).toContain(".admin-drawer .ant-drawer-content");
     expect(globals).not.toContain("/* 管理端专用视觉收口：不覆盖创作端 workspace 的导航、状态和图表样式。 */");
 
-    const [overlays, userDetail, prompts, payments, modelEditor] = await Promise.all([
+    const [overlays, userDetail, prompts, modelEditor] = await Promise.all([
         Bun.file(new URL("../src/pages/admin/ui/overlays.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/components/admin-user-detail-drawer.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/storyboard-prompts/storyboard-prompts-page.tsx", import.meta.url)).text(),
-        Bun.file(new URL("../src/pages/admin/payments/payments-page.tsx", import.meta.url)).text(),
         Bun.file(new URL("../src/pages/admin/components/channel-model-editor.tsx", import.meta.url)).text(),
     ]);
     expect(overlays).toContain('rootClassName={cn("admin-drawer"');
     expect(overlays).toContain('rootClassName={cn("admin-modal-root"');
     expect(overlays).not.toContain("@/components/ui/product");
-    for (const source of [userDetail, prompts, payments, modelEditor]) {
+    for (const source of [userDetail, prompts, modelEditor]) {
         expect(source).not.toContain("@/components/ui/product");
         expect(source).not.toContain("AppDrawer");
         expect(source).not.toContain("AppModal");

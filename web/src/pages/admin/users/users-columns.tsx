@@ -1,15 +1,13 @@
 import type { ColumnsType } from "antd/es/table";
 import { Eye, Pencil, Power } from "lucide-react";
 
-import { IdentityProviderBadge } from "@/components/layout/identity-provider-badge";
 import { AdminRowActions, AdminStatusBadge } from "../components/admin-ui";
 import type { AdminUser } from "@/services/api/auth";
 
-export type UserColumnKey = "user" | "email" | "role" | "status" | "createdAt" | "actions";
+export type UserColumnKey = "user" | "role" | "status" | "createdAt" | "actions";
 
 export const userColumnOptions: Array<{ key: UserColumnKey; label: string; locked?: boolean }> = [
     { key: "user", label: "用户", locked: true },
-    { key: "email", label: "邮箱" },
     { key: "role", label: "角色" },
     { key: "status", label: "状态" },
     { key: "createdAt", label: "注册时间" },
@@ -36,12 +34,11 @@ export function createUserColumns({
             dataIndex: "username",
             render: (_, user) => (
                 <div>
-                    <div className="flex items-center gap-1.5"><button type="button" className="admin-table-primary-link font-medium" onClick={() => onView(user)}>{user.displayName || user.username}</button><IdentityProviderBadge user={user} /></div>
+                    <div className="flex items-center gap-1.5"><button type="button" className="admin-table-primary-link font-medium" onClick={() => onView(user)}>{user.displayName || user.username}</button></div>
                     <div className="text-xs text-foreground/45">@{user.username}</div>
                 </div>
             ),
         },
-        { key: "email", title: "邮箱", dataIndex: "email", align: "center", render: (email) => email || <span className="text-foreground/40">未填写</span> },
         { key: "role", title: "角色", dataIndex: "role", width: 110, align: "center", render: (role) => <AdminStatusBadge label={role === "admin" ? "管理员" : "普通用户"} tone={role === "admin" ? "info" : "neutral"} /> },
         { key: "status", title: "状态", dataIndex: "status", width: 110, align: "center", render: (status) => <AdminStatusBadge label={status === "active" ? "已启用" : "已停用"} tone={status === "active" ? "success" : "neutral"} /> },
         { key: "createdAt", title: "注册时间", dataIndex: "createdAt", width: 180, align: "center", render: formatTime },

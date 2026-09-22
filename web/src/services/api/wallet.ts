@@ -15,13 +15,13 @@ export type ChannelModel = {
     enabled: boolean;
     capabilityVersion?: number;
     capabilityConfig?: import("@/lib/model-capabilities").ModelCapabilityConfig;
-    priceTiers: ChannelModelPriceTier[];
+    variants: ChannelModelVariant[];
     createdAt: string;
     updatedAt: string;
 };
 
 /** 渠道模型的规格档只用于匹配上游模型标识，不参与任何计费。 */
-export type ChannelModelPriceTier = {
+export type ChannelModelVariant = {
     id: string;
     channelModelId: string;
     selector: Record<string, string>;

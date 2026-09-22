@@ -20,7 +20,7 @@ func TestChannelPresentationUsesModelLabelsAndPublicOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		cm := model.ChannelModel{
-			ID: id + "-model", ChannelID: id, ModelKey: id, Enabled: true, PriceConfigured: true, Capability: "image",
+			ID: id + "-model", ChannelID: id, ModelKey: id, Enabled: true, Capability: "image",
 			CapabilityConfigJSON: mustEncodeModelCapabilityConfig(t, DefaultModelCapabilityConfigForModel("", id)),
 		}
 		if err := db.Create(&cm).Error; err != nil {
@@ -95,7 +95,7 @@ func TestChannelModelSortPreservesConfigurationAndOwnership(t *testing.T) {
 	for i, id := range []string{"z", "a", "b"} {
 		cm := model.ChannelModel{
 			ID: id, ChannelID: "channel", ModelKey: id, ProviderModelKey: "provider-" + id, Enabled: true,
-			Capability: "image", PriceConfigured: true, UnitPriceMicrocredits: 123, PriceVersion: 7, CapabilityVersion: 4,
+			Capability: "image", CapabilityVersion: 4,
 			CapabilityConfigJSON: mustEncodeModelCapabilityConfig(t, DefaultModelCapabilityConfigForModel("", id)),
 			CreatedAt:            time.Unix(int64(i), 0),
 		}

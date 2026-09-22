@@ -16,13 +16,13 @@ export type CreativeProposal<T = unknown> = { id: string; version: number; title
 export type CreativePlanStep = { id: string; title: string; status: "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled"; detail?: string; nodeIds?: string[] };
 export type CreativePlan = { id: string; steps: CreativePlanStep[] };
 export type CreativeQuote = { id: string; title: string; items: { id: string; label: string; model: string; quantity: number; specification: string }[]; basis: string; expiresAt?: string; approvedQuantity?: number };
-export type CreativePendingInteraction = CreativeQuestionRequest | (CreativeInteractionIdentity & { kind: "proposal_request"; proposalId: string; proposalVersion: number }) | (CreativeInteractionIdentity & { kind: "payment_request"; quoteId: string });
+export type CreativePendingInteraction = CreativeQuestionRequest | (CreativeInteractionIdentity & { kind: "proposal_request"; proposalId: string; proposalVersion: number }) | (CreativeInteractionIdentity & { kind: "confirmation_request"; quoteId: string });
 
 function object(value: unknown): Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 const reservedCreativeFields = new Set([
     "proto", "prototype", "constructor", "authorization", "authorized", "approval", "approved", "permissions", "permission",
     "autorun", "status", "runid", "taskid", "quoteid", "submissionid", "revision", "lease", "ownerepoch",
-    "proposalapproved", "approvedproposalversion", "paymentapproved", "quoteapproved", "paid", "executed",
+    "proposalapproved", "approvedproposalversion", "confirmationapproved", "approvedconfirmation", "executed",
 ]);
 
 /** Brief fields hold requirements only; they never grant tool, proposal or payment approval. */

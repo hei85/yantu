@@ -3,7 +3,7 @@ package protocol
 import "context"
 
 // Adapter owns only protocol translation. The host owns credentials, outbound
-// security, polling leases, billing, result downloads and task recovery.
+// security, polling leases, usage accounting, result downloads and task recovery.
 type Adapter interface {
 	Metadata() Metadata
 	BuildCreate(context.Context, RequestContext) (RequestSpec, error)
@@ -14,7 +14,7 @@ type Adapter interface {
 }
 
 // AgentAdapter is the optional protocol surface for tool-capable text calls.
-// The host still owns credentials, outbound policy and billing; a plugin only
+// The host still owns credentials, outbound policy and usage accounting; a plugin only
 // maps the platform's agent request into the provider payload and parses the
 // provider response back into the platform tool-call contract.
 type AgentAdapter interface {

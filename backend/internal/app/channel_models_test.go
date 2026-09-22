@@ -73,7 +73,7 @@ func TestSaveAdminChannelModelPersistsAndPublishesIcon(t *testing.T) {
 	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{
 		ModelKey: "gpt-test", DisplayName: "GPT Test", Icon: "OpenAI", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
 		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "gpt-test"),
-		PriceTiers:       []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", PriceConfigured: true, Enabled: &enabled}}, Enabled: &enabled,
+		Variants:       []ChannelModelVariantRequest{{Enabled: &enabled}}, Enabled: &enabled,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -113,37 +113,34 @@ func TestSanitizeChannelModelRejectsCorruptCapabilityConfig(t *testing.T) {
 	}
 }
 
-func TestSanitizeChannelModelAvailabilityRequiresValidPriceTier(t *testing.T) {
+func TestSanitizeChannelModelPublishesEnabledModelVariants(t *testing.T) {
 	svc := &Service{}
 	channelModel := &model.ChannelModel{
-		ID:                    "image-model",
-		ModelKey:              "image-model",
-		Capability:            "image",
-		Protocol:              model.ChannelInterfaceOpenAIImage,
-		CapabilityConfigJSON:  mustEncodeModelCapabilityConfig(t, DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceOpenAIImage), "image-model")),
-		PriceConfigured:       true,
-		BillingMode:           "fixed_request",
-		UnitPriceMicrocredits: 10,
+		ID:                   "image-model",
+		ModelKey:             "image-model",
+		Capability:           "image",
+		Protocol:             model.ChannelInterfaceOpenAIImage,
+		Enabled:              true,
+		CapabilityConfigJSON: mustEncodeModelCapabilityConfig(t, DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceOpenAIImage), "image-model")),
 	}
 
 	public, err := svc.sanitizeChannelModel(channelModel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if public.Available {
-		t.Fatal("legacy scalar price must not make a system channel model available")
+	if !public.Available || len(public.Variants) != 0 {
+		t.Fatalf("enabled model without variants was not published: %#v", public)
 	}
 
-	channelModel.PriceTiers = []model.ChannelModelPriceTier{{
-		ID: "tier-1", BillingMode: "fixed_request", UnitPriceMicrocredits: 10,
-		Enabled: true, PriceConfigured: true,
+	channelModel.Variants = []model.ChannelModelVariant{{
+		ID: "tier-1", Enabled: true,
 	}}
 	public, err = svc.sanitizeChannelModel(channelModel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !public.Available || len(public.PriceTiers) != 1 {
-		t.Fatalf("valid price tier was not published: %#v", public)
+	if !public.Available || len(public.Variants) != 1 {
+		t.Fatalf("variant was not published: %#v", public)
 	}
 }
 

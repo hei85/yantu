@@ -218,8 +218,6 @@ func buildFamilyPlan(definition familyDefinition, modelByCode map[string]model.L
 		Capability:     "video",
 		Enabled:        true,
 		SortOrder:      sortOrder,
-		PricePolicy:    "channel",
-		BillingMode:    "fixed_request",
 		LegacyModelIDs: legacyIDs,
 		CapabilitySpec: productSpec,
 		DefaultOptions: familyDefaultOptions(productSpec, defaults),

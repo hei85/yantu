@@ -177,7 +177,7 @@ func applyRoutedProviderSelection(input map[string]any, routed *RoutedModel) map
 	nextConfig := make(map[string]any, len(config)+2)
 	for key, value := range config {
 		switch key {
-		case "channelId", "channelModelKey", "priceTierId", "providerModelKey", "apiFormat", "interfaceType", "baseUrl", "apiKey", "secretKey", "headers", "model", "capabilityConfig":
+		case "channelId", "channelModelKey", "variantId", "providerModelKey", "apiFormat", "interfaceType", "baseUrl", "apiKey", "secretKey", "headers", "model", "capabilityConfig":
 			continue
 		default:
 			nextConfig[key] = value
@@ -202,9 +202,9 @@ func applyRoutedProviderSelection(input map[string]any, routed *RoutedModel) map
 	nextConfig["model"] = routed.ChannelModel.ModelKey
 	nextConfig["channelModelKey"] = routed.ChannelModel.ModelKey
 	providerModelKey := routed.ChannelModel.ProviderModelKey
-	if routed.PriceTier != nil {
-		nextConfig["priceTierId"] = routed.PriceTier.ID
-		providerModelKey = firstNonEmpty(routed.PriceTier.ProviderModelKey, providerModelKey)
+	if routed.Variant != nil {
+		nextConfig["variantId"] = routed.Variant.ID
+		providerModelKey = firstNonEmpty(routed.Variant.ProviderModelKey, providerModelKey)
 	}
 	nextConfig["providerModelKey"] = firstNonEmpty(providerModelKey, routed.ChannelModel.ModelKey)
 	input["config"] = nextConfig
@@ -337,7 +337,7 @@ func (s *Service) resolveSystemChannelModelSelection(input map[string]any, taskT
 	nextConfig := make(map[string]any, len(config)+6)
 	for key, value := range config {
 		switch key {
-		case "channelId", "channelModelKey", "priceTierId", "providerModelKey", "apiFormat", "interfaceType", "baseUrl", "apiKey", "secretKey", "headers", "model", "capabilityConfig":
+		case "channelId", "channelModelKey", "variantId", "providerModelKey", "apiFormat", "interfaceType", "baseUrl", "apiKey", "secretKey", "headers", "model", "capabilityConfig":
 			continue
 		default:
 			nextConfig[key] = value
@@ -407,19 +407,19 @@ func (s *Service) resolveSystemChannelModelSelection(input map[string]any, taskT
 		pricingIntent.Options = pricingOptions
 	}
 
-	priceTier := channelModelPriceTierForIntent(*channelModel, pricingIntent)
-	if priceTier == nil {
-		priceTier = channelModelPriceTierForIntent(*channelModel, intent)
+	variant := channelModelVariantForIntent(*channelModel, pricingIntent)
+	if variant == nil {
+		variant = channelModelVariantForIntent(*channelModel, intent)
 	}
-	if priceTier == nil || !ValidatePriceTierPrice(priceTier, channelModel.Capability, channelModel.Protocol) {
-		return input, ModelPriceNotConfigured("指定的模型未配置当前规格的有效价格")
+	if variant == nil {
+		return input, ModelVariantNotConfigured("指定的模型未配置当前规格")
 	}
 
 	nextConfig["channelId"] = channel.ID
 	nextConfig["model"] = channelModel.ModelKey
 	nextConfig["channelModelKey"] = channelModel.ModelKey
-	nextConfig["priceTierId"] = priceTier.ID
-	nextConfig["providerModelKey"] = firstNonEmpty(priceTier.ProviderModelKey, channelModel.ProviderModelKey, channelModel.ModelKey)
+	nextConfig["variantId"] = variant.ID
+	nextConfig["providerModelKey"] = firstNonEmpty(variant.ProviderModelKey, channelModel.ProviderModelKey, channelModel.ModelKey)
 	nextConfig["interfaceType"] = string(channelModel.Protocol)
 	nextConfig["apiFormat"] = channelAPIFormatForProtocol(channel.APIFormat, channelModel.Protocol)
 	return input, nil

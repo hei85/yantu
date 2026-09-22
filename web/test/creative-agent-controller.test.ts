@@ -75,12 +75,12 @@ describe("创作控制器恢复", () => {
         } finally { h.controller.dispose(); }
     });
     test("已提交任务即使保留待处理批次也不能再次展示费用确认", async () => {
-        const h = harness({ ...initialCreativeState(), proposal, canvasApplied: true, pendingPayment: ["a"], media: [{ ref: "a", nodeId: "a", attempt: 1, submissionId: "a", taskId: "task-a", status: "queued" }] }, "waiting_task", [{ ...submission("a", "a", "task-a"), approvedAt: "2026-01-01" }]);
+        const h = harness({ ...initialCreativeState(), proposal, canvasApplied: true, pendingConfirmations: ["a"], media: [{ ref: "a", nodeId: "a", attempt: 1, submissionId: "a", taskId: "task-a", status: "queued" }] }, "waiting_task", [{ ...submission("a", "a", "task-a"), approvedAt: "2026-01-01" }]);
         try { await h.controller.load("run"); expect(h.view().quote).toBeUndefined(); }
         finally { h.controller.dispose(); }
     });
     test("部分提交后费用卡只保留未提交项", async () => {
-        const h = harness({ ...initialCreativeState(), pendingPayment: ["a", "b"] }, "paused", [submission("a", "a", "task-a"), submission("b", "b")]);
+        const h = harness({ ...initialCreativeState(), pendingConfirmations: ["a", "b"] }, "paused", [submission("a", "a", "task-a"), submission("b", "b")]);
         try { await h.controller.load("run"); expect(h.view().quote?.items.map((item) => item.id)).toEqual(["b"]); }
         finally { h.controller.dispose(); }
     });
@@ -88,23 +88,23 @@ describe("创作控制器恢复", () => {
         const old = { ...submission("a", "a", "task-a"), approvedAt: "2000-01-01" };
         old.quote.expiresAt = "2000-01-01";
         const completed = { id: "task-a", status: "succeeded", resultJson: JSON.stringify({ images: [{ storageKey: "resource:output" }] }) } as GenerationTask;
-        const h = harness({ ...initialCreativeState(), proposal, canvasApplied: true, pendingPayment: ["a"], media: [{ ref: "a", nodeId: "a", attempt: 1, submissionId: "a", taskId: "task-a", status: "queued" }] }, "waiting_task", [old], async () => completed);
+        const h = harness({ ...initialCreativeState(), proposal, canvasApplied: true, pendingConfirmations: ["a"], media: [{ ref: "a", nodeId: "a", attempt: 1, submissionId: "a", taskId: "task-a", status: "queued" }] }, "waiting_task", [old], async () => completed);
         h.api.approve = async () => { throw new Error("不应重新批准已提交任务"); };
         h.api.refreshQuote = async () => { throw new Error("不应刷新已提交任务报价"); };
         h.api.execute = async (_id, input) => { expect(input.submissionId).toBe("a"); return completed; };
-        try { await h.controller.load("run"); await h.controller.approvePayment(); expect(h.view().state.media[0].status).toBe("ready"); expect(h.view().quote).toBeUndefined(); expect(h.counters().prepares).toBe(0); }
+        try { await h.controller.load("run"); await h.controller.approveConfirmation(); expect(h.view().state.media[0].status).toBe("ready"); expect(h.view().quote).toBeUndefined(); expect(h.counters().prepares).toBe(0); }
         finally { h.controller.dispose(); }
     });
     test("更新过期报价替换分析关联并等待新批准，不执行模型", async () => {
         const old = submission("old", "planning:key");
         const fresh = submission("fresh", "requote:old");
-        const h = harness({ ...initialCreativeState(), planning: { itemKey: old.itemKey, submissionId: old.id, protocol: [] }, pendingPayment: [old.id] }, "waiting_payment", [old]);
+        const h = harness({ ...initialCreativeState(), planning: { itemKey: old.itemKey, submissionId: old.id, protocol: [] }, pendingConfirmations: [old.id] }, "waiting_confirmation", [old]);
         h.api.refreshQuote = async () => fresh;
         try {
-            await h.controller.load("run"); await h.controller.refreshQuotes();
+            await h.controller.load("run"); await h.controller.refreshConfirmations();
             expect(h.view().state.planning?.itemKey).toBe("requote:old");
-            expect(h.view().state.pendingPayment).toEqual(["fresh"]);
-            expect(h.view().run?.status).toBe("waiting_payment"); expect(h.counters().executions).toBe(0);
+            expect(h.view().state.pendingConfirmations).toEqual(["fresh"]);
+            expect(h.view().run?.status).toBe("waiting_confirmation"); expect(h.counters().executions).toBe(0);
         } finally { h.controller.dispose(); }
     });
     test("加载报价不执行；批准后只展示首个问答，忽略同批后续方案", async () => {
@@ -113,13 +113,13 @@ describe("创作控制器恢复", () => {
             { id: "first", type: "function", function: { name: "creative_respond", arguments: JSON.stringify({ message: "请补充目标", questions: [{ field: "goal", title: "想做什么？", type: "text", required: true, allowCustom: true }] }) } },
             { id: "second", type: "function", function: { name: "creative_respond", arguments: JSON.stringify({ proposal: { title: "不应执行" } }) } },
         ] }) } as GenerationTask;
-        const h = harness({ ...initialCreativeState(), planning: { itemKey: "planning:key", submissionId: "plan", protocol: [] }, pendingPayment: ["plan"] }, "waiting_payment", [quote], async () => completed);
+        const h = harness({ ...initialCreativeState(), planning: { itemKey: "planning:key", submissionId: "plan", protocol: [] }, pendingConfirmations: ["plan"] }, "waiting_confirmation", [quote], async () => completed);
         let approved = false, executed = 0;
         h.api.approve = async () => { approved = true; return { submissions: [{ ...quote, approvedAt: "2026-01-01" }] }; };
         h.api.execute = async () => { expect(approved).toBe(true); executed++; return completed; };
         try {
             await h.controller.load("run"); expect(executed).toBe(0);
-            await h.controller.approvePayment();
+            await h.controller.approveConfirmation();
             expect(executed).toBe(1); expect(h.view().run?.status).toBe("waiting_answer");
             expect(h.view().state.questions?.questions).toHaveLength(1);
             expect(h.view().state.proposal).toBeUndefined(); expect(h.counters().commits).toBe(0);

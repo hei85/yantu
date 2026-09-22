@@ -29,20 +29,17 @@ describe("后台前台模型响应归一化", () => {
         const model = normalizeAdminLogicalModel(legacyModel());
 
         expect(model.routes).toEqual([]);
-        expect(model.priceTiers).toEqual([]);
         expect(model.legacyModelIds).toEqual([]);
         expect(model.capabilityProfiles).toEqual([]);
         expect(model.defaultOptions).toEqual({});
     });
 
-    test("保留当前响应中的线路和价格档", () => {
+    test("保留当前响应中的线路", () => {
         const input = legacyModel();
         input.routes = [{ id: "route-1" } as AdminLogicalModel["routes"][number]];
-        input.priceTiers = [{ selector: { resolution: "720p" } } as AdminLogicalModel["priceTiers"][number]];
 
         const model = normalizeAdminLogicalModel(input);
 
         expect(model.routes).toHaveLength(1);
-        expect(model.priceTiers).toHaveLength(1);
     });
 });

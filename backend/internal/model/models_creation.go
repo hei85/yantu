@@ -34,7 +34,7 @@ type CreationSubmission struct {
 	RequestJSON     string     `json:"-" gorm:"type:text"`
 	RequestHash     string     `json:"requestHash" gorm:"size:64"`
 	QuoteJSON       string     `json:"-" gorm:"type:text"`
-	PriceSignature  string     `json:"-" gorm:"type:text"`
+	ConfigSignature string     `json:"-" gorm:"column:price_signature;type:text"`
 	ExpiresAt       time.Time  `json:"-"`
 	ApprovedAt      *time.Time `json:"approvedAt,omitempty"`
 	RevokedAt       *time.Time `json:"revokedAt,omitempty"`

@@ -57,7 +57,7 @@ type TextMessage struct {
 type Config struct {
 	ChannelID             string                    `json:"channelId"`
 	ChannelModelKey       string                    `json:"channelModelKey,omitempty"`
-	PriceTierID           string                    `json:"priceTierId,omitempty"`
+	VariantID             string                    `json:"variantId,omitempty"`
 	ProviderModelKey      string                    `json:"providerModelKey,omitempty"`
 	APIFormat             string                    `json:"apiFormat"`
 	InterfaceType         string                    `json:"interfaceType"`

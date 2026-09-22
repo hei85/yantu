@@ -47,70 +47,6 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		setSessionCookie(c, result.Session, result.MaxAgeSecs)
 		ok(c, gin.H{"user": result.User})
 	})
-	r.POST("/auth/email-code", func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
-		var req struct {
-			Email string `json:"email"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		policy, available := loadRuntimePolicy(c, svc)
-		if !available || !enforceRateLimit(c, "email-code:"+c.ClientIP(), policy.Request.EmailCodePerHour, time.Hour) {
-			return
-		}
-		if !enforceRateLimit(c, "registration-email-account:"+passwordResetRateLimitSubject(req.Email), 10, time.Hour) {
-			return
-		}
-		if err := svc.SendRegistrationEmailCode(req.Email); err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"sent": true})
-	})
-	r.POST("/auth/password-reset-code", func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
-		var req struct {
-			Email string `json:"email"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		policy, available := loadRuntimePolicy(c, svc)
-		if !available || !enforceRateLimit(c, "password-reset-code-ip:"+c.ClientIP(), policy.Request.EmailCodePerHour, time.Hour) {
-			return
-		}
-		if !enforceRateLimit(c, "password-reset-code-account:"+passwordResetRateLimitSubject(req.Email), policy.Request.EmailCodePerHour, time.Hour) {
-			return
-		}
-		if err := svc.SendPasswordResetEmailCode(req.Email); err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"sent": true})
-	})
-	r.POST("/auth/password-reset", func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		var req service.PasswordResetRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		policy, available := loadRuntimePolicy(c, svc)
-		if !available || !enforceRateLimit(c, "password-reset-ip:"+c.ClientIP(), policy.Request.LoginIPPerTenMinutes, 10*time.Minute) {
-			return
-		}
-		if !enforceRateLimit(c, "password-reset-account:"+passwordResetRateLimitSubject(req.Email), policy.Request.LoginAccountPerTenMinutes, 10*time.Minute) {
-			return
-		}
-		if err := svc.ResetPassword(req); err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"reset": true})
-	})
 	r.POST("/auth/login", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 		var req service.LoginRequest
@@ -832,7 +768,7 @@ func shortSystemProxyPath(rawPath string) (string, string, bool) {
 // as a channel request when a business route returns 404.
 func isReservedAPIPathPrefix(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "admin", "agent", "ai", "announcements", "banner-announcements", "assets", "auth", "canvas-projects", "channels", "diagnostics", "features", "files", "model-catalog", "models", "oauth", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "user-data", "voice-profiles", "wallet":
+	case "admin", "agent", "ai", "announcements", "banner-announcements", "assets", "auth", "canvas-projects", "channels", "diagnostics", "features", "files", "model-catalog", "models", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "user-data", "voice-profiles":
 		return true
 	default:
 		return false
@@ -894,14 +830,13 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 		fail(c, http.StatusForbidden, err)
 		return
 	}
-	if channelModel != nil && channelModel.BillingMode == "token" && protocol == model.ChannelInterfaceChatCompletion {
+	if channelModel != nil && protocol == model.ChannelInterfaceChatCompletion {
 		body, err = service.EnsureChatCompletionStreamUsageRequest(body)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
 	}
-	billingOrderID := ""
 	query := c.Request.URL.Query()
 	for _, key := range []string{"key", "api_key", "access_token", "token"} {
 		query.Del(key)
@@ -923,7 +858,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	// 同步代理与后台任务必须共享渠道槽位，否则两条入口会共同超过供应商并发上限。
 	releaseChannel, concurrencyLimit, err := svc.AcquireChannelSlot(c.Request.Context(), channel.ID, "", 36*time.Minute)
 	if err != nil {
-		log := apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), model.ApiCallStatusFailed, 0, time.Since(startedAt), err.Error(), concurrencyLimit)
+		log := apiCallLog(user, channel, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), model.ApiCallStatusFailed, 0, time.Since(startedAt), err.Error(), concurrencyLimit)
 		log.ErrorCode, log.Error = service.ChannelSlotFailureDetails(err)
 		logSystemProxyCall(svc, log, nil)
 		failInternal(c, http.StatusServiceUnavailable, err)
@@ -959,7 +894,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	if err != nil {
 		status = model.ApiCallStatusFailed
 		errorText = err.Error()
-		logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), nil)
+		logSystemProxyCall(svc, apiCallLog(user, channel, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), nil)
 		fail(c, http.StatusBadGateway, errors.New("系统渠道连接失败"))
 		return
 	}
@@ -980,7 +915,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	if readErr != nil {
 		status = model.ApiCallStatusFailed
 		errorText = readErr.Error()
-		logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), responseBody)
+		logSystemProxyCall(svc, apiCallLog(user, channel, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), responseBody)
 		// SSE 响应头已经发送，流中断后只能关闭连接；非流式响应仍返回结构化错误。
 		if !streamed {
 			fail(c, http.StatusBadGateway, errors.New("系统渠道响应读取失败"))
@@ -991,7 +926,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 		fail(c, http.StatusBadGateway, fmt.Errorf("系统渠道响应超过 %dMB 限制", policy.Request.SystemRelayResponseMB))
 		return
 	}
-	_ = logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), responseBody)
+	_ = logSystemProxyCall(svc, apiCallLog(user, channel, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), responseBody)
 	if streamed {
 		return
 	}
@@ -999,7 +934,7 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), responseBody)
 }
 
-func apiCallLog(user *model.User, channel *model.ModelChannel, billingOrderID string, capability string, protocol model.ChannelInterfaceType, method string, path string, target string, body []byte, contentType string, status model.ApiCallStatus, statusCode int, duration time.Duration, errorText string, concurrencyLimit int) model.ApiCallLog {
+func apiCallLog(user *model.User, channel *model.ModelChannel, capability string, protocol model.ChannelInterfaceType, method string, path string, target string, body []byte, contentType string, status model.ApiCallStatus, statusCode int, duration time.Duration, errorText string, concurrencyLimit int) model.ApiCallLog {
 	requestKind := "create"
 	apiFormat := "openai"
 	if protocol == model.ChannelInterfaceGeminiVeo || protocol == model.ChannelInterfaceGeminiImage {
@@ -1017,7 +952,6 @@ func apiCallLog(user *model.User, channel *model.ModelChannel, billingOrderID st
 		Source:             "system-channel",
 		Capability:         capability,
 		RequestKind:        requestKind,
-		Billable:           method == http.MethodPost,
 		APIFormat:          apiFormat,
 		Method:             method,
 		Path:               path,

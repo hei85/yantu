@@ -66,7 +66,7 @@ type providerTextMessage struct {
 type providerConfig struct {
 	ChannelID             string                 `json:"channelId"`
 	ChannelModelKey       string                 `json:"channelModelKey,omitempty"`
-	PriceTierID           string                 `json:"priceTierId,omitempty"`
+	VariantID             string                 `json:"variantId,omitempty"`
 	ProviderModelKey      string                 `json:"providerModelKey,omitempty"`
 	APIFormat             string                 `json:"apiFormat"`
 	InterfaceType         string                 `json:"interfaceType"`
@@ -871,17 +871,17 @@ func (s *Service) resolveProviderConfig(config providerConfig) (providerConfig, 
 		return providerConfig{}, errors.New("当前模型尚未配置请求协议")
 	}
 	providerModelKey := strings.TrimPrefix(strings.TrimSpace(config.ProviderModelKey), "models/")
-	if config.PriceTierID != "" {
+	if config.VariantID != "" {
 		matched := false
-		for _, tier := range channelModel.PriceTiers {
-			if tier.ID == config.PriceTierID && tier.Enabled && tier.PriceConfigured {
-				providerModelKey = firstNonEmpty(providerModelKey, tier.ProviderModelKey)
+		for _, variant := range channelModel.Variants {
+			if variant.ID == config.VariantID && variant.Enabled {
+				providerModelKey = firstNonEmpty(providerModelKey, variant.ProviderModelKey)
 				matched = true
 				break
 			}
 		}
 		if !matched {
-			return providerConfig{}, errors.New("当前模型规格价格档已更新，请重新创建任务")
+			return providerConfig{}, errors.New("当前模型规格档已更新，请重新创建任务")
 		}
 	} else if modelKey != "" && requestedModel != "" && modelKey != requestedModel {
 		return providerConfig{}, errors.New("系统渠道模型标识不一致")

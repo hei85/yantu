@@ -138,7 +138,7 @@ test("刷新费用卡后旧按钮不能批准新报价", async () => {
         await h.execution.refresh();
         expect(h.view().quote?.items[0]?.label).toBe("理解画面");
         await h.execution.approve(shown.quote!.items.map((item) => item.id));
-        expect(h.executions).toEqual([]); expect(h.view().error).toContain("报价已变化");
+        expect(h.executions).toEqual([]); expect(h.view().error).toContain("执行方案已变化");
         await h.execution.approve(h.view().quote!.items.map((item) => item.id)); await result;
         expect(h.approvals).toEqual([["fresh-1"]]);
     } finally { h.execution.dispose(); }

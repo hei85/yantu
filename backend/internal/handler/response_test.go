@@ -19,14 +19,6 @@ type failureEnvelope struct {
 	Reason string `json:"reason"`
 }
 
-func TestFailServiceRegistrationCooldown(t *testing.T) {
-	recorder, context := responseTestContext()
-	failService(context, &service.EmailCodeCooldownError{Seconds: 47})
-	response := decodeFailureEnvelope(t, recorder)
-	if recorder.Code != http.StatusTooManyRequests || response.Code != service.CodeRateLimited || response.Reason != string(service.ReasonRateLimited) || recorder.Header().Get("Retry-After") != "47" || !strings.Contains(response.Msg, "47") {
-		t.Fatalf("cooldown response: status=%d header=%s body=%#v", recorder.Code, recorder.Header().Get("Retry-After"), response)
-	}
-}
 
 func TestFailServiceProjectsAppError(t *testing.T) {
 	recorder, context := responseTestContext()

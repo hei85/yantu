@@ -288,10 +288,6 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 	if err != nil {
 		return nil, err
 	}
-	ownerAvatars, err := s.repo.SkillOwnerAvatars(ownerIDs)
-	if err != nil {
-		return nil, err
-	}
 	stateBySkillID := make(map[string]model.UserSkillState, len(states))
 	for _, state := range states {
 		stateBySkillID[state.SkillID] = state
@@ -309,9 +305,6 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 			ownerName = strings.TrimSpace(owner.DisplayName)
 		} else if strings.TrimSpace(owner.Username) != "" {
 			ownerName = strings.TrimSpace(owner.Username)
-		}
-		if ownerAvatars[skill.OwnerID] != "" {
-			ownerAvatarURL = ownerAvatars[skill.OwnerID]
 		}
 		state := stateBySkillID[skill.ID]
 		metric := metrics[skill.ID]

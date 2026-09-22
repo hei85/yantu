@@ -24,9 +24,6 @@ type Service struct {
 	repo                     *repository.Repository
 	dataDir                  string
 	cancelMu                 sync.Mutex
-	registrationMu           sync.Mutex
-	emailCodeMu              sync.Mutex
-	redeemBatchMu            sync.Mutex
 	storageMu                sync.Mutex
 	storageTestMu            sync.Mutex
 	workerRuntimeMu          sync.Mutex
@@ -107,7 +104,7 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 	service.taskLifecycleCoordinator = newTaskLifecycleCoordinator(service)
 	service.skills = skills.New(service.repo, service.dataDir, service.runWorkerLoop)
 	service.prompts = prompts.New(service.repo, promptAdminGate{svc: service})
-	service.auth = auth.New(service.repo, authHost{svc: service}, nil)
+	service.auth = auth.New(service.repo, authHost{svc: service})
 	service.canvas = canvas.New(service.repo, canvasHost{svc: service})
 	service.platform = platform.New(service.repo, coordinator, platformHost{svc: service})
 	return service

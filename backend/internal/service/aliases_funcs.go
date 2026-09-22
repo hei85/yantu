@@ -31,7 +31,7 @@ var (
 	MatchCapability                         = app.MatchCapability
 	ModelCapabilityNotSupported             = app.ModelCapabilityNotSupported
 	ModelCatalogMismatch                    = app.ModelCatalogMismatch
-	ModelPriceNotConfigured                 = app.ModelPriceNotConfigured
+	ModelVariantNotConfigured               = app.ModelVariantNotConfigured
 	ModelRequestIntentFromTaskInput         = app.ModelRequestIntentFromTaskInput
 	ModelRouteUnavailable                   = app.ModelRouteUnavailable
 	New                                     = app.New

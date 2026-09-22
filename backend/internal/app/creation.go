@@ -227,7 +227,7 @@ func (s *Service) ChangeCreationRun(userID, id, action string, req CreationReque
 				if err := validateCreationJSON(req.State); err != nil {
 					return err
 				}
-				if !strings.Contains("|idle|running|waiting_answer|waiting_proposal|waiting_canvas|waiting_payment|waiting_task|paused|completed|cancelled|", "|"+req.Status+"|") || req.Status == "" {
+				if !strings.Contains("|idle|running|waiting_answer|waiting_proposal|waiting_canvas|waiting_confirmation|waiting_task|paused|completed|cancelled|", "|"+req.Status+"|") || req.Status == "" {
 					return BadAuthRequest("创作状态无效")
 				}
 				if run.Status == "cancelled" && req.Status != "cancelled" {
@@ -585,7 +585,7 @@ func (s *Service) PrepareCreationSubmission(userID, id string, req CreationReque
 				return nil
 			}
 		}
-		if e = s.validateCreationStorage(repo, userID, false, int64(len(item.RequestJSON)+len(item.QuoteJSON)+len(item.PriceSignature))); e != nil {
+		if e = s.validateCreationStorage(repo, userID, false, int64(len(item.RequestJSON)+len(item.QuoteJSON)+len(item.ConfigSignature))); e != nil {
 			return e
 		}
 		return repo.SaveCreationSubmission(&item)
@@ -615,7 +615,7 @@ func (s *Service) buildCreationSubmission(userID string, run *model.CreationRun,
 	quote := creationQuoteFor(task, signature, expires)
 	quoteJSON, _ := json.Marshal(quote)
 	requestJSON, _ := json.Marshal(normalized)
-	item := model.CreationSubmission{ID: newID(), UserID: userID, RunID: run.ID, ItemKey: itemKey, ProposalVersion: proposalVersion, ProposalHash: run.ApprovedProposalHash, RequestJSON: string(requestJSON), RequestHash: creationHash(normalized), QuoteJSON: string(quoteJSON), PriceSignature: signature, ExpiresAt: expires}
+	item := model.CreationSubmission{ID: newID(), UserID: userID, RunID: run.ID, ItemKey: itemKey, ProposalVersion: proposalVersion, ProposalHash: run.ApprovedProposalHash, RequestJSON: string(requestJSON), RequestHash: creationHash(normalized), QuoteJSON: string(quoteJSON), ConfigSignature: signature, ExpiresAt: expires}
 	return item, normalized, nil
 }
 
@@ -695,7 +695,7 @@ func (s *Service) RefreshCreationSubmission(userID, id string, req CreationReque
 		if fresh.ProposalVersion > 0 && fresh.ProposalHash != current.ApprovedProposalHash {
 			return repository.ErrCreationConflict
 		}
-		if e = s.validateCreationStorage(repo, userID, false, int64(len(item.RequestJSON)+len(item.QuoteJSON)+len(item.PriceSignature))); e != nil {
+		if e = s.validateCreationStorage(repo, userID, false, int64(len(item.RequestJSON)+len(item.QuoteJSON)+len(item.ConfigSignature))); e != nil {
 			return e
 		}
 		now := time.Now()
@@ -731,7 +731,7 @@ func (s *Service) ApproveCreationSubmissions(userID, id string, req CreationRequ
 	if len(req.SubmissionIDs) == 0 || len(req.SubmissionIDs) > 20 {
 		return nil, BadAuthRequest("请选择 1 到 20 项生成任务")
 	}
-	// Compute current prices before the write transaction; transaction checks their config signatures again.
+	// Compute current configuration signatures before the write transaction; the transaction re-checks them.
 	prepared := map[string]*model.Task{}
 	signatures := map[string]string{}
 	for _, sid := range req.SubmissionIDs {

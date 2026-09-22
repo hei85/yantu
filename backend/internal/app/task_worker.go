@@ -194,7 +194,7 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	}
 	routeAttempt, err := s.beginTaskRouteAttempt(task)
 	if err != nil {
-		return terminal.markPreparationFailure(task, "路由准备失败", err, isRouteDispatchUncertain(err), "路由准备失败，上游请求未发出")
+		return terminal.markPreparationFailure(task, "路由准备失败", err)
 	}
 	routeResult, stateErr := s.routeExecutor().execute(ctx, task, routeAttempt)
 	if stateErr != nil {

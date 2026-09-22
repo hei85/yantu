@@ -7,12 +7,12 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
-func TestImagePriceTiersMatchResolutionAndActualReferences(t *testing.T) {
+func TestImageVariantsMatchResolutionAndActualReferences(t *testing.T) {
 	channelModel := model.ChannelModel{}
 	for _, operation := range []string{"text_to_image", "image_to_image"} {
 		for _, quality := range []string{"1k", "2k", "4k"} {
-			channelModel.PriceTiers = append(channelModel.PriceTiers, model.ChannelModelPriceTier{
-				ID: operation + "-" + quality, SelectorJSON: fmt.Sprintf(`{"operation":%q,"quality":%q}`, operation, quality), Enabled: true, PriceConfigured: true,
+			channelModel.Variants = append(channelModel.Variants, model.ChannelModelVariant{
+				ID: operation + "-" + quality, SelectorJSON: fmt.Sprintf(`{"operation":%q,"quality":%q}`, operation, quality), Enabled: true,
 			})
 		}
 	}
@@ -26,15 +26,15 @@ func TestImagePriceTiersMatchResolutionAndActualReferences(t *testing.T) {
 				if imageCount > 0 {
 					wantOperation = "image_to_image"
 				}
-				tier := channelModelPriceTierForIntent(channelModel, intent)
-				if tier == nil || tier.ID != wantOperation+"-"+skuSelectorForIntent(intent)["quality"] {
-					t.Fatalf("operation=%q quality=%q imageCount=%d: tier=%#v", operation, quality, imageCount, tier)
+				variant := channelModelVariantForIntent(channelModel, intent)
+				if variant == nil || variant.ID != wantOperation+"-"+skuSelectorForIntent(intent)["quality"] {
+					t.Fatalf("operation=%q quality=%q imageCount=%d: variant=%#v", operation, quality, imageCount, variant)
 				}
 			}
 		}
 	}
-	if tier := channelModelPriceTierForIntent(channelModel, ModelRequestIntent{Capability: "image", Options: map[string]any{"quality": "8k"}}); tier != nil {
-		t.Fatalf("unconfigured resolution matched tier: %#v", tier)
+	if variant := channelModelVariantForIntent(channelModel, ModelRequestIntent{Capability: "image", Options: map[string]any{"quality": "8k"}}); variant != nil {
+		t.Fatalf("unconfigured resolution matched variant: %#v", variant)
 	}
 }
 
@@ -116,11 +116,11 @@ func TestSKUSelectorIncludesVideoReferenceImageCount(t *testing.T) {
 	if selector["imageCount"] != "5" || selector["vquality"] != "720p" {
 		t.Fatalf("selector = %#v", selector)
 	}
-	modelWithTiers := model.ChannelModel{PriceTiers: []model.ChannelModelPriceTier{
-		{SelectorJSON: `{"vquality":"720p","imageCount":"5"}`, Enabled: true, PriceConfigured: true},
-		{SelectorJSON: `{"vquality":"720p","imageCount":"9"}`, Enabled: true, PriceConfigured: true},
+	modelWithTiers := model.ChannelModel{Variants: []model.ChannelModelVariant{
+		{SelectorJSON: `{"vquality":"720p","imageCount":"5"}`, Enabled: true},
+		{SelectorJSON: `{"vquality":"720p","imageCount":"9"}`, Enabled: true},
 	}}
-	matched := channelModelPriceTierForIntent(modelWithTiers, ModelRequestIntent{Capability: "video", Inputs: map[string]int{"image": 5}, Options: map[string]any{"vquality": "720p"}})
+	matched := channelModelVariantForIntent(modelWithTiers, ModelRequestIntent{Capability: "video", Inputs: map[string]int{"image": 5}, Options: map[string]any{"vquality": "720p"}})
 	if matched == nil || matched.SelectorJSON != `{"vquality":"720p","imageCount":"5"}` {
 		t.Fatalf("matched tier = %#v", matched)
 	}
@@ -139,11 +139,11 @@ func TestSKUSelectorTreatsAnyVideoReferenceAsVideoToVideo(t *testing.T) {
 		t.Fatalf("operation = %q, want video_to_video; selector = %#v", selector["operation"], selector)
 	}
 
-	modelWithTiers := model.ChannelModel{PriceTiers: []model.ChannelModelPriceTier{
-		{SelectorJSON: `{}`, Enabled: true, PriceConfigured: true},
-		{SelectorJSON: `{"operation":"video_to_video"}`, Enabled: true, PriceConfigured: true},
+	modelWithTiers := model.ChannelModel{Variants: []model.ChannelModelVariant{
+		{SelectorJSON: `{}`, Enabled: true},
+		{SelectorJSON: `{"operation":"video_to_video"}`, Enabled: true},
 	}}
-	matched := channelModelPriceTierForIntent(modelWithTiers, intent)
+	matched := channelModelVariantForIntent(modelWithTiers, intent)
 	if matched == nil || matched.SelectorJSON != `{"operation":"video_to_video"}` {
 		t.Fatalf("matched tier = %#v", matched)
 	}
@@ -163,11 +163,11 @@ func TestSKUSelectorTreatsAnyImageReferenceCountAsImageToVideo(t *testing.T) {
 		t.Fatalf("selector = %#v, want image_to_video with imageCount 3", selector)
 	}
 
-	modelWithTiers := model.ChannelModel{PriceTiers: []model.ChannelModelPriceTier{
-		{SelectorJSON: `{}`, Enabled: true, PriceConfigured: true},
-		{SelectorJSON: `{"operation":"image_to_video"}`, Enabled: true, PriceConfigured: true},
+	modelWithTiers := model.ChannelModel{Variants: []model.ChannelModelVariant{
+		{SelectorJSON: `{}`, Enabled: true},
+		{SelectorJSON: `{"operation":"image_to_video"}`, Enabled: true},
 	}}
-	matched := channelModelPriceTierForIntent(modelWithTiers, intent)
+	matched := channelModelVariantForIntent(modelWithTiers, intent)
 	if matched == nil || matched.SelectorJSON != `{"operation":"image_to_video"}` {
 		t.Fatalf("matched tier = %#v", matched)
 	}

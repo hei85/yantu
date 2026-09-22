@@ -189,20 +189,3 @@ func (r *Repository) SkillOwners(ownerIDs []string) (map[string]model.User, erro
 	}
 	return owners, nil
 }
-
-func (r *Repository) SkillOwnerAvatars(ownerIDs []string) (map[string]string, error) {
-	avatars := make(map[string]string, len(ownerIDs))
-	if len(ownerIDs) == 0 {
-		return avatars, nil
-	}
-	var identities []model.UserIdentity
-	if err := r.db.Where("user_id IN ? AND avatar_url <> ''", ownerIDs).Order("updated_at desc").Find(&identities).Error; err != nil {
-		return nil, err
-	}
-	for _, identity := range identities {
-		if avatars[identity.UserID] == "" {
-			avatars[identity.UserID] = identity.AvatarURL
-		}
-	}
-	return avatars, nil
-}

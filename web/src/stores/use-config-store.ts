@@ -8,7 +8,7 @@ import { modelProtocolCapability, normalizeModelProtocol, type ModelProtocol } f
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
 import { workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { useUserStore } from "@/stores/use-user-store";
-import type { CapabilitySpec, PublicLogicalModelPriceTier } from "@/services/api/logical-models";
+import type { CapabilitySpec, PublicLogicalModelVariant } from "@/services/api/logical-models";
 
 export type ApiCallFormat = "openai" | "gemini" | "claude";
 export type ChannelInterfaceType = ModelProtocol;
@@ -372,7 +372,7 @@ export type ModelChannel = {
         logicalModelId?: string;
         logicalCapabilitySpec?: CapabilitySpec;
         logicalCapabilityProfiles?: CapabilitySpec[];
-        logicalPriceTiers?: PublicLogicalModelPriceTier[];
+        logicalVariants?: PublicLogicalModelVariant[];
         defaultOptions?: Record<string, unknown>;
     }>;
 };

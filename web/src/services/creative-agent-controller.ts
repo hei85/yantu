@@ -147,7 +147,7 @@ export class CreativeAgentController {
         await this.action(async () => {
             if (this.state.media.some((item) => ["queued", "running"].includes(item.status))) throw new Error("已有生成还在处理，请继续处理以同步结果，完成后再修改方案。");
             this.run = await this.api.invalidateProposal(this.run!.id, { ...this.guard(), revision: this.run!.revision }, this.abort.signal);
-            this.state = { ...this.state, modificationRequested: true, pendingPayment: undefined, pendingEdits: undefined, pendingRedo: undefined };
+            this.state = { ...this.state, modificationRequested: true, pendingConfirmations: undefined, pendingEdits: undefined, pendingRedo: undefined };
             await this.save("idle");
         });
     }
@@ -158,7 +158,7 @@ export class CreativeAgentController {
             this.guard();
             if (this.state.media.some((item) => ["queued", "running"].includes(item.status))) throw new Error("请先暂停或等当前生成完成，再调整需求；已提交任务不会被文字修改取消");
             if (this.run?.approvedProposalVersion) this.run = await this.api.invalidateProposal(this.run.id, { ...this.guard(), revision: this.run.revision }, this.abort.signal);
-            this.state = { ...this.state, questions: undefined, answers: undefined, pendingPayment: undefined, planning: undefined, pendingEdits: undefined, pendingRedo: undefined, error: undefined, messages: [...this.state.messages, { id: nanoid(), role: "user", text: text.trim() }] };
+            this.state = { ...this.state, questions: undefined, answers: undefined, pendingConfirmations: undefined, planning: undefined, pendingEdits: undefined, pendingRedo: undefined, error: undefined, messages: [...this.state.messages, { id: nanoid(), role: "user", text: text.trim() }] };
             await this.save("running");
             await this.preparePlanning(text.trim());
         });
@@ -178,7 +178,7 @@ export class CreativeAgentController {
     async presentInteraction(data: Record<string, unknown>, revalidate = false) {
         await this.action(async () => {
             this.guard();
-            if (revalidate && (this.state.proposal || this.state.canvasApplied || this.run?.approvedProposalVersion || this.state.pendingPayment?.length || this.state.media.some((item) => item.taskId))) throw new Error("此方案已有批准或执行记录，不能重复呈现，请修改方案后重新确认");
+            if (revalidate && (this.state.proposal || this.state.canvasApplied || this.run?.approvedProposalVersion || this.state.pendingConfirmations?.length || this.state.media.some((item) => item.taskId))) throw new Error("此方案已有批准或执行记录，不能重复呈现，请修改方案后重新确认");
             if (this.state.externalInteractionPresented && !revalidate) return;
             this.state = { ...this.state, externalInteractionPresented: true };
             await this.consumePlanning({ resultJson: JSON.stringify({ toolCalls: [{ id: "interaction", type: "function", function: { name: "creative_respond", arguments: JSON.stringify(data) } }] }) } as GenerationTask);
@@ -207,7 +207,7 @@ export class CreativeAgentController {
             { role: "user", content: [{ type: "text", text: JSON.stringify({ brief: this.state.brief, proposal: this.state.proposal, availableModels: catalogue, references: this.state.references, canvas: canvas ? buildCanvasContext(canvas.read()) : { available: false, instruction: "首页不能操作画布" }, currentRequest: prepared.prompt }) }, ...imageReferences.map((reference) => ({ type: "image_url" as const, image_url: { url: reference.storageKey! } }))] },
         ];
         const itemKey = `planning:${nanoid()}`;
-        this.state = { ...this.state, planning: { itemKey, protocol, model: config.model, prompt }, pendingPayment: undefined };
+        this.state = { ...this.state, planning: { itemKey, protocol, model: config.model, prompt }, pendingConfirmations: undefined };
         await this.save("running");
         await this.ensurePlanningSubmission();
     }
@@ -222,13 +222,13 @@ export class CreativeAgentController {
             submission = await this.api.prepare(this.run!.id, { ...this.guard(), itemKey: planning.itemKey, request }, this.abort.signal);
         }
         this.assertLive(); this.upsertSubmission(submission);
-        this.state = { ...this.state, planning: { ...planning, submissionId: submission.id }, pendingPayment: [submission.id] };
-        await this.save("waiting_payment");
+        this.state = { ...this.state, planning: { ...planning, submissionId: submission.id }, pendingConfirmations: [submission.id] };
+        await this.save("waiting_confirmation");
     }
     private upsertSubmission(submission: CreationSubmission) { this.submissions = [...this.submissions.filter((item) => item.id !== submission.id), submission]; }
     private quote(): CreativeQuote | undefined {
-        // pendingPayment 同时保留已提交项用于恢复；只有未提交项需要执行确认卡。
-        const pending = this.state.pendingPayment?.map((id) => this.submissions.find((item) => item.id === id)).filter((item): item is CreationSubmission => Boolean(item && !item.taskId && !item.revokedAt));
+        // pendingConfirmations 同时保留已提交项用于恢复；只有未提交项需要执行确认卡。
+        const pending = this.state.pendingConfirmations?.map((id) => this.submissions.find((item) => item.id === id)).filter((item): item is CreationSubmission => Boolean(item && !item.taskId && !item.revokedAt));
         if (!pending?.length) return undefined;
         return {
             id: pending.map((item) => item.id).join(":"),
@@ -248,17 +248,17 @@ export class CreativeAgentController {
         };
     }
 
-    async approvePayment() {
+    async approveConfirmation() {
         const expiresAt = this.quote()?.expiresAt;
         if (expiresAt && Date.parse(expiresAt) <= Date.now()) {
-            await this.refreshQuotes();
+            await this.refreshConfirmations();
             return;
         }
         await this.action(async () => {
-            const ids = this.state.pendingPayment;
+            const ids = this.state.pendingConfirmations;
             if (!ids?.length) throw new Error("当前没有待执行的生成项");
             const unapproved = ids.filter((id) => { const item = this.submissions.find((item) => item.id === id); return item && !item.taskId && !item.approvedAt && !item.revokedAt; });
-            if (this.run!.status === "paused") await this.save("waiting_payment");
+            if (this.run!.status === "paused") await this.save("waiting_confirmation");
             if (unapproved.length) {
                 const result = await this.api.approve(this.run!.id, { ...this.guard(), submissionIds: unapproved }, this.abort.signal);
                 result.submissions.forEach((item) => this.upsertSubmission(item));
@@ -266,19 +266,19 @@ export class CreativeAgentController {
             await this.executeApproved(ids);
         });
     }
-    async refreshQuotes() {
+    async refreshConfirmations() {
         await this.action(async () => {
-            if (!this.state.pendingPayment?.length) throw new Error("当前没有待更新的方案");
-            for (const id of [...this.state.pendingPayment]) {
+            if (!this.state.pendingConfirmations?.length) throw new Error("当前没有待更新的方案");
+            for (const id of [...this.state.pendingConfirmations]) {
                 if (this.submissions.find((item) => item.id === id)?.taskId) continue;
                 const next = await this.api.refreshQuote(this.run!.id, { ...this.guard(), submissionId: id }, this.abort.signal);
                 this.guard(); this.upsertSubmission(next);
                 this.state = { ...this.state,
-                    pendingPayment: this.state.pendingPayment!.map((item) => item === id ? next.id : item),
+                    pendingConfirmations: this.state.pendingConfirmations!.map((item) => item === id ? next.id : item),
                     planning: this.state.planning?.submissionId === id ? { ...this.state.planning, submissionId: next.id, itemKey: next.itemKey } : this.state.planning,
                     media: this.state.media.map((item) => item.submissionId === id ? { ...item, submissionId: next.id } : item),
                 };
-                await this.save("waiting_payment");
+                await this.save("waiting_confirmation");
             }
         });
     }
@@ -315,7 +315,7 @@ export class CreativeAgentController {
             }
         }
         if (errors.length) { await this.save("paused"); throw new Error([...new Set(errors)].join("；")); }
-        this.state = { ...this.state, pendingPayment: undefined };
+        this.state = { ...this.state, pendingConfirmations: undefined };
         await this.prepareMediaBatch();
     }
     private async consumePlanning(task: GenerationTask) {
@@ -324,7 +324,7 @@ export class CreativeAgentController {
         const first = calls.find((call) => call.function.name === "creative_respond");
         const results = calls.map((call) => ({ role: "tool" as const, tool_call_id: call.id, content: JSON.stringify({ status: call === first ? "presented_to_user" : "cancelled", reason: call === first ? "内容待程序校验和用户确认" : "交互形成等待屏障，后续调用必须重新规划" }) }));
         const protocol = [...(this.state.planning?.protocol || []), ...calls.map(toolInput), ...results];
-        this.state = { ...this.state, modelCalls: this.state.modelCalls + 1, pendingPayment: undefined, planning: this.state.planning ? { ...this.state.planning, consumed: true, protocol } : undefined };
+        this.state = { ...this.state, modelCalls: this.state.modelCalls + 1, pendingConfirmations: undefined, planning: this.state.planning ? { ...this.state.planning, consumed: true, protocol } : undefined };
         if (!first) {
             if (!output.text?.trim()) throw new Error("助手没有返回可展示的内容");
             this.state = { ...this.state, messages: [...this.state.messages, { id: nanoid(), role: "assistant", text: output.text }] };
@@ -431,7 +431,7 @@ export class CreativeAgentController {
         const existingRefs = Object.keys((proposal.extra as { existingAssets?: Record<string, unknown> } | undefined)?.existingAssets || {});
         const ready = new Set([...existingRefs, ...this.state.media.filter((item) => item.status === "ready").map((item) => item.ref)]);
         if (this.state.media.every((item) => item.status === "ready")) {
-            this.state = { ...this.state, pendingPayment: undefined, messages: [...this.state.messages, { id: nanoid(), role: "assistant", text: "本次产物已生成并保存，可以在会话和画布查看。" }] };
+            this.state = { ...this.state, pendingConfirmations: undefined, messages: [...this.state.messages, { id: nanoid(), role: "assistant", text: "本次产物已生成并保存，可以在会话和画布查看。" }] };
             await this.save("completed"); return;
         }
         const candidates = this.state.media.filter((media) => media.status === "pending" && proposal.generationItems.find((item) => item.ref === media.ref)?.referenceRefs?.every((ref) => ready.has(ref)) !== false);
@@ -453,7 +453,7 @@ export class CreativeAgentController {
             request.input = { ...request.input, nodeId: node.id };
             const submission = await this.api.prepare(this.run!.id, { ...this.guard(), itemKey: `media:v${proposal.version}:${media.ref}:${media.attempt}`, proposalVersion: proposal.version, request }, this.abort.signal);
             this.upsertSubmission(submission); this.setMedia(media.ref, { submissionId: submission.id }); ids.push(submission.id);
-            this.state = { ...this.state, pendingPayment: [...ids] }; await this.save("waiting_payment");
+            this.state = { ...this.state, pendingConfirmations: [...ids] }; await this.save("waiting_confirmation");
         }
         if (!ids.length) { await this.save("paused"); throw new Error("当前没有可执行项，请先处理失败任务或核对素材依赖"); }
     }
@@ -502,7 +502,7 @@ export class CreativeAgentController {
                 const submission = this.submissions.find((item) => item.id === planning.submissionId);
                 if (submission?.taskId) { const task = await this.waitTask(submission.taskId, { signal: this.abort.signal }); await this.consumePlanning(task); return; }
                 if (submission?.approvedAt) { await this.executeApproved([submission.id]); return; }
-                this.state = { ...this.state, pendingPayment: [planning.submissionId] }; await this.save("waiting_payment"); return;
+                this.state = { ...this.state, pendingConfirmations: [planning.submissionId] }; await this.save("waiting_confirmation"); return;
             }
             if (!this.state.canvasApplied && this.state.proposal && this.run!.approvedProposalHash && this.run!.approvedProposalVersion === this.state.proposal.version) {
                 const linked = await this.api.canvas(this.run!.id, this.guard(), this.abort.signal); this.run = linked.run;
@@ -518,9 +518,9 @@ export class CreativeAgentController {
                 if (submission?.taskId && media.status !== "ready") { this.setMedia(media.ref, { taskId: submission.taskId }); try { await this.observeMedia({ ...media, taskId: submission.taskId }); } catch (error) { this.assertLive(); errors.push(error instanceof Error ? error.message : "生成未完成"); } }
             }
             if (errors.length) { await this.save("paused"); throw new Error([...new Set(errors)].join("；")); }
-            const approved = this.state.pendingPayment?.filter((id) => this.submissions.some((item) => item.id === id && item.approvedAt));
+            const approved = this.state.pendingConfirmations?.filter((id) => this.submissions.some((item) => item.id === id && item.approvedAt));
             if (approved?.length) await this.executeApproved(approved);
-            else if (this.state.pendingPayment?.length) await this.save("waiting_payment");
+            else if (this.state.pendingConfirmations?.length) await this.save("waiting_confirmation");
             else if (this.state.proposal && this.state.canvasApplied) await this.prepareMediaBatch();
         });
     }
@@ -541,7 +541,7 @@ export class CreativeAgentController {
             const operations: CanvasOperation[] = Object.values(nodeIds).map((id) => { const current = snapshot.nodes.find((node) => node.id === id); if (!current) throw new Error("原方案节点已被删除，请核对方案后继续"); return { type: "update_node", id, metadata: { ...current.metadata } }; });
             const nextProposal = { ...proposal, version, extra: { ...(proposal.extra as Record<string, unknown> || {}), nodeIds }, generationItems: proposal.generationItems.map((item) => item.ref === ref ? { ...item, model: String(node.metadata?.model || item.model), size: node.metadata?.size || item.size, seconds: node.metadata?.seconds ? Number(node.metadata.seconds) : item.seconds, quality: (item.mode === "video" ? node.metadata?.vquality : node.metadata?.quality) || item.quality } : item) };
             assertCreativeBriefSpecifications(nextProposal, this.state.brief);
-            this.state = { ...this.state, proposal: nextProposal, operations, pendingPayment: undefined, planning: undefined, pendingRedo: { ref, attempt: media.attempt + 1, proposalVersion: version } };
+            this.state = { ...this.state, proposal: nextProposal, operations, pendingConfirmations: undefined, planning: undefined, pendingRedo: { ref, attempt: media.attempt + 1, proposalVersion: version } };
             await this.save("running");
             await this.continueRedo();
         });

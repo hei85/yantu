@@ -126,7 +126,7 @@ export type ArtCritiqueNodeStatus = "idle" | "running" | "completed" | "failed" 
 
 export type ArtCritiqueNodeState = {
     stageTaskIds?: Record<string, string>;
-    billingRunId?: string;
+    critiqueRunId?: string;
     lastRunModel?: string;
     schemaVersion: typeof ART_CRITIQUE_SCHEMA_VERSION;
     status: ArtCritiqueNodeStatus;

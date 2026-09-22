@@ -19,7 +19,7 @@ func TestChannelModelLabelSaveAndCatalogPreserveChannelIdentity(t *testing.T) {
 		ChannelLabel: "  优惠渠道-993  ", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
 		Description:      "  适合分镜脚本，请先确认输入要求。  ",
 		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "gpt-test"),
-		PriceTiers:       []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", UnitPriceMicrocredits: 300000, PriceConfigured: true, Enabled: &enabled}},
+		Variants:       []ChannelModelVariantRequest{{Enabled: &enabled}},
 		Enabled:          &enabled,
 	}
 	var firstID string

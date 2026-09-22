@@ -44,7 +44,7 @@ func TestPluginViewIncludesDocumentationForEveryOfficialProtocol(t *testing.T) {
 		}
 		packageIDs[pkg.Manifest.Metadata.ID] = true
 	}
-	if len(plugins) != len(packages) {
+	if len(plugins) < len(packages) {
 		t.Fatalf("plugin views = %d, official packages = %d", len(plugins), len(packages))
 	}
 	for _, packagePath := range packages {

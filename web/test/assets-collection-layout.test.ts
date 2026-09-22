@@ -15,15 +15,3 @@ describe("asset library category sidebar", () => {
         expect(css).toMatch(/\.assets-collection-layout\s*\{[^}]*grid-template-columns:\s*220px minmax\(0, 1fr\)/s);
     });
 });
-
-describe("wallet history pagination", () => {
-    test("pins ledger pagination to the history panel footer", () => {
-        const modal = readFileSync(resolve(import.meta.dir, "../src/components/layout/workspace-wallet-modal.tsx"), "utf8");
-        const css = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8");
-        expect(modal).toContain("workspace-wallet-history-scroll");
-        expect(modal).toContain("workspace-wallet-pagination");
-        expect(modal).not.toContain("wallet.total > 20");
-        expect(css).toMatch(/\.workspace-wallet-content\.is-history\s*\{[^}]*overflow:\s*hidden/s);
-        expect(css).toMatch(/\.workspace-wallet-pagination\s*\{[^}]*margin-top:\s*auto/s);
-    });
-});

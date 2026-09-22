@@ -78,7 +78,7 @@ func TestUpdateSystemChannelEnabledOnlySkipsOutboundResolution(t *testing.T) {
 	}
 }
 
-func TestDuplicateSystemChannelCopiesSecretsModelsAndPriceTiers(t *testing.T) {
+func TestDuplicateSystemChannelCopiesSecretsModelsAndVariants(t *testing.T) {
 	svc, db := newChannelModelTestService(t)
 	svc.dataDir = t.TempDir()
 	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
@@ -112,25 +112,18 @@ func TestDuplicateSystemChannelCopiesSecretsModelsAndPriceTiers(t *testing.T) {
 		SortOrder:             3,
 		Capability:            "video",
 		Protocol:              model.ChannelInterfaceVolcengineArkVideo,
-		BillingMode:           "fixed_request",
-		UnitPriceMicrocredits: 120,
-		PriceConfigured:       true,
 		Enabled:               true,
-		PriceVersion:          4,
 	}
 	if err := db.Create(&sourceModel).Error; err != nil {
 		t.Fatal(err)
 	}
-	sourceTier := model.ChannelModelPriceTier{
+	sourceTier := model.ChannelModelVariant{
 		ID:                    "tier-source",
 		ChannelModelID:        sourceModel.ID,
 		SelectorKey:           `{}`,
 		SelectorJSON:          `{}`,
 		Resolution:            "720p",
 		ProviderModelKey:      "seedance-2",
-		BillingMode:           "fixed_request",
-		UnitPriceMicrocredits: 120,
-		PriceConfigured:       true,
 		Enabled:               true,
 	}
 	if err := db.Create(&sourceTier).Error; err != nil {
@@ -162,8 +155,8 @@ func TestDuplicateSystemChannelCopiesSecretsModelsAndPriceTiers(t *testing.T) {
 	if len(models) != 1 || models[0].ID == sourceModel.ID || models[0].ModelKey != sourceModel.ModelKey || models[0].SortOrder != sourceModel.SortOrder {
 		t.Fatalf("copied models = %#v", models)
 	}
-	if len(models[0].PriceTiers) != 1 || models[0].PriceTiers[0].ID == sourceTier.ID || models[0].PriceTiers[0].UnitPriceMicrocredits != sourceTier.UnitPriceMicrocredits {
-		t.Fatalf("copied price tiers = %#v", models[0].PriceTiers)
+	if len(models[0].Variants) != 1 || models[0].Variants[0].ID == sourceTier.ID {
+		t.Fatalf("copied variants = %#v", models[0].Variants)
 	}
 }
 
@@ -234,7 +227,7 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	svc, db := newChannelModelTestService(t)
 	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
 	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: upstream.URL + "/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
-	deleted := model.ChannelModel{ID: "deleted-model", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "model-a", BillingMode: "fixed_request", PriceVersion: 1}
+	deleted := model.ChannelModel{ID: "deleted-model", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "model-a"}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +249,7 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	if err := db.First(&active, "channel_id = ? AND model_key = ?", channel.ID, "model-a").Error; err != nil {
 		t.Fatal(err)
 	}
-	if active.ID == deleted.ID || active.Enabled || active.PriceConfigured {
+	if active.ID == deleted.ID || active.Enabled {
 		t.Fatalf("re-added model = %#v", active)
 	}
 	var total int64
@@ -348,8 +341,8 @@ func TestSaveAdminChannelModelRejectsActiveDuplicateKey(t *testing.T) {
 	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
 	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
 	items := []model.ChannelModel{
-		{ID: "model-a", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "Model A", Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, BillingMode: "fixed_request", Enabled: true, PriceVersion: 1},
-		{ID: "model-b", ChannelID: channel.ID, ModelKey: "model-b", DisplayName: "Model B", Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, BillingMode: "fixed_request", Enabled: true, PriceVersion: 1},
+		{ID: "model-a", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "Model A", Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, Enabled: true},
+		{ID: "model-b", ChannelID: channel.ID, ModelKey: "model-b", DisplayName: "Model B", Capability: "text", Protocol: model.ChannelInterfaceChatCompletion, Enabled: true},
 	}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatal(err)
@@ -358,7 +351,7 @@ func TestSaveAdminChannelModelRejectsActiveDuplicateKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	enabled := true
-	_, err := svc.SaveAdminChannelModel(admin, channel.ID, items[0].ID, ChannelModelRequest{ModelKey: "model-b", DisplayName: "Duplicate", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion), BillingMode: "fixed_request", Enabled: &enabled})
+	_, err := svc.SaveAdminChannelModel(admin, channel.ID, items[0].ID, ChannelModelRequest{ModelKey: "model-b", DisplayName: "Duplicate", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion), Enabled: &enabled})
 	var authErr *AuthError
 	if !errors.As(err, &authErr) || authErr.Status != http.StatusBadRequest || authErr.Message != "该渠道已存在模型 model-b，请直接编辑已有模型" {
 		t.Fatalf("SaveAdminChannelModel() error = %#v", err)
@@ -370,9 +363,9 @@ func TestDeleteAdminChannelModelsDeletesSelectionAtomically(t *testing.T) {
 	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
 	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `["model-a","model-b","model-c"]`}
 	items := []model.ChannelModel{
-		{ID: "model-a", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "Model A", Enabled: true, PriceVersion: 1},
-		{ID: "model-b", ChannelID: channel.ID, ModelKey: "model-b", DisplayName: "Model B", Enabled: true, PriceVersion: 1},
-		{ID: "model-c", ChannelID: channel.ID, ModelKey: "model-c", DisplayName: "Model C", Enabled: true, PriceVersion: 1},
+		{ID: "model-a", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "Model A", Enabled: true},
+		{ID: "model-b", ChannelID: channel.ID, ModelKey: "model-b", DisplayName: "Model B", Enabled: true},
+		{ID: "model-c", ChannelID: channel.ID, ModelKey: "model-c", DisplayName: "Model C", Enabled: true},
 	}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatal(err)
@@ -410,7 +403,7 @@ func TestDeleteAdminChannelModelsDeletesSelectionAtomically(t *testing.T) {
 		t.Fatalf("removed models = %#v, want two", removed)
 	}
 	for _, item := range removed {
-		if item.Enabled || item.PriceVersion != 2 || !item.DeletedAt.Valid {
+		if item.Enabled || !item.DeletedAt.Valid {
 			t.Fatalf("removed model state = %#v", item)
 		}
 	}
@@ -421,8 +414,8 @@ func TestDeleteAdminChannelModelsRejectsWholeSelectionWhenOneModelIsInUse(t *tes
 	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
 	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `["model-a","model-b"]`}
 	items := []model.ChannelModel{
-		{ID: "model-a", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "Model A", Enabled: true, PriceVersion: 1},
-		{ID: "model-b", ChannelID: channel.ID, ModelKey: "model-b", DisplayName: "Model B", Enabled: true, PriceVersion: 1},
+		{ID: "model-a", ChannelID: channel.ID, ModelKey: "model-a", DisplayName: "Model A", Enabled: true},
+		{ID: "model-b", ChannelID: channel.ID, ModelKey: "model-b", DisplayName: "Model B", Enabled: true},
 	}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatal(err)
@@ -537,7 +530,7 @@ func newChannelModelTestService(t *testing.T) (*Service, *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelPriceTier{}, &model.LogicalModel{}, &model.LogicalModelRevision{}, &model.LogicalModelRoute{}, &model.Task{}, &model.IDSequence{}); err != nil {
+	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelVariant{}, &model.LogicalModel{}, &model.LogicalModelRevision{}, &model.LogicalModelRoute{}, &model.Task{}, &model.IDSequence{}); err != nil {
 		t.Fatal(err)
 	}
 	return &Service{repo: repository.New(db)}, db

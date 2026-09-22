@@ -17,12 +17,8 @@ function invalidateAuthSessionCache() {
 export type LocalUser = {
     id: string;
     username: string;
-    email?: string;
     displayName: string;
     avatarUrl?: string;
-    identityProvider?: string;
-    identityId?: string;
-    identityUsername?: string;
     role: "admin" | "user";
     status: "active" | "disabled";
     lastLoginAt?: string;
@@ -301,7 +297,6 @@ export type RuntimeRequestPolicy = {
     assetWritePerMinute: number;
     canvasWritePerMinute: number;
     registerPerHour: number;
-    emailCodePerHour: number;
     loginIPPerTenMinutes: number;
     loginAccountPerTenMinutes: number;
     systemRelayPerMinute: number;
@@ -327,13 +322,9 @@ export type RuntimePolicySetting = {
 };
 
 export function getAuthSettings() {
-    return http.get<{ firstUser: boolean; registrationEnabled: boolean; linuxdoEnabled: boolean; emailEnabled: boolean; emailCodeRequired: boolean }>("/auth/settings");
+    return http.get<{ firstUser: boolean; registrationEnabled: boolean }>("/auth/settings");
 }
 
-export function linuxDOLoginURL(next: string) {
-    const base = String(apiBaseURL).replace(/\/$/, "");
-    return `${base}/auth/linuxdo/start?next=${encodeURIComponent(next)}`;
-}
 
 export function getAuthSession() {
     const now = Date.now();
@@ -373,19 +364,8 @@ export async function login(input: { username: string; password: string }) {
     return result;
 }
 
-export function sendRegistrationEmailCode(email: string) {
-    return http.post<{ sent: boolean }>("/auth/email-code", { email });
-}
 
-export function sendPasswordResetEmailCode(email: string) {
-    return http.post<{ sent: boolean }>("/auth/password-reset-code", { email });
-}
-
-export function resetPassword(input: { email: string; emailCode: string; password: string }) {
-    return http.post<{ reset: boolean }>("/auth/password-reset", input);
-}
-
-export function register(input: { username: string; email?: string; emailCode?: string; displayName?: string; password: string }) {
+export function register(input: { username: string; displayName?: string; password: string }) {
     return http.post<{ user: LocalUser }>("/auth/register", input);
 }
 
@@ -401,7 +381,7 @@ export function listAdminUsers(params: AdminListParams = {}) {
     return http.get<{ users: AdminUser[]; total: number; page: number; pageSize: number }>("/admin/users", { params });
 }
 
-export function createAdminUser(input: { username: string; displayName: string; email?: string; password: string; role: LocalUser["role"]; status: LocalUser["status"] }) {
+export function createAdminUser(input: { username: string; displayName: string; password: string; role: LocalUser["role"]; status: LocalUser["status"] }) {
     return http.post<{ user: AdminUser }>("/admin/users", input);
 }
 
@@ -421,7 +401,7 @@ export function listAdminUserAuditEvents(id: string, params: { page?: number; pa
     return http.get<{ events: AdminAuditEvent[]; total: number; page: number; pageSize: number }>(`/admin/users/${encodeURIComponent(id)}/audit-events`, { params });
 }
 
-export function updateAdminUser(id: string, input: Partial<Pick<LocalUser, "displayName" | "email" | "role" | "status">> & { password?: string }) {
+export function updateAdminUser(id: string, input: Partial<Pick<LocalUser, "displayName" | "role" | "status">> & { password?: string }) {
     return http.patch<{ user: LocalUser }>(`/admin/users/${encodeURIComponent(id)}`, input);
 }
 

@@ -26,11 +26,6 @@ const authCopy = {
         title: "建立你的创作空间",
         description: "一个账号管理画布、素材、技能和模型偏好。",
     },
-    recovery: {
-        eyebrow: "ACCOUNT RECOVERY",
-        title: "重新设置密码",
-        description: "验证账号邮箱后，设置一个新的登录密码。",
-    },
 } as const;
 
 
@@ -43,9 +38,8 @@ export function AuthScene() {
     const [manualVideoActive, setManualVideoActive] = useState(false);
     const [videoPlaying, setVideoPlaying] = useState(false);
     const [failedPosterURL, setFailedPosterURL] = useState("");
-    const recovery = location.pathname === "/forgot-password";
     const activeTab = location.pathname === "/register" ? "register" : "login";
-    const copy = recovery ? authCopy.recovery : activeTab === "register" ? authCopy.register : authCopy.login;
+    const copy = activeTab === "register" ? authCopy.register : authCopy.login;
     const automaticVideoActive = appearance.authVideoAutoplay && !reducedMotion;
     const videoActive = Boolean(appearance.authVideoUrl && (automaticVideoActive || manualVideoActive));
 
@@ -105,17 +99,15 @@ export function AuthScene() {
                     >
                         <ConfigProvider theme={getAntThemeConfig(true, appearance.activeSkin)}>
                             <div className="auth-card-dark auth-scene-card h-auto overflow-hidden rounded-lg backdrop-blur-2xl">
-                                <section aria-label={copy.title} className={`flex flex-col ${recovery ? "min-h-[600px]" : activeTab === "login" ? "min-h-[500px]" : "min-h-[620px] sm:min-h-[640px]"}`}>
+                                <section aria-label={copy.title} className={`flex flex-col ${activeTab === "login" ? "min-h-[500px]" : "min-h-[620px] sm:min-h-[640px]"}`}>
                                     <header className="px-6 pb-5 pt-6 sm:px-8 sm:pt-7">
                                         <p className="auth-scene-eyebrow text-xs font-semibold tracking-[0.18em]">{copy.eyebrow}</p>
                                         <h2 className="mt-2 text-3xl font-semibold">{copy.title}</h2>
                                         <p className="auth-scene-muted mt-2 text-sm leading-6">{copy.description}</p>
                                     </header>
-                                    {!recovery ? (
-                                        <div className="px-6 sm:px-8">
-                                            <Tabs className="auth-card-tabs" activeKey={activeTab} items={AUTH_TABS} onChange={(key) => navigate({ pathname: key === "register" ? "/register" : "/login", search: location.search })} />
-                                        </div>
-                                    ) : null}
+                                    <div className="px-6 sm:px-8">
+                                        <Tabs className="auth-card-tabs" activeKey={activeTab} items={AUTH_TABS} onChange={(key) => navigate({ pathname: key === "register" ? "/register" : "/login", search: location.search })} />
+                                    </div>
                                     <div key={location.pathname} className="flex-1 px-6 py-6 sm:px-8 sm:py-7">
                                         <Outlet />
                                     </div>

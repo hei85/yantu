@@ -62,7 +62,7 @@ describe("创作规格与局部重做", () => {
         expect(saved.pendingRedo).toBeUndefined();
         expect(saved.media[0]).toEqual(state.media[0]);
         expect(saved.media[1].attempt).toBe(2);
-        expect(run.status).toBe("waiting_payment");
+        expect(run.status).toBe("waiting_confirmation");
         expect(executions).toBe(0);
     });
 });

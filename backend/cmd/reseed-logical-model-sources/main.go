@@ -107,8 +107,8 @@ func buildPlans(repo *repository.Repository) ([]sourcePlan, error) {
 		if channelErr != nil {
 			return nil, fmt.Errorf("前台模型 %s 的线路不是系统渠道：%w", item.Code, channelErr)
 		}
-		if !channel.Enabled || !source.Enabled || !source.PriceConfigured {
-			return nil, fmt.Errorf("前台模型 %s 的系统模型未启用或未配置价格", item.Code)
+		if !channel.Enabled || !source.Enabled || len(source.Variants) == 0 {
+			return nil, fmt.Errorf("前台模型 %s 的系统模型未启用或未配置规格", item.Code)
 		}
 		plans = append(plans, sourcePlan{logicalModel: item, source: source})
 	}

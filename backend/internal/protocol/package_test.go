@@ -42,26 +42,33 @@ func TestParsePluginPackageValidatesWebEntry(t *testing.T) {
 	}
 }
 
-func TestParsePluginPackageAcceptsTaggedRPCBackend(t *testing.T) {
+func TestParsePluginPackageRequiresCanonicalRPCBackend(t *testing.T) {
 	manifest := []byte(`{
         "apiVersion":"yingce.plugin/v1",
-        "id":"tagged-payment",
-        "name":"Tagged Payment",
+        "id":"tagged-plugin",
+        "name":"Tagged Plugin",
         "version":"1.0.0",
         "author":"Test",
         "enabled":true,
         "runtime":{"backend":"rpc","backendEntry":"backend/provider"},
-        "contributes":{"paymentProviders":[{"id":"tagged-pay","label":"Tagged","icon":"brand:test","checkoutMode":"qr_code","expiryPolicy":{"defaultMinutes":30,"minMinutes":5,"maxMinutes":1440}}]}
+        "contributes":{"aiCapabilities":["text"]}
     }`)
-	pkg, err := ParsePluginPackage(zipPluginPackage(t, map[string][]byte{
+	if _, err := ParsePluginPackage(zipPluginPackage(t, map[string][]byte{
 		"manifest.json":                 manifest,
 		"backend/provider-darwin-arm64": []byte("darwin-provider"),
+	})); err == nil {
+		t.Fatal("rpc package without the canonical backend/provider entry was accepted")
+	}
+
+	pkg, err := ParsePluginPackage(zipPluginPackage(t, map[string][]byte{
+		"manifest.json":    manifest,
+		"backend/provider": []byte("provider"),
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := pkg.Files["backend/provider"]; ok {
-		t.Fatal("canonical backend/provider should not be required when a tagged artifact exists")
+	if len(pkg.Files["backend/provider"]) == 0 {
+		t.Fatalf("package = %#v", pkg)
 	}
 
 	if _, err := ParsePluginPackage(zipPluginPackage(t, map[string][]byte{"manifest.json": manifest})); err == nil {

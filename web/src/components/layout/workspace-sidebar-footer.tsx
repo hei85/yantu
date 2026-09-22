@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
-import { IdentityProviderBadge } from "@/components/layout/identity-provider-badge";
 import { SystemAnnouncementCenter } from "@/components/layout/system-announcement-center";
 import { applyUserSession } from "@/lib/user-session";
 import { cn } from "@/lib/utils";
@@ -65,7 +64,7 @@ export function WorkspaceSidebarFooter({ expandedClassName, collapsedClassName, 
                             <div className="flex items-center gap-3 border-b border-border/65 px-1 pb-3">
                                 <UserAvatar user={user} className="size-8" />
                                 <div className="min-w-0 flex-1">
-                                    <div className="flex min-w-0 items-center gap-1.5"><span className="truncate text-sm font-medium">{user.displayName || user.username}</span><IdentityProviderBadge user={user} /></div>
+                                    <div className="flex min-w-0 items-center gap-1.5"><span className="truncate text-sm font-medium">{user.displayName || user.username}</span></div>
                                 </div>
                             </div>
 
@@ -120,7 +119,7 @@ function UserAvatar({ user, className }: { user: LocalUser; className: string })
                     <CircleUserRound className="app-workspace-account-icon" aria-hidden />
                 )}
             </span>
-            <IdentityProviderBadge user={user} compact className="absolute -bottom-1 -right-1" />
+            
         </span>
     );
 }

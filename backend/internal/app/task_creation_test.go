@@ -41,7 +41,7 @@ func TestResolveTaskModelSelectionAllowsExplicitSystemChannelWhenFrontendModelsE
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelPriceTier{}); err != nil {
+	if err := db.AutoMigrate(&model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelVariant{}); err != nil {
 		t.Fatal(err)
 	}
 	channel := model.ModelChannel{ID: "channel-1", Scope: model.ChannelScopeSystem, Enabled: true, Name: "Agnes"}
@@ -51,12 +51,12 @@ func TestResolveTaskModelSelectionAllowsExplicitSystemChannelWhenFrontendModelsE
 	}
 	channelModel := model.ChannelModel{
 		ID: "channel-model-1", ChannelID: channel.ID, ModelKey: "agnes-video-2.5", Capability: "video",
-		Protocol: model.ChannelInterfaceNewAPIVideo, BillingMode: "per_second", PriceConfigured: true, Enabled: true,
+		Protocol: model.ChannelInterfaceNewAPIVideo, Enabled: true,
 		CapabilityConfigJSON: string(capabilityJSON),
 	}
-	priceTier := model.ChannelModelPriceTier{
+	priceTier := model.ChannelModelVariant{
 		ID: "tier-1", ChannelModelID: channelModel.ID, SelectorKey: `{}`, SelectorJSON: `{}`,
-		BillingMode: "per_second", UnitPriceMicrocredits: 1, PriceConfigured: true, Enabled: true,
+		Enabled: true,
 	}
 	if err := db.Create(&channel).Error; err != nil {
 		t.Fatal(err)
@@ -116,9 +116,9 @@ func TestResolveTaskModelSelectionStillRequiresLogicalModelWithoutExplicitSystem
 
 func TestResolveSystemChannelModelSelectionRebuildsAuthoritativeExecutionSpec(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceGrokImage), "grok-image")
-	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("tier-1k", `{"operation":"text_to_image","quality":"1k"}`, "provider-image-1k", "fixed_request"),
-		newSelectionPriceTier("tier-2k", `{"operation":"text_to_image","quality":"2k"}`, "provider-image-2k", "fixed_request"),
+	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("tier-1k", `{"operation":"text_to_image","quality":"1k"}`, "provider-image-1k"),
+		newSelectionPriceTier("tier-2k", `{"operation":"text_to_image","quality":"2k"}`, "provider-image-2k"),
 	})
 
 	input := map[string]any{
@@ -154,9 +154,6 @@ func TestResolveSystemChannelModelSelectionRebuildsAuthoritativeExecutionSpec(t 
 	if got := config["quality"]; got != "1k" {
 		t.Fatalf("quality = %#v, want capabilityOptions value 1k", got)
 	}
-	if got := config["priceTierId"]; got != "tier-1k" {
-		t.Fatalf("priceTierId = %#v, want server-selected tier-1k", got)
-	}
 	if got := config["providerModelKey"]; got != "provider-image-1k" {
 		t.Fatalf("providerModelKey = %#v, want server-selected provider-image-1k", got)
 	}
@@ -174,8 +171,8 @@ func TestResolveSystemChannelModelSelectionRebuildsAuthoritativeExecutionSpec(t 
 
 func TestResolveSystemChannelModelSelectionAppliesServerDefaults(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceGrokImage), "grok-image")
-	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("tier-default", `{"operation":"text_to_image","quality":"2k"}`, "provider-image-default", "fixed_request"),
+	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("tier-default", `{"operation":"text_to_image","quality":"2k"}`, "provider-image-default"),
 	})
 
 	resolved, err := svc.resolveSystemChannelModelSelection(map[string]any{
@@ -197,16 +194,16 @@ func TestResolveSystemChannelModelSelectionAppliesServerDefaults(t *testing.T) {
 	if err := json.Unmarshal(encoded, &executable); err != nil {
 		t.Fatalf("server defaults cannot be decoded by provider: %v", err)
 	}
-	if config["priceTierId"] != "tier-default" || config["providerModelKey"] != "provider-image-default" {
-		t.Fatalf("server price selection was not persisted: %#v", config)
+	if config["providerModelKey"] != "provider-image-default" {
+		t.Fatalf("server variant selection was not persisted: %#v", config)
 	}
 }
 
 func TestResolveSystemChannelModelSelectionIgnoresStaleQualityWhenQualityIsUnsupported(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceGeminiImage), "nano-banana-pro")
 	profile.Image.Quality = ImageQualityConfig{Supported: false, Default: "auto"}
-	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGeminiImage, profile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("tier-any", `{}`, "provider-image", "fixed_request"),
+	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGeminiImage, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("tier-any", `{}`, "provider-image"),
 	})
 
 	resolved, err := svc.resolveSystemChannelModelSelection(map[string]any{
@@ -234,8 +231,8 @@ func TestResolveSystemChannelModelSelectionIgnoresStaleQualityWhenQualityIsUnsup
 
 func TestResolveSystemChannelModelSelectionRejectsUnsupportedRequest(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceGrokImage), "grok-image")
-	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("tier-any", `{}`, "provider-image", "fixed_request"),
+	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("tier-any", `{}`, "provider-image"),
 	})
 
 	tests := []struct {
@@ -266,8 +263,8 @@ func TestResolveSystemChannelModelSelectionRejectsUnsupportedRequest(t *testing.
 	}
 
 	videoProfile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceNewAPIVideo), "video-model")
-	videoSvc, _, videoChannel, videoModel := createSystemChannelSelectionFixture(t, "video", model.ChannelInterfaceNewAPIVideo, videoProfile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("video-tier", `{}`, "provider-video", "per_second"),
+	videoSvc, _, videoChannel, videoModel := createSystemChannelSelectionFixture(t, "video", model.ChannelInterfaceNewAPIVideo, videoProfile, []model.ChannelModelVariant{
+		newSelectionPriceTier("video-tier", `{}`, "provider-video"),
 	})
 	if _, err := videoSvc.resolveSystemChannelModelSelection(map[string]any{
 		"mode":   "video",
@@ -279,8 +276,8 @@ func TestResolveSystemChannelModelSelectionRejectsUnsupportedRequest(t *testing.
 
 func TestResolveSystemChannelModelSelectionRejectsCorruptCapabilityConfig(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceGrokImage), "grok-image")
-	svc, db, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("tier-any", `{}`, "provider-image", "fixed_request"),
+	svc, db, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGrokImage, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("tier-any", `{}`, "provider-image"),
 	})
 	if err := db.Model(&model.ChannelModel{}).Where("id = ?", channelModel.ID).Update("capability_config_json", "{").Error; err != nil {
 		t.Fatal(err)
@@ -293,7 +290,7 @@ func TestResolveSystemChannelModelSelectionRejectsCorruptCapabilityConfig(t *tes
 	}
 }
 
-func createSystemChannelSelectionFixture(t *testing.T, capability string, protocol model.ChannelInterfaceType, profile *ModelCapabilityConfig, tiers []model.ChannelModelPriceTier) (*Service, *gorm.DB, model.ModelChannel, model.ChannelModel) {
+func createSystemChannelSelectionFixture(t *testing.T, capability string, protocol model.ChannelInterfaceType, profile *ModelCapabilityConfig, tiers []model.ChannelModelVariant) (*Service, *gorm.DB, model.ModelChannel, model.ChannelModel) {
 	t.Helper()
 	svc, db := newChannelModelTestService(t)
 	channel := model.ModelChannel{ID: newID(), Scope: model.ChannelScopeSystem, Enabled: true, Name: "System Channel", APIFormat: "legacy"}
@@ -320,10 +317,10 @@ func createSystemChannelSelectionFixture(t *testing.T, capability string, protoc
 	return svc, db, channel, channelModel
 }
 
-func newSelectionPriceTier(id string, selector string, providerModelKey string, billingMode string) model.ChannelModelPriceTier {
-	return model.ChannelModelPriceTier{
+func newSelectionPriceTier(id string, selector string, providerModelKey string) model.ChannelModelVariant {
+	return model.ChannelModelVariant{
 		ID: id, SelectorKey: selector, SelectorJSON: selector, ProviderModelKey: providerModelKey,
-		BillingMode: billingMode, UnitPriceMicrocredits: 10, PriceConfigured: true, Enabled: true,
+		Enabled: true,
 	}
 }
 
@@ -340,23 +337,23 @@ func TestImageResolutionPricingOnSystemChannel(t *testing.T) {
 			{Tier: "4k", Ratio: "16:9", Size: "3840x2160", Width: 3840, Height: 2160},
 		},
 	}
-	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGeminiImage, profile, []model.ChannelModelPriceTier{
-		newSelectionPriceTier("tier-1k", `{"quality":"1k"}`, "provider-1k", "fixed_request"),
-		newSelectionPriceTier("tier-2k", `{"quality":"2k"}`, "provider-2k", "fixed_request"),
-		newSelectionPriceTier("tier-4k", `{"quality":"4k"}`, "provider-4k", "fixed_request"),
+	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceGeminiImage, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("tier-1k", `{"quality":"1k"}`, "provider-1k"),
+		newSelectionPriceTier("tier-2k", `{"quality":"2k"}`, "provider-2k"),
+		newSelectionPriceTier("tier-4k", `{"quality":"4k"}`, "provider-4k"),
 	})
 
 	for _, tc := range []struct {
-		name     string
-		quality  string
-		size     string
-		wantTier string
+		name         string
+		quality      string
+		size         string
+		wantProvider string
 	}{
-		{"1k specified", "1k", "16:9", "tier-1k"},
-		{"2k specified", "2k", "16:9", "tier-2k"},
-		{"4k specified", "4k", "16:9", "tier-4k"},
-		{"auto specified", "auto", "16:9", "tier-1k"},
-		{"empty specified", "", "16:9", "tier-1k"},
+		{"1k specified", "1k", "16:9", "provider-1k"},
+		{"2k specified", "2k", "16:9", "provider-2k"},
+		{"4k specified", "4k", "16:9", "provider-4k"},
+		{"auto specified", "auto", "16:9", "provider-1k"},
+		{"empty specified", "", "16:9", "provider-1k"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			input := map[string]any{
@@ -373,8 +370,8 @@ func TestImageResolutionPricingOnSystemChannel(t *testing.T) {
 				t.Fatalf("resolve error: %v", err)
 			}
 			cfg := resolved["config"].(map[string]any)
-			if cfg["priceTierId"] != tc.wantTier {
-				t.Fatalf("priceTierId = %#v, want %s", cfg["priceTierId"], tc.wantTier)
+			if cfg["providerModelKey"] != tc.wantProvider {
+				t.Fatalf("providerModelKey = %#v, want %s", cfg["providerModelKey"], tc.wantProvider)
 			}
 		})
 	}

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { createAdminUser, updateAdminUser, type AdminUser, type LocalUser } from "@/services/api/auth";
 
-type UserFormValues = Pick<LocalUser, "displayName" | "email" | "role" | "status">;
+type UserFormValues = Pick<LocalUser, "displayName" | "role" | "status">;
 
 export function AdminUserEditDrawer({
     user,
@@ -27,7 +27,6 @@ export function AdminUserEditDrawer({
         form.resetFields();
         form.setFieldsValue({
             displayName: user.displayName,
-            email: user.email || "",
             role: user.role,
             status: user.status,
         });
@@ -56,7 +55,6 @@ export function AdminUserEditDrawer({
         try {
             const result = await updateAdminUser(user.id, {
                 displayName: values.displayName.trim(),
-                email: values.email?.trim() || "",
                 role: values.role,
                 status: values.status,
             });
@@ -88,9 +86,6 @@ export function AdminUserEditDrawer({
                 <Form.Item name="displayName" label="显示名称" rules={[{ required: true, whitespace: true, message: "请填写显示名称" }]}>
                     <Input placeholder="用户在产品内显示的名称" />
                 </Form.Item>
-                <Form.Item name="email" label="邮箱" rules={[{ type: "email", message: "请输入有效邮箱" }]}>
-                    <Input placeholder="name@example.com" />
-                </Form.Item>
                 <Form.Item name="role" label="角色" extra={editingSelf ? "不能在此修改当前管理员自己的角色。" : "角色变更会立即影响后台访问权限。"}>
                     <Select disabled={editingSelf} options={[{ label: "管理员", value: "admin" }, { label: "普通用户", value: "user" }]} />
                 </Form.Item>
@@ -105,7 +100,6 @@ export function AdminUserEditDrawer({
 type CreateUserFormValues = {
     username: string;
     displayName: string;
-    email?: string;
     password: string;
     role: LocalUser["role"];
     status: LocalUser["status"];
@@ -153,7 +147,6 @@ export function AdminUserCreateDrawer({
             const result = await createAdminUser({
                 username: values.username.trim(),
                 displayName: values.displayName.trim(),
-                email: values.email?.trim() || "",
                 password: values.password,
                 role: values.role,
                 status: values.status,
@@ -185,9 +178,6 @@ export function AdminUserCreateDrawer({
                 </Form.Item>
                 <Form.Item name="displayName" label={"\u663e\u793a\u540d\u79f0"} rules={[{ required: true, whitespace: true, message: "\u8bf7\u586b\u5199\u663e\u793a\u540d\u79f0" }]}>
                     <Input placeholder={"\u7528\u6237\u5728\u4ea7\u54c1\u5185\u663e\u793a\u7684\u540d\u79f0"} />
-                </Form.Item>
-                <Form.Item name="email" label={"\u90ae\u7bb1"} rules={[{ type: "email", message: "\u8bf7\u8f93\u5165\u6709\u6548\u90ae\u7bb1" }]}>
-                    <Input placeholder="name@example.com" />
                 </Form.Item>
                 <Form.Item name="password" label={"\u521d\u59cb\u5bc6\u7801"} rules={[{ required: true, message: "\u8bf7\u8bbe\u7f6e\u521d\u59cb\u5bc6\u7801" }]}>
                     <Input.Password placeholder={"\u81f3\u5c11 8 \u4f4d"} />

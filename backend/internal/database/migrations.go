@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 27
+const CurrentSchemaVersion int64 = 28
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -21,6 +21,7 @@ const resourcePlaybackChecksum = "sha256:resource-playback-v6-20260902"
 const assetLibraryFoldersChecksum = "sha256:asset-library-folders-v6-20260902"
 const logicalModelActiveCodeChecksum = "sha256:logical-model-active-code-v8-20260905"
 const creationRuntimeChecksum = "sha256:creation-runtime-v10-20260909"
+const creationConfirmationStatusChecksum = "sha256:creation-confirmation-status-v28-20260922"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -90,6 +91,15 @@ var schemaMigrations = []migration{
 	{version: 25, name: "video_token_formula_snapshot", checksum: "sha256:video-token-formula-snapshot-v25", apply: migrationNoop},
 	{version: 26, name: "channel_model_description", checksum: "sha256:channel-model-description-v26", apply: migrateChannelModelDescription},
 	{version: 27, name: "channel_credit_cost", checksum: "sha256:channel-credit-cost-v27", apply: migrationNoop},
+	{version: 28, name: "creation_confirmation_status", checksum: creationConfirmationStatusChecksum, apply: migrateCreationConfirmationStatus},
+}
+
+// migrateCreationConfirmationStatus 把历史创作状态 waiting_payment 迁移为 waiting_confirmation。
+func migrateCreationConfirmationStatus(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.CreationRun{}) {
+		return nil
+	}
+	return tx.Model(&model.CreationRun{}).Where("status = ?", "waiting_payment").Update("status", "waiting_confirmation").Error
 }
 
 // migrationNoop 保留历史版本号，让已升级过的数据库继续通过校验；全新的数据库不再创建已下线的付费表。

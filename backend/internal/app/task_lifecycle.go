@@ -58,14 +58,14 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	if err != nil {
 		return nil, err
 	}
-	var billingInput map[string]any
-	if err := json.Unmarshal([]byte(decryptedInput), &billingInput); err != nil {
+	var retryInput map[string]any
+	if err := json.Unmarshal([]byte(decryptedInput), &retryInput); err != nil {
 		return nil, err
 	}
-	if err := s.prepareLogicalTaskRetry(task, billingInput); err != nil {
+	if err := s.prepareLogicalTaskRetry(task, retryInput); err != nil {
 		return nil, err
 	}
-	if err := s.requireCustomChannelsForTaskInput(billingInput); err != nil {
+	if err := s.requireCustomChannelsForTaskInput(retryInput); err != nil {
 		return nil, err
 	}
 	policy, err := s.RuntimePolicy()

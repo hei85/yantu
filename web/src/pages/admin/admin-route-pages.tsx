@@ -11,7 +11,6 @@ const AdminAnnouncementsPanel = lazy(() => import("./components/admin-announceme
 const AdminBannerAnnouncementsPanel = lazy(() => import("./components/admin-banner-announcements-panel"));
 const FeatureAvailabilityPanel = lazy(() => import("./components/feature-availability-panel"));
 const StorageResourcesPanel = lazy(() => import("./components/storage-resources-panel"));
-const AgentLessonsPanel = lazy(() => import("./components/agent-lessons-panel"));
 
 export function AnalyticsPage() {
     const { references } = useAdminContext();
@@ -92,10 +91,3 @@ export function StorageResourcesPage() {
     );
 }
 
-export function AgentLessonsPage() {
-    return (
-        <AdminPageFrame title="Agent 记忆" description="按用户查看个人记忆；批准仍由用户自己处理" scroll>
-            <AgentLessonsPanel />
-        </AdminPageFrame>
-    );
-}

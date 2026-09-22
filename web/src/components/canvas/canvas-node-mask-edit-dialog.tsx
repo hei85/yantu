@@ -200,7 +200,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, config, onClose, onCon
                                         config={generationConfig}
                                         showTitle={false}
                                         showCount={false}
-                                        bypassPriceGuard
+                                        bypassVariantGuard
                                         className="space-y-3"
                                         theme={theme}
                                         onConfigChange={(key, value) => setGenerationConfig((current) => ({ ...current, [key]: value }))}

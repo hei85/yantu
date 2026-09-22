@@ -128,7 +128,7 @@ export function systemChannelModelChannels(channels: PublicChannelCatalog[]): Mo
                 channelModelId: model.id,
                 channelId: channel.id,
                 modelKey: model.modelKey,
-                logicalPriceTiers: (model.priceTiers || []).map((tier) => ({
+                logicalVariants: (model.variants || []).map((tier) => ({
                     selector: tier.selector || {},
                     resolution: tier.resolution || "*",
                     videoSeconds: tier.videoSeconds || 0,

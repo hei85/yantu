@@ -34,7 +34,6 @@ describe("creation library button", () => {
         expect(source).toContain("onClick={props.onOpenLibrary}");
         expect(source).toContain("creation-reference-add-button");
         expect(source).toContain('showSelectedPrice={false} showOptionPrices variant="creation"');
-        expect(source).toContain("creation-submit-cost");
     });
 
     test("uploads from the library without adding a reference before confirmation", () => {

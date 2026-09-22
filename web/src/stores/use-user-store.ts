@@ -5,12 +5,8 @@ import { DEFAULT_DRAWING_ENGINE, type CanvasDrawingEngineSetting } from "@/lib/c
 export type LocalUser = {
     id: string;
     username: string;
-    email?: string;
     displayName: string;
     avatarUrl?: string;
-    identityProvider?: string;
-    identityId?: string;
-    identityUsername?: string;
     role: "admin" | "user";
     status: "active" | "disabled";
     lastLoginAt?: string;
