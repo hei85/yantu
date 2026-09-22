@@ -19,7 +19,6 @@
     "dependencies": {
         "@ant-design/icons": "^6.3.2",
         "@ant-design/x": "^2.9.0",
-        "@codemirror/lang-json": "^6.0.2",
         "@excalidraw/excalidraw": "0.18.1",
         "@ffmpeg/core": "0.12.10",
         "@ffmpeg/ffmpeg": "^0.12.15",
@@ -30,7 +29,6 @@
         "@mediapipe/tasks-vision": "^1.0.1",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.6.1",
-        "@streamdown/code": "^1.1.1",
         "@tanstack/react-query": "^5.101.2",
         "@tanstack/react-virtual": "^3.14.8",
         "@tiptap/core": "3.28.0",
@@ -59,7 +57,6 @@
         "leafer-ui": "^2.2.7",
         "localforage": "^1.10.0",
         "lucide-react": "^1.25.0",
-        "mammoth": "^1.12.0",
         "motion": "^12.42.2",
         "nanoid": "^6.0.0",
         "react": "19.2.7",

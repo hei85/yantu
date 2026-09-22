@@ -1,6 +1,5 @@
 // 第三期：时间线导出运行时。把 buildTimelineRenderPlan 产出的步骤逐步在 ffmpeg.wasm 中执行，
 // 复用 canvas-video-merge.ts 的 loadFFmpeg（本地同源加载 core/wasm），媒体读写与清理逻辑保持一致。
-import { fetchFile } from "@ffmpeg/util";
 
 import { loadFFmpeg } from "@/lib/canvas/canvas-video-merge";
 import { getMediaBlob } from "@/services/file-storage";
@@ -36,6 +35,7 @@ export async function exportTimelineToMp4(timeline: TimelineProject, sources: Ti
     const { onProgress, context } = options;
     onProgress?.({ phase: "loading", percent: 0, detail: "加载 FFmpeg" });
     const ffmpeg = await loadFFmpeg(({ phase, progress }) => onProgress?.({ phase: phase === "loading" ? "loading" : "reading", percent: progress, detail: phase === "loading" ? "加载 FFmpeg" : "读取素材" }));
+    const { fetchFile } = await import("@ffmpeg/util");
     const plan = buildTimelineRenderPlan(timeline, sources, context);
     const writtenFiles = new Set<string>();
 

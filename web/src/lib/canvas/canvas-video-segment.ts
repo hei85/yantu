@@ -1,5 +1,3 @@
-import { fetchFile } from "@ffmpeg/util";
-
 import { getMediaBlob } from "@/services/file-storage";
 import { buildExtractAudioArgs, buildSegmentTrimArgs, SEGMENT_INPUT_NAME, SEGMENT_OUTPUT_NAME } from "./canvas-video-segment-args";
 import { loadFFmpeg } from "./canvas-video-merge";
@@ -52,6 +50,7 @@ async function runSegmentJob(
 ) {
     assertValidRange(range, durationMs);
     const ffmpeg = await loadFFmpeg(({ phase, progress }) => onProgress?.({ phase: phase === "loading" ? "loading" : "reading", progress }));
+    const { fetchFile } = await import("@ffmpeg/util");
     const blob = await readVideoSourceBlob(source);
     onProgress?.({ phase: "reading", progress: 45 });
     await ffmpeg.writeFile(INPUT_NAME, await fetchFile(blob));
@@ -77,6 +76,7 @@ export async function trimVideoSegment(source: VideoSegmentSource, range: VideoS
 /** 从视频片段提取声音为 MP3；优先 libmp3lame，内核不支持时回退默认 mp3 编码器。 */
 export async function extractVideoAudio(source: VideoSegmentSource, range: VideoSegmentRange, durationMs?: number, onProgress?: (progress: VideoSegmentProgress) => void) {
     const ffmpeg = await loadFFmpeg(({ phase, progress }) => onProgress?.({ phase: phase === "loading" ? "loading" : "reading", progress }));
+    const { fetchFile } = await import("@ffmpeg/util");
     const blob = await readVideoSourceBlob(source);
     onProgress?.({ phase: "reading", progress: 45 });
     await ffmpeg.writeFile(INPUT_NAME, await fetchFile(blob));

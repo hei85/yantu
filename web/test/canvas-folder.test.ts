@@ -39,7 +39,7 @@ describe("canvas folders", () => {
     test("文件夹样式与主题皮肤独立解析", () => {
         expect(resolveCanvasFolderTheme("ember")).toBe("ember");
         expect(resolveCanvasFolderTheme("unknown")).toBe("aurora");
-        expect(resolveCanvasFolderThemeCover("obsidian")).toContain("folder-theme-obsidian.png");
+        expect(resolveCanvasFolderThemeCover("obsidian")).toContain("folder-theme-obsidian.webp");
         expect(resolveCanvasFolderThemeCover("pearl", "resource:custom-cover")).toBe("resource:custom-cover");
     });
 

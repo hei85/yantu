@@ -1,7 +1,4 @@
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import ffmpegCoreURL from "@ffmpeg/core?url";
-import ffmpegWasmURL from "@ffmpeg/core/wasm?url";
-import { fetchFile } from "@ffmpeg/util";
+import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import { getMediaBlob } from "@/services/file-storage";
 
 export type MergeVideoInput = { id: string; url?: string; storageKey?: string };
@@ -13,11 +10,16 @@ let ffmpegPromise: Promise<FFmpeg> | null = null;
 export async function loadFFmpeg(onProgress?: (progress: MergeVideoProgress) => void) {
     if (!ffmpegPromise) {
         ffmpegPromise = (async () => {
-            const ffmpeg = new FFmpeg();
+            const [{ FFmpeg: FFmpegCtor }, coreModule, wasmModule] = await Promise.all([
+                import("@ffmpeg/ffmpeg"),
+                import("@ffmpeg/core?url"),
+                import("@ffmpeg/core/wasm?url"),
+            ]);
+            const ffmpeg = new FFmpegCtor();
             onProgress?.({ phase: "loading", progress: 0 });
             try {
                 // 核心资产随前端同源发布，避免自部署环境首次合并依赖第三方 CDN。
-                await ffmpeg.load({ coreURL: ffmpegCoreURL, wasmURL: ffmpegWasmURL });
+                await ffmpeg.load({ coreURL: coreModule.default, wasmURL: wasmModule.default });
             } catch (cause) {
                 ffmpeg.terminate();
                 throw new Error("视频合并工具加载失败，请刷新页面后重试", { cause });
@@ -36,6 +38,7 @@ export async function loadFFmpeg(onProgress?: (progress: MergeVideoProgress) => 
 export async function mergeVideos(inputs: MergeVideoInput[], onProgress?: (progress: MergeVideoProgress) => void) {
     if (inputs.length < 2) throw new Error("至少选择 2 个视频才能合并");
     const ffmpeg = await loadFFmpeg(onProgress);
+    const { fetchFile } = await import("@ffmpeg/util");
     const files: string[] = [];
     try {
         for (let index = 0; index < inputs.length; index += 1) {

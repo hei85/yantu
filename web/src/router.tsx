@@ -26,7 +26,8 @@ const TasksPage = lazy(() => import("@/pages/tasks"));
 const ProjectsPage = lazy(loadProjectsPage);
 const ProjectDetailPage = lazy(loadProjectDetailPage);
 const SettingsPage = lazy(() => import("@/pages/settings"));
-const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
+
+
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
 const RequireFeature = lazy(() => import("@/components/auth/require-feature").then((module) => ({ default: module.RequireFeature })));
 
@@ -99,7 +100,8 @@ export const router = createBrowserRouter([
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
             { path: "/settings", element: <RequireAuth>{deferred(<SettingsPage />)}</RequireAuth> },
             { path: "/connect", element: <Navigate to="/settings?section=quick" replace /> },
-            { path: "/test-voice-recording", element: <RequireAuth>{deferred(<TestVoiceRecording />)}</RequireAuth> },
+
+
             {
                 path: "/projects",
                 element: (

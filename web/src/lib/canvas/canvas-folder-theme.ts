@@ -5,10 +5,10 @@ export const CANVAS_FOLDER_THEME_OPTIONS: ReadonlyArray<{
     label: string;
     cover: string;
 }> = [
-    { key: "aurora", label: "赤蓝流光", cover: "/images/canvas/folder-default-cover.png" },
-    { key: "obsidian", label: "曜石银蓝", cover: "/images/canvas/folder-theme-obsidian.png" },
-    { key: "ember", label: "熔金赤焰", cover: "/images/canvas/folder-theme-ember.png" },
-    { key: "pearl", label: "珍珠薄雾", cover: "/images/canvas/folder-theme-pearl.png" },
+    { key: "aurora", label: "赤蓝流光", cover: "/images/canvas/folder-default-cover.webp" },
+    { key: "obsidian", label: "曜石银蓝", cover: "/images/canvas/folder-theme-obsidian.webp" },
+    { key: "ember", label: "熔金赤焰", cover: "/images/canvas/folder-theme-ember.webp" },
+    { key: "pearl", label: "珍珠薄雾", cover: "/images/canvas/folder-theme-pearl.webp" },
 ];
 
 export function resolveCanvasFolderTheme(value?: string): CanvasFolderTheme {
