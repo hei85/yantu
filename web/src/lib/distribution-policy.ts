@@ -13,6 +13,11 @@ export function isAxonBaseUrl(raw: string): boolean {
     } catch { return false; }
 }
 
-export function isPublishedSystemChannel(channel: { scope?: string; baseUrl: string }): boolean {
-    return channel.scope === "system" && (isAxonBaseUrl(channel.baseUrl) || /^\/api\/ai\/system\/[^/]+\/?$/u.test(channel.baseUrl));
+export function isPublishedSystemChannel(channel: { id?: string; scope?: string; baseUrl: string }): boolean {
+    // Public catalogs deliberately hide the upstream URL and use this local
+    // proxy address. Its channel ID must match the actual catalog record.
+    const legacyProxy = /^\/api\/ai\/system\/([^/]+)\/?$/u.exec(channel.baseUrl);
+    return channel.scope === "system" && (isAxonBaseUrl(channel.baseUrl)
+        || Boolean(channel.id && channel.baseUrl === `/api/${encodeURIComponent(channel.id)}`)
+        || Boolean(legacyProxy && (!channel.id || legacyProxy[1] === encodeURIComponent(channel.id))));
 }

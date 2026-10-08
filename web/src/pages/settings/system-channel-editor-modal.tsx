@@ -102,7 +102,7 @@ export function SystemChannelEditorModal({ channel, open, onClose, onSaved }: Pr
                 <section className="model-editor-section">
                     <div>
                         <h2>连接信息</h2>
-                        <p className="mt-1 text-xs text-foreground/50">只填到域名，不要带 /v1、/v1/videos 这类接口路径。点「保存并拉取模型」会先保存，再直接列出上游模型供你勾选。</p>
+                        <p className="mt-1 text-xs text-foreground/50">本发行版的服务地址固定为 Axon。点「保存并拉取模型」会先保存，再直接列出上游模型供你勾选。</p>
                     </div>
                     <div className="model-editor-connection-fields grid gap-3 sm:grid-cols-2">
                         <Form.Item name="name" label="名称" className="mb-0">

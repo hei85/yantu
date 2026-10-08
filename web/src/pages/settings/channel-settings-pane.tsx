@@ -8,8 +8,10 @@ import { ModelEditorModal } from "@/components/model-editor-modal";
 import { ChannelHeadersEditor, validateChannelHeaders } from "@/components/channel-headers-editor";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { mergeFetchedChannelModelCosts } from "@/lib/channel-model-catalog";
-import { buildChannelBundle, channelBundleFileName, parseChannelBundle, type ChannelBundleChannel, type ChannelBundleModel } from "@/lib/channel-bundle";
+import { buildChannelBundle, channelBundleFileName, parseChannelBundle, type ChannelBundleChannel } from "@/lib/channel-bundle";
 import { listAdminChannelModels } from "@/services/api/channel-models";
+import { fetchAdminChannelModels, importAdminChannelModels } from "@/services/api/channel-models";
+import { importAxonChannelBundle } from "@/services/api/axon-model-setup";
 import { fetchChannelModels } from "@/services/api/image";
 import { deleteAdminChannel, listAdminChannels } from "@/services/api/auth";
 import { ChannelModelManager } from "@/pages/admin/components/channel-model-manager";
@@ -27,8 +29,6 @@ import {
 import { SystemChannelEditorModal } from "./system-channel-editor-modal";
 
 type UserChannelConnection = "openai" | "gemini";
-// 导入时只有明确声明了能力的模型才写入能力配置，其余交给模型名启发式判断。
-type ChannelBundleModelWithCapability = ChannelBundleModel & { capability: ModelCapability };
 type ChannelSettingsPaneProps = {
   onOpenModels: () => void;
   onOpenQuick?: () => void;
@@ -174,34 +174,14 @@ export function ChannelSettingsPane({ onOpenModels, onOpenQuick, onOpenRunningHu
         }
     };
 
-    // 导入的渠道落地为本地渠道（存本机、不需要服务端权限），密钥留空由使用者自己填。
+    // 分享文件不含密钥，只能用已保存的同一 Axon 接入核对并导入模型。
     const importChannels = async (file: File) => {
         try {
             const bundle = parseChannelBundle(await file.text());
-            const created = bundle.channels.map((item) =>
-                createModelChannel({
-                    name: item.name,
-                    baseUrl: item.baseUrl,
-                    apiFormat: item.apiFormat === "gemini" ? "gemini" : "openai",
-                    apiKey: "",
-                    headers: item.headers,
-                    models: item.models.map((model) => model.modelKey),
-                    modelCosts: item.models
-                        .filter((model): model is ChannelBundleModelWithCapability => Boolean(model.capability))
-                        .map((model) => ({
-                            model: model.modelKey,
-                            displayName: model.displayName || model.modelKey,
-                            channelLabel: item.name,
-                            description: model.description || "",
-                            icon: model.icon || "",
-                            capability: model.capability,
-                            protocol: model.protocol,
-                            capabilityConfig: model.capabilityConfig,
-                        })),
-                }),
-            );
-            updateChannels([...config.channels, ...created]);
-            message.success(`已导入 ${created.length} 个渠道，请分别填写 API Key 后启用`);
+            const imported = await importAxonChannelBundle(bundle);
+            await refreshServerChannels();
+            await refreshSystemChannels();
+            message.success(`已导入 ${imported} 个渠道的模型配置`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "导入渠道失败");
         }
@@ -271,6 +251,27 @@ export function ChannelSettingsPane({ onOpenModels, onOpenQuick, onOpenRunningHu
     };
 
     const refreshAllModels = async () => {
+        const savedChannels = serverChannels.filter((channel) => channel.enabled !== false && channel.hasApiKey);
+        if (savedChannels.length) {
+            setChannelLoading("all", true);
+            try {
+                const results = await Promise.allSettled(savedChannels.map(async (channel) => {
+                    const { models } = await fetchAdminChannelModels(channel.id);
+                    if (!models.length) throw new Error(`${channel.name} 没有返回模型`);
+                    return importAdminChannelModels(channel.id, models);
+                }));
+                await refreshSystemChannels();
+                await refreshServerChannels();
+                const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+                if (failures.length) message.warning(failures.map((result) => result.reason instanceof Error ? result.reason.message : "读取模型失败").join("；"));
+                else message.success(`已更新 ${savedChannels.length} 个模型接入`);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "拉取模型失败");
+            } finally {
+                setChannelLoading("all", false);
+            }
+            return;
+        }
         const runnable = userChannels.filter((channel) => !channelConnectionError(channel));
         const skipped = userChannels.filter((channel) => channelConnectionError(channel));
         if (!runnable.length) {
@@ -491,8 +492,8 @@ export function ChannelSettingsPane({ onOpenModels, onOpenQuick, onOpenRunningHu
             <ChannelModelManager
                 channel={managingSystemChannel}
                 autoFetch={autoFetchSystemModels}
-                onClose={() => { setManagingSystemChannel(null); setAutoFetchSystemModels(false); }}
-                onChanged={async () => { await refreshSystemChannels(); }}
+                onClose={() => { setManagingSystemChannel(null); setAutoFetchSystemModels(false); void refreshServerChannels(); }}
+                onChanged={async () => { await refreshSystemChannels(); await refreshServerChannels(); }}
                 section={{ label: "模型渠道", path: "/settings?section=channels" }}
                 backLabel="返回模型渠道"
             />

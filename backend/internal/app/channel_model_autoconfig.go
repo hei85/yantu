@@ -47,6 +47,9 @@ func inferChannelModelCapability(modelKey string) string {
 // defaultChannelModelCapabilityJSON 生成初始能力声明；返回 false 表示该类型不需要声明。
 func defaultChannelModelCapabilityJSON(capability string, protocol model.ChannelInterfaceType, modelKey string) (string, bool) {
 	switch capability {
+	case "text":
+		config := ModelCapabilityConfig{Version: 1, Text: DefaultTextCapabilityConfig()}
+		return marshalModelCapabilityConfig(config)
 	case "image":
 		config := ModelCapabilityConfig{Version: 1, Image: DefaultImageCapabilityConfig(string(protocol), modelKey)}
 		return marshalModelCapabilityConfig(config)

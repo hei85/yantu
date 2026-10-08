@@ -28,11 +28,11 @@
 
 ## 直接下载使用（Windows 10 / 11，64 位）
 
-**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.2/Yantu-v1.6.0-axon.2-Windows-x64.zip)**
+**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.3/Yantu-v1.6.0-axon.3-Windows-x64.zip)**
 
 1. 将 ZIP **完整解压**到可写目录。
 2. 双击 **`启动衍图.cmd`**，等待浏览器打开软件。
-3. 进入 **设置 → 模型中心**，填写自己的 Axon API Key，拉取并导入模型。
+3. 进入 **设置 → 模型设置**，按原有“添加模型 / 已接入 / 创作默认”流程配置自己的 Axon API Key 和模型。高级接入可从 Axon 目录批量拉取并导入。
 
 便携包包含编译后的网页、后端、MCP、全部项目插件及技能，以及
 Node、Python、依赖和 FFmpeg / FFprobe。**不需要安装编译工具，
@@ -69,7 +69,7 @@ cd yantu
 身份，无需填写旧版本账号。数据在本目录 `.local/` 和
 `canvas-agent-config/`，停止用 `停止衍图.cmd`。
 
-进入 **设置 → 模型中心**，填写自己的 Axon API Key，保存后拉取目录
+进入 **设置 → 模型设置 → 已接入 → 高级接入**，填写自己的 Axon API Key，保存后拉取目录
 并选择导入。分辨率、画幅、时长优先使用目录声明；未声明时显示来源
 明确的推断或“渠道默认”，不能把推断说成实测支持。
 

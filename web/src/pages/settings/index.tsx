@@ -19,7 +19,9 @@ export default function SettingsPage() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const requestedSection = searchParams.get("section");
-    const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
+    // Axon connections remain editable even though arbitrary custom providers
+    // are disabled in this distribution. Backend admin checks still apply.
+    const customChannelsEnabled = useUserStore((state) => state.user?.role === "admin");
     const initialSection = isConfigSection(requestedSection) ? requestedSection : customChannelsEnabled ? "quick" : "models";
     const [activeTab, setActiveTab] = useState<ConfigSectionKey>(!customChannelsEnabled && (initialSection === "channels" || initialSection === "quick") ? "models" : initialSection);
     const config = useConfigStore((state) => state.config);

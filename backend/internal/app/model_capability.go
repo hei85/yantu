@@ -84,6 +84,14 @@ type TextReferenceConfig struct {
 	MaxVideoBytes  int64 `json:"maxVideoBytes"`
 }
 
+func DefaultTextCapabilityConfig() *TextCapabilityConfig {
+	streaming := true
+	return &TextCapabilityConfig{
+		Streaming:  &streaming,
+		References: TextReferenceConfig{PromptMaxChars: 32000},
+	}
+}
+
 type ImageCapabilityConfig struct {
 	References            ImageReferenceConfig `json:"references"`
 	Size                  ImageSizeConfig      `json:"size"`
@@ -384,10 +392,12 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		return nil, nil
 	}
 	if capability == "text" {
-		if input == nil || input.Text == nil {
-			return nil, BadAuthRequest("请配置文本模型能力参数")
+		// A standard text endpoint can start with text-only input. Image/video
+		// understanding still requires an explicit administrator declaration.
+		text := *DefaultTextCapabilityConfig()
+		if input != nil && input.Text != nil {
+			text = *input.Text
 		}
-		text := *input.Text
 		if text.Streaming == nil {
 			streaming := true
 			text.Streaming = &streaming

@@ -237,7 +237,7 @@ export function ChannelModelEditor({
                                         <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
                                             <Form.Item name="modelKey" label="产品模型标识" tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。" rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}>
                                                 <Input
-                                                    readOnly
+                                                    readOnly={Boolean(editing)}
                                                     prefix={
                                                         <span className="grid size-6 place-items-center">
                                                             <ModelIcon model={modelKey} />

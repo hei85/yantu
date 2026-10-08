@@ -2,15 +2,14 @@ import { App, Button, Form, Input, Segmented } from "antd";
 import { Link2, Save, Settings2 } from "lucide-react";
 import { useState } from "react";
 
-import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
+import { AXON_BASE_URL } from "@/lib/distribution-policy";
+import { refreshSystemChannels } from "@/lib/user-session";
+import { connectAxonModel } from "@/services/api/axon-model-setup";
 import { isHeihanAxonH3Video } from "@/lib/model-protocols";
 import {
-    createModelChannel,
     encodeChannelModel,
-    normalizeConfigSnapshot,
     useConfigStore,
     type ModelCapability,
-    type ModelChannel,
 } from "@/stores/use-config-store";
 
 type Props = {
@@ -27,16 +26,17 @@ const capabilityOptions: Array<{ label: string; value: ModelCapability }> = [
 
 export function ModelQuickConnectPane({ onOpenAdvanced }: Props) {
     const { message } = App.useApp();
-    const config = useConfigStore((state) => state.config);
-    const replaceConfig = useConfigStore((state) => state.replaceConfig);
-    const [apiUrl, setApiUrl] = useState("");
+    const updateConfig = useConfigStore((state) => state.updateConfig);
+    const [apiUrl, setApiUrl] = useState(AXON_BASE_URL);
+    const [saving, setSaving] = useState(false);
     const [apiKey, setApiKey] = useState("");
     const [modelName, setModelName] = useState("");
     const [capability, setCapability] = useState<ModelCapability>("image");
     const [videoProtocolChoice, setVideoProtocolChoice] = useState<QuickVideoProtocol | "">("");
     const [lastAdded, setLastAdded] = useState<{ model: string; purpose: string; channel: string } | null>(null);
 
-    const save = () => {
+    const save = async () => {
+        if (saving) return;
         const normalizedUrl = normalizeQuickApiUrl(apiUrl, capability);
         const model = modelName.trim();
         if (!normalizedUrl) return message.error("请填写正确的 API 地址");
@@ -60,51 +60,22 @@ export function ModelQuickConnectPane({ onOpenAdvanced }: Props) {
         if (connection.protocol === "claude-api" && capability !== "text") return message.error("Anthropic Messages 仅支持文本模型");
         if (connection.protocol === "gemini-veo" && capability !== "video") return message.error("Gemini Veo 仅支持视频模型");
 
-        const normalizedApiKey = apiKey.trim();
-        const existing = config.channels.find((channel) => channel.scope !== "system"
-            && channel.baseUrl.trim().replace(/\/+$/u, "") === normalizedUrl
-            && channel.apiFormat === connection.apiFormat
-            && channel.apiKey.trim() === normalizedApiKey);
-        const channel = existing || createModelChannel({
-            name: quickChannelName(normalizedUrl, config.channels),
-            baseUrl: normalizedUrl,
-            apiKey: normalizedApiKey,
-            apiFormat: connection.apiFormat,
-            models: [],
-            modelCosts: [],
-        });
-        const nextChannel: ModelChannel = {
-            ...channel,
-            baseUrl: normalizedUrl,
-            apiKey: normalizedApiKey,
-            apiFormat: connection.apiFormat,
-            models: Array.from(new Set([...channel.models, model])),
-            modelCosts: [
-                ...(channel.modelCosts || []).filter((item) => item.model !== model),
-                {
-                    model,
-                    displayName: model,
-                    channelLabel: channel.name,
-                    capability,
-                    protocol: connection.protocol,
-                    ...(capability === "image" || capability === "video" ? { capabilityConfig: defaultModelCapabilityConfig(connection.protocol, model) } : {}),
-                },
-            ],
-        };
-        const channels = existing ? config.channels.map((item) => (item.id === existing.id ? nextChannel : item)) : [...config.channels, nextChannel];
-        const normalized = normalizeConfigSnapshot({ config: { ...config, channels } }).config;
-        const defaultKey = defaultModelKey(capability);
-        const selected = encodeChannelModel(nextChannel.id, model);
-        replaceConfig({
-            ...normalized,
-            ...(defaultKey ? { [defaultKey]: selected } : {}),
-            ...(capability === "text" ? { model: selected } : {}),
-        });
-        message.success(`${existing ? "已更新" : "已添加"}配置，并设为${capabilityLabel(capability)}创作默认。配置已保存，能否生成请以实际使用结果为准。`);
-        setLastAdded({ model, purpose: capabilityLabel(capability), channel: nextChannel.name });
-        setApiUrl("");
-        setApiKey("");
-        setModelName("");
+        setSaving(true);
+        try {
+            const saved = await connectAxonModel(apiKey.trim(), { modelKey: model, capability, protocol: connection.protocol });
+            await refreshSystemChannels();
+            const selected = encodeChannelModel(saved.channel.id, saved.model.modelKey);
+            updateConfig(defaultModelKey(capability), selected);
+            if (capability === "text") updateConfig("model", selected);
+            message.success(`已添加配置，并设为${capabilityLabel(capability)}创作默认。配置已保存，能否生成请以实际使用结果为准。`);
+            setLastAdded({ model: saved.model.modelKey, purpose: capabilityLabel(capability), channel: saved.channel.name });
+            setApiKey("");
+            setModelName("");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "添加模型失败");
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
@@ -124,6 +95,7 @@ export function ModelQuickConnectPane({ onOpenAdvanced }: Props) {
                         <Form.Item label="API 地址" required className="mb-0 lg:col-span-2">
                             <Input
                                 value={apiUrl}
+                                readOnly
                                 inputMode="url"
                                 placeholder="例如 https://api.openai.com/v1 或 https://你的中转站地址"
                                 prefix={<Link2 className="size-4 opacity-45" />}
@@ -156,7 +128,7 @@ export function ModelQuickConnectPane({ onOpenAdvanced }: Props) {
                     <p className="mt-3 rounded-md bg-surface-active px-3 py-2 text-xs leading-5 text-foreground/60">图片和视频若使用不同分组的 API Key，请分别添加为两个模型接入。每次保存只会把当前用途设为默认。</p>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
                         <Button type="text" icon={<Settings2 className="size-4" />} onClick={onOpenAdvanced}>高级接入</Button>
-                        <Button type="primary" htmlType="submit" icon={<Save className="size-4" />}>保存并设为默认</Button>
+                        <Button type="primary" htmlType="submit" loading={saving} icon={<Save className="size-4" />}>保存并设为默认</Button>
                     </div>
                 </Form>
                 {lastAdded ? (
@@ -273,20 +245,6 @@ function videoEndpointHint(apiUrl: string, selected: QuickVideoProtocol | "", mo
     if (known) return "已按已知服务地址选择 /videos（size 像素尺寸）。";
     if (!selected) return "普通中转地址无法判断接口。请查看服务商文档后选择；两种接口的画幅参数不同。";
     return selected === "newapi" ? "将请求 /videos，并以 size 发送像素尺寸。" : "将请求 /video/generations，并以 aspect_ratio 发送比例。";
-}
-
-function quickChannelName(baseUrl: string, channels: ModelChannel[]) {
-    try {
-        const hostname = new URL(baseUrl).hostname.replace(/^www\./u, "");
-        const baseName = hostname || "我的 API";
-        const names = new Set(channels.map((channel) => channel.name));
-        if (!names.has(baseName)) return baseName;
-        let index = 2;
-        while (names.has(`${baseName}（${index}）`)) index += 1;
-        return `${baseName}（${index}）`;
-    } catch {
-        return "我的 API";
-    }
 }
 
 function defaultModelKey(capability: ModelCapability) {

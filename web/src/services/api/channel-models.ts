@@ -70,8 +70,16 @@ export function testAdminChannelModel(channelId: string, input: Pick<ChannelMode
     return http.post<{ durationMs: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/test`, input, { timeout: 10 * 60 * 1000 });
 }
 
-export function createAdminChannelModel(channelId: string, input: ChannelModelMutation) {
-    return http.post<{ model: ChannelModel }>(`/admin/channels/${encodeURIComponent(channelId)}/models`, input);
+export async function createAdminChannelModel(channelId: string, input: ChannelModelMutation) {
+    // The original Add Model dialog remains available, but the ID must be
+    // imported from the authenticated Axon catalog before it can be edited.
+    const existing = (await listAdminChannelModels(channelId)).models;
+    const key = input.modelKey.trim().toLowerCase();
+    if (existing.some((item) => item.modelKey.toLowerCase() === key)) throw new Error("该渠道已存在此模型，请编辑已有模型");
+    await importAdminChannelModels(channelId, [input.modelKey]);
+    const imported = (await listAdminChannelModels(channelId)).models.find((item) => item.modelKey.toLowerCase() === key);
+    if (!imported) throw new Error("模型未导入，请确认它仍在 Axon 模型目录中");
+    return updateAdminChannelModel(channelId, imported.id, { ...input, modelKey: imported.modelKey, providerModelKey: imported.providerModelKey });
 }
 
 export function updateAdminChannelModel(channelId: string, id: string, input: ChannelModelMutation) {

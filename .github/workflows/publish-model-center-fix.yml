@@ -1,0 +1,48 @@
+name: Assemble model center fix release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: portable-model-center-release
+  cancel-in-progress: false
+
+jobs:
+  assemble:
+    if: github.repository == 'hei85/yantu'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download clean base and application patch
+        run: |
+          mkdir release-update
+          gh release download v1.6.0-axon.2 --dir release-update \
+            --pattern Yantu-v1.6.0-axon.2-Windows-x64.zip \
+            --pattern Yantu-v1.6.0-axon.2-Runtime-Sources.zip
+          gh release download v1.6.0-axon.3 --dir release-update \
+            --pattern Yantu-v1.6.0-axon.3-Model-Center-Fix.zip
+      - name: Assemble with per-file integrity and provenance checks
+        run: |
+          python3 scripts/assemble-portable-update.py \
+            --base release-update/Yantu-v1.6.0-axon.2-Windows-x64.zip \
+            --patch release-update/Yantu-v1.6.0-axon.3-Model-Center-Fix.zip \
+            --output release-update/Yantu-v1.6.0-axon.3-Windows-x64.zip \
+            --expected-source-commit "$GITHUB_SHA"
+          cp release-update/Yantu-v1.6.0-axon.2-Runtime-Sources.zip \
+            release-update/Yantu-v1.6.0-axon.3-Runtime-Sources.zip
+          cd release-update
+          sha256sum Yantu-v1.6.0-axon.3-*.zip > SHA256SUMS.txt
+      - name: Upload completed artifacts to draft release
+        run: |
+          gh release upload v1.6.0-axon.3 \
+            release-update/Yantu-v1.6.0-axon.3-Windows-x64.zip \
+            release-update/Yantu-v1.6.0-axon.3-Runtime-Sources.zip \
+            release-update/Yantu-v1.6.0-axon.3-Windows-x64.json \
+            release-update/SHA256SUMS.txt
