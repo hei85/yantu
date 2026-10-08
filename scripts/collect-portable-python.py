@@ -43,7 +43,7 @@ def main() -> None:
             pending.append(requirement.name)
     # Only the base interpreter and standard library, not other installed apps.
     skip = {"site-packages", "__pycache__", "Scripts", "Doc", "Tools", "include", "libs"}
-    shutil.copytree(donor, destination, ignore=lambda _directory, names: [name for name in names if name in skip or name.endswith((".pyc", ".pyo"))])
+    shutil.copytree(donor, destination, ignore=lambda _directory, names: [name for name in names if name in skip or name.endswith((".pyc", ".pyo", ".whl"))])
     target_site = destination / "Lib/site-packages"
     target_site.mkdir(parents=True)
     copied = set()
@@ -55,7 +55,7 @@ def main() -> None:
             if not source.is_relative_to(site) or not source.is_file():
                 continue
             relative = source.relative_to(site)
-            if "__pycache__" in relative.parts or source.suffix in {".pyc", ".pyo"} or source.name == "direct_url.json":
+            if "__pycache__" in relative.parts or source.suffix in {".pyc", ".pyo", ".whl"} or source.name == "direct_url.json":
                 continue
             if source in copied:
                 continue

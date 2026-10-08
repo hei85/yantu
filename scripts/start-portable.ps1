@@ -26,6 +26,16 @@ $pidFile = Join-Path $stateDir 'pids.json'
 foreach ($file in @($nodeExe,$pythonExe,$backendExe,(Join-Path $projectRoot 'web\dist\index.html'),(Join-Path $agentDir 'dist\index.js'),(Join-Path $projectRoot 'runtime\ffmpeg\bin\ffmpeg.exe'),(Join-Path $projectRoot 'portable-manifest.json'))) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Portable package is incomplete: $file. Extract the entire ZIP before starting." }
 }
+# Native ONNX and Torch wheels need Microsoft's C++ runtime on fresh Windows.
+# Show the original Microsoft installer only when that prerequisite is missing.
+$systemDllDir = Join-Path $env:SystemRoot 'System32'
+if (-not (Test-Path -LiteralPath (Join-Path $systemDllDir 'msvcp140.dll')) -or -not (Test-Path -LiteralPath (Join-Path $systemDllDir 'vcruntime140_threads.dll'))) {
+    $redist = Join-Path $projectRoot 'runtime\vc-redist\vc_redist.x64.exe'
+    if (-not (Test-Path -LiteralPath $redist)) { throw 'Microsoft Visual C++ runtime is missing. Run the official installer: https://aka.ms/vs/17/release/vc_redist.x64.exe' }
+    Write-Host 'First use on this Windows installation: complete the Microsoft Visual C++ Runtime installer. No developer tools are required.'
+    $installedRuntime = Start-Process -FilePath $redist -ArgumentList '/install /norestart' -Verb RunAs -Wait -PassThru
+    if ($installedRuntime.ExitCode -notin @(0,1638,3010)) { throw "Microsoft runtime installation did not complete (exit $($installedRuntime.ExitCode))." }
+}
 
 function Test-HttpReady([string]$Url) {
     try { return (Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 }
@@ -56,6 +66,8 @@ $stdinPath = Join-Path $stateDir 'stdin.txt'
 if (-not (Test-Path -LiteralPath $stdinPath)) { New-Item -ItemType File -Path $stdinPath | Out-Null }
 # Always prefer the shipped tools. No package manager or system Python is used.
 $env:PATH = (Join-Path $projectRoot 'runtime') + ';' + (Join-Path $projectRoot 'runtime\ffmpeg\bin') + ';' + (Join-Path $projectRoot 'python-runtime') + ';' + $env:PATH
+$env:CANVAS_FFMPEG_PATH = Join-Path $projectRoot 'runtime\ffmpeg\bin\ffmpeg.exe'
+$env:CANVAS_FFPROBE_PATH = Join-Path $projectRoot 'runtime\ffmpeg\bin\ffprobe.exe'
 $env:CANVAS_BACKEND_ADDR = "127.0.0.1:$BackendPort"
 $env:CANVAS_BACKEND_DATA_DIR = $dataDir
 $env:CANVAS_DATABASE_DRIVER = 'sqlite'
@@ -80,6 +92,7 @@ $env:PYTHONHOME = Join-Path $projectRoot 'python-runtime'
 $env:PYTHONPATH = ''
 $env:PYTHONNOUSERSITE = '1'
 $env:HF_HOME = Join-Path $projectRoot 'models\huggingface'
+$env:HF_HUB_CACHE = Join-Path $env:HF_HOME 'hub'
 $env:CANVAS_DEPTH_HF_HOME = $env:HF_HOME
 $env:CANVAS_LINEART_HF_HOME = $env:HF_HOME
 $env:CANVAS_POSE_HF_HOME = $env:HF_HOME

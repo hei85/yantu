@@ -13,7 +13,9 @@
 | Go、Node 与 Python 依赖 | go.mod、package.json / bun.lock 记录源码依赖；便携包保留各依赖原许可、Python portable-packages.json 和文件校验清单，不适用自有新增部分限制 |
 | Node.js v24.18.0 | MIT 及所带第三方许可；便携包 licenses/runtimes/Node-v24.18.0-LICENSE.txt |
 | Python 3.11.9 | PSF 及所带第三方许可；便携包 python-runtime/LICENSE.txt；各 wheel 的 dist-info / licenses 保留 |
+| Microsoft Visual C++ Runtime | 随包提供微软签名的原版 vc_redist.x64.exe，缺少运行库时显示其原生安装器与许可，不修改安装器或对其重新授权；来源 https://aka.ms/vs/17/release/vc_redist.x64.exe |
 | FFmpeg / FFprobe 9.0.1，Gyan full build | GPLv3；便携包 runtime/ffmpeg/LICENSE、README.txt 和 version.txt；同一发布页提供对应 FFmpeg 源码与构建记录，第三方部分保留原权利 |
+| @ffmpeg/core 0.12.10 浏览器 WASM | GPL-2.0-or-later；来源 https://github.com/ffmpegwasm/ffmpeg.wasm；同一发布页提供该版本发布提交 71aa99d37c02a7b4c435275ca9ef50e612f6efa1 对应源码、原构建脚本与版本记录，未按衍图限制性许可重新授权 |
 | Depth Anything V2 Small | Apache-2.0；仅 Small 权重随包，固定版本与来源见 models/MODEL_NOTICES.md，不包含其他许可的 Base / Large / Giant 权重 |
 | ISNet general use | Apache-2.0；便携包 models/rembg/LICENSE-DIS.md 与 MODEL_SOURCE.txt |
 | OpenPose / lineart 权重 | 不随包再分发；可选初始化从原作者下载并要求使用者先确认相应许可，OpenPose 有非商业限制；原许可参考见 licenses/runtimes/OpenPose-LICENSE-not-bundled.txt |

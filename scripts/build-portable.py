@@ -38,6 +38,7 @@ def main() -> None:
     parser.add_argument("--licensed-models", type=Path, required=True,
                         help="Prepared model directory containing only authorized redistributable files")
     parser.add_argument("--runtime-licenses", type=Path, required=True)
+    parser.add_argument("--vc-redist-directory", type=Path, required=True)
     parser.add_argument("--zip", type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
@@ -79,6 +80,7 @@ def main() -> None:
     (destination / "runtime").mkdir()
     shutil.copy2(args.node, destination / "runtime/node.exe")
     tree(args.ffmpeg_directory, destination / "runtime/ffmpeg")
+    tree(args.vc_redist_directory, destination / "runtime/vc-redist")
     tree(args.runtime_licenses, destination / "licenses/runtimes")
     tree(args.licensed_models, destination / "models")
     subprocess.run([str(args.python), str(root / "scripts/collect-portable-python.py"), "--destination", str(destination / "python-runtime")], check=True)
