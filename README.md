@@ -7,7 +7,7 @@
 组织到同一套制作流程中。既可以在网页中手动创作，也可以连接 Codex
 等支持 MCP 的 AI 客户端，让 Agent 读取画布、调用技能并执行制作任务。
 
-**[下载 Windows 完整便携版](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.4/Yantu-v1.6.0-axon.4-Windows-x64.zip)** ·
+**[下载 Windows 全部补齐版](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.5/Yantu-v1.6.0-axon.5-Windows-x64.zip)** ·
 [最新发布与更新说明](https://github.com/hei85/yantu/releases/latest) ·
 [快速开始](快速开始.md) · [插件说明](plugins/yingce/README.md)
 
@@ -50,6 +50,7 @@
 - 固定室内空间的房型、共用模型、机位和距离约束；关键四宫格拆图与连续性规则。
 - 持久任务、幂等重试、真实资源绑定、媒体探测、自检、剪辑与时间线交付流程。
 - 模型目录空值防护、分辨率能力来源与实测证据；图片预览和视频结果恢复相关代码。
+- 本机深度、透明抠图、姿态骨架、AI 线稿和 Whisper 对白识别所需的现有模型文件与声音检查脚本。
 
 不包含私人项目、生成媒体、数据库、日志或运行时密钥。
 
@@ -57,7 +58,7 @@
 
 ## 直接下载使用（Windows 10 / 11，64 位）
 
-**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.4/Yantu-v1.6.0-axon.4-Windows-x64.zip)**
+**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.5/Yantu-v1.6.0-axon.5-Windows-x64.zip)**
 
 1. 将 ZIP **完整解压**到可写目录。
 2. 双击 **`启动衍图.cmd`**，等待浏览器打开软件。
@@ -80,8 +81,9 @@ Node、Python、依赖和 FFmpeg / FFprobe。**不需要安装编译工具，
 
 普通用户请下载上面的 **Windows-x64.zip**，不要下载 GitHub 自动生成的
 `Source code (zip)` / `Source code (tar.gz)`，后两者是供开发者编译的源码。
-本地分析中可再分发的深度与抠图模型已随包提供。OpenPose / 线稿权重
-按其原作者许可另行初始化，详见 [快速开始](快速开始.md)。
+本机深度、抠图、姿态骨架和 AI 线稿模型，以及 Whisper-base 对白识别
+模型的权重、配置与分词文件都已随完整包提供。模型保留原作者来源和
+许可，详见 [模型清单](models/MODEL_NOTICES.md) 与 [快速开始](快速开始.md)。
 
 ## 开发者：Windows 源码启动
 

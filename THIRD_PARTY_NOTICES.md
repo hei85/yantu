@@ -18,7 +18,9 @@
 | @ffmpeg/core 0.12.10 浏览器 WASM | GPL-2.0-or-later；来源 https://github.com/ffmpegwasm/ffmpeg.wasm；同一发布页提供该版本发布提交 71aa99d37c02a7b4c435275ca9ef50e612f6efa1 对应源码、原构建脚本与版本记录，未按衍图限制性许可重新授权 |
 | Depth Anything V2 Small | Apache-2.0；仅 Small 权重随包，固定版本与来源见 models/MODEL_NOTICES.md，不包含其他许可的 Base / Large / Giant 权重 |
 | ISNet general use | Apache-2.0；便携包 models/rembg/LICENSE-DIS.md 与 MODEL_SOURCE.txt |
-| OpenPose / lineart 权重 | 不随包再分发；可选初始化从原作者下载并要求使用者先确认相应许可，OpenPose 有非商业限制；原许可参考见 licenses/runtimes/OpenPose-LICENSE-not-bundled.txt |
+| OpenPose body 权重 | 维护者本地已有的固定模型文件，来源及 SHA-256 见 models/MODEL_NOTICES.md；原作者许可全文随包保留在 models/licenses/OpenPose-LICENSE.txt，不按衍图许可重新授权 |
+| lineart 权重 | 维护者本地已有的 sk_model.pth / sk_model2.pth；保留 lllyasviel/Annotators 来源与固定版本、Informative Drawings 上游 MIT 许可，见 models/MODEL_NOTICES.md |
+| Whisper-base | 维护者本地已有的 openai/whisper-base 权重与配套文件；Hugging Face 模型卡声明 Apache-2.0，原始 Whisper 项目采用 MIT，原来源和两份许可随包保留 |
 | 模型图标与商标 | 属于原权利人，仅供识别，不表示认可本发行版 |
 | MediaPipe Vision WASM、BlazeFace 检测模型 | Google / MediaPipe，Apache-2.0；路径 web/public/mediapipe/ 与 web/public/canvas/models/，许可全文见 licenses/Apache-2.0.txt，来源 https://github.com/google-ai-edge/mediapipe |
 | Basis Universal 转码器 | Copyright (C) 2019–2026 Binomial LLC；web/public/three/basis/，Apache-2.0，来源 https://github.com/BinomialLLC/basis_universal；许可全文见 licenses/Apache-2.0.txt |
