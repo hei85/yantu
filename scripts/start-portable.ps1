@@ -104,6 +104,12 @@ $env:PORTABLE_API_TARGET = $backendUrl
 $env:PORTABLE_WEB_PORT = [string]$WebPort
 $env:PORT = [string]$RuntimePort
 $env:GIN_MODE = 'release'
+# Register packages only after the pinned official references are available.
+# Network failure leaves other skills usable and reports the missing H3 guides.
+if (-not $SkipOfficialGuides) {
+    try { & (Join-Path $PSScriptRoot 'install-official-h3-guides.ps1') }
+    catch { Write-Warning 'H3 official guides could not be downloaded. Run scripts/install-official-h3-guides.ps1 before using H3, then restart to refresh the skill library.' }
+}
 $processes = @{}
 try {
     $processes.backend = (Start-Process -FilePath $backendExe -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru -RedirectStandardInput $stdinPath -RedirectStandardOutput (Join-Path $stateDir 'backend.log') -RedirectStandardError (Join-Path $stateDir 'backend.err.log')).Id
@@ -121,13 +127,6 @@ try {
 } catch {
     foreach ($processId in $processes.Values) { Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue }
     throw
-}
-# Official guides retain their upstream rights and are fetched in the background.
-if (-not $SkipOfficialGuides) {
-    $guideInstaller = Join-Path $PSScriptRoot 'install-official-h3-guides.ps1'
-    $psExe = Join-Path $PSHOME 'powershell.exe'
-    if (-not (Test-Path -LiteralPath $psExe)) { $psExe = Join-Path $PSHOME 'pwsh.exe' }
-    Start-Process -FilePath $psExe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $guideInstaller + '"') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $stateDir 'h3-guides.log') -RedirectStandardError (Join-Path $stateDir 'h3-guides.err.log') | Out-Null
 }
 Write-Host "Yantu Axon portable edition is ready: $webUrl"
 Write-Host 'First use: Settings > Model center > enter your own Axon API Key and import models.'

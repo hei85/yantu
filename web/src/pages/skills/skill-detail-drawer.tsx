@@ -266,6 +266,7 @@ function isExternalURL(value?: string) {
 }
 
 function sourceLabel(source: string) {
+    if (source === "bundled") return "随软件提供";
     if (source === "github") return "GitHub";
     if (source === "zip") return "ZIP 技能包";
     if (source === "builtin") return "内置技能";

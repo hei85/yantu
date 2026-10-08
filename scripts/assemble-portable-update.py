@@ -16,8 +16,12 @@ def digest(file: Path) -> str:
 
 
 def replaceable(name: str) -> bool:
-    return name.startswith("web/dist/") or name in {
+    return name.startswith(("web/dist/", "plugins/yingce/skills/remotion-best-practices/")) or name in {
         "backend/server.exe", "VERSION", "README.md", "快速开始.md", "使用说明.md",
+        "scripts/start-portable.ps1",
+        "scripts/install-official-h3-guides.ps1",
+        "plugins/yingce/skills/higgsfield-ai-prompt-skill/workspace/output/README.md",
+        "plugins/yingce/skills/higgsfield-ai-prompt-skill/workspace/output/.gitignore",
     }
 
 

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -94,6 +95,21 @@ func run(ctx context.Context) error {
 	}
 	if err := svc.EnsureSkillPackages(); err != nil {
 		return err
+	}
+	if platform.PortableNoLoginEnabled() {
+		projectRoot := strings.TrimSpace(os.Getenv("CANVAS_PROJECT_ROOT"))
+		if !filepath.IsAbs(projectRoot) {
+			return errors.New("portable skill registration requires CANVAS_PROJECT_ROOT")
+		}
+		user, err := svc.PortableAdminUser()
+		if err != nil {
+			return err
+		}
+		count, err := svc.EnsureBundledSkills(user.ID, filepath.Join(projectRoot, "plugins", "yingce", "skills"))
+		if err != nil {
+			return err
+		}
+		log.Printf("bundled skills registered: %d", count)
 	}
 	if summary, err := svc.MigrateLegacyStorage(); err != nil {
 		log.Printf("storage migration skipped after error: %v", err)

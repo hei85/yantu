@@ -76,6 +76,10 @@ func (s *Service) EnsureSkillPackages() error {
 	return s.skillDomain().EnsureSkillPackages()
 }
 
+func (s *Service) EnsureBundledSkills(userID, root string) (int, error) {
+	return s.skillDomain().EnsureBundledSkills(userID, root)
+}
+
 func (s *Service) InstallSkillUpload(userID string, sourceType string, header *multipart.FileHeader, req SkillInstallRequest) (*SkillItem, error) {
 	return s.skillDomain().InstallSkillUpload(userID, sourceType, header, req)
 }
