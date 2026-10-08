@@ -20,6 +20,7 @@ $stateDir = Join-Path $projectRoot '.local\runtime'
 $dataDir = Join-Path $projectRoot '.local\app-data'
 $configDir = Join-Path $projectRoot 'canvas-agent-config'
 $webUrl = "http://localhost:$WebPort"
+$webHealthUrl = "http://127.0.0.1:$WebPort"
 $backendUrl = "http://127.0.0.1:$BackendPort"
 $runtimeUrl = "http://127.0.0.1:$RuntimePort"
 $pidFile = Join-Path $stateDir 'pids.json'
@@ -51,7 +52,7 @@ if (Test-Path -LiteralPath $pidFile) {
     try {
         $saved = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
         $ownsAll = (Test-OwnedProcess ([int]$saved.backend)) -and (Test-OwnedProcess ([int]$saved.agent)) -and (Test-OwnedProcess ([int]$saved.web))
-        if ($ownsAll -and (Test-HttpReady "$backendUrl/api/health") -and (Test-HttpReady "$runtimeUrl/health") -and (Test-HttpReady "$webUrl/")) {
+        if ($ownsAll -and (Test-HttpReady "$backendUrl/api/health") -and (Test-HttpReady "$runtimeUrl/health") -and (Test-HttpReady "$webHealthUrl/")) {
             Write-Host "Yantu is already running: $webUrl"
             if (-not $NoBrowser) { Start-Process $webUrl | Out-Null }
             exit 0
@@ -112,7 +113,7 @@ try {
     $ready = $false
     do {
         foreach ($processId in $processes.Values) { if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) { throw 'A service exited. See .local/runtime/*.err.log.' } }
-        $ready = (Test-HttpReady "$backendUrl/api/health") -and (Test-HttpReady "$runtimeUrl/health") -and (Test-HttpReady "$webUrl/")
+        $ready = (Test-HttpReady "$backendUrl/api/health") -and (Test-HttpReady "$runtimeUrl/health") -and (Test-HttpReady "$webHealthUrl/")
         if (-not $ready) { Start-Sleep -Milliseconds 400 }
     } while (-not $ready -and [DateTime]::UtcNow -lt $deadline)
     if (-not $ready) { throw 'Startup timed out. See .local/runtime/*.err.log.' }
