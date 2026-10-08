@@ -19,11 +19,29 @@
 - 持久任务、幂等重试、真实资源绑定、媒体探测、自检、剪辑与时间线交付流程。
 - 模型目录空值防护、分辨率能力来源与实测证据；图片预览和视频结果恢复相关代码。
 
-不包含私人项目、生成媒体、数据库、日志、运行时密钥、Node / Python
-运行时或额外下载的分析模型权重。网页已有的第三方 WASM 与小型人脸
-检测模型保留在 public 目录，沿用其原许可。
+不包含私人项目、生成媒体、数据库、日志或运行时密钥。
 
-## Windows 源码启动
+## 直接下载使用（Windows 10 / 11，64 位）
+
+**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.2/Yantu-v1.6.0-axon.2-Windows-x64.zip)**
+
+1. 将 ZIP **完整解压**到可写目录。
+2. 双击 **`启动衍图.cmd`**，等待浏览器打开软件。
+3. 进入 **设置 → 模型中心**，填写自己的 Axon API Key，拉取并导入模型。
+
+便携包包含编译后的网页、后端、MCP、全部项目插件及技能，以及
+Node、Python、依赖和 FFmpeg / FFprobe。**不需要安装编译工具，
+不需要运行 npm / pip。** 没有内置任何人的模型密钥或付费额度。
+
+使用 Codex 自动化时，再双击 `安装到Codex.cmd`；Codex 客户端需自行
+安装。其他客户端可用包内 Node 配置标准 MCP。停止用 `停止衍图.cmd`。
+
+普通用户请下载上面的 **Windows-x64.zip**，不要下载 GitHub 自动生成的
+`Source code (zip)` / `Source code (tar.gz)`，后两者是供开发者编译的源码。
+本地分析中可再分发的深度与抠图模型已随包提供。OpenPose / 线稿权重
+按其原作者许可另行初始化，详见 [快速开始](快速开始.md)。
+
+## 开发者：Windows 源码启动
 
 准备 Git、**Node.js 22.13+**、Bun、Go 1.25，以及 SQLite 编译所需的
 GCC / MinGW-w64，并加入 PATH。影视合成另需 FFmpeg / FFprobe。
@@ -82,8 +100,8 @@ MiniMax H3 官方指南在首次启动时从固定官方提交下载并校验，
 本机；失败时运行 `scripts/install-official-h3-guides.ps1` 重试。本地
 中文适配与自检规则随源码提供。其他模型使用对应技能和真实能力。
 
-图片分析 Python 环境可选运行 `scripts/setup-image-analysis.ps1`；
-首次使用部分模型还需下载其权重。
+源码方式的图片分析 Python 环境可选运行 `scripts/setup-image-analysis.ps1`；
+便携包已经包含 Python 和依赖，无需此步骤。
 
 ## 剧本到成片
 

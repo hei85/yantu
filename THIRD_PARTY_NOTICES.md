@@ -10,7 +10,13 @@
 | Higgsfield 提示词技能树 | plugins/yingce/skills/higgsfield-ai-prompt-skill/，O-Side Media，沿用该目录 LICENSE（MIT） |
 | MiniMax H3 官方指南 | https://github.com/MiniMax-AI/MiniMax-H3；不将官方全文重新授权，提供本地适配与固定上游下载脚本 |
 | Remotion 等外部工具说明与技能 | 保留原来源，不对第三方内容主张 hei85 的限制性许可；软件和服务按各自条款使用 |
-| Go、Bun、Python 依赖 | go.mod、package.json / bun.lock、requirements 记录；安装时取得各自许可证，未打包依赖本体及模型权重 |
+| Go、Node 与 Python 依赖 | go.mod、package.json / bun.lock 记录源码依赖；便携包保留各依赖原许可、Python portable-packages.json 和文件校验清单，不适用自有新增部分限制 |
+| Node.js v24.18.0 | MIT 及所带第三方许可；便携包 licenses/runtimes/Node-v24.18.0-LICENSE.txt |
+| Python 3.11.9 | PSF 及所带第三方许可；便携包 python-runtime/LICENSE.txt；各 wheel 的 dist-info / licenses 保留 |
+| FFmpeg / FFprobe 9.0.1，Gyan full build | GPLv3；便携包 runtime/ffmpeg/LICENSE、README.txt 和 version.txt；同一发布页提供对应 FFmpeg 源码与构建记录，第三方部分保留原权利 |
+| Depth Anything V2 Small | Apache-2.0；仅 Small 权重随包，固定版本与来源见 models/MODEL_NOTICES.md，不包含其他许可的 Base / Large / Giant 权重 |
+| ISNet general use | Apache-2.0；便携包 models/rembg/LICENSE-DIS.md 与 MODEL_SOURCE.txt |
+| OpenPose / lineart 权重 | 不随包再分发；可选初始化从原作者下载并要求使用者先确认相应许可，OpenPose 有非商业限制；原许可参考见 licenses/runtimes/OpenPose-LICENSE-not-bundled.txt |
 | 模型图标与商标 | 属于原权利人，仅供识别，不表示认可本发行版 |
 | MediaPipe Vision WASM、BlazeFace 检测模型 | Google / MediaPipe，Apache-2.0；路径 web/public/mediapipe/ 与 web/public/canvas/models/，许可全文见 licenses/Apache-2.0.txt，来源 https://github.com/google-ai-edge/mediapipe |
 | Basis Universal 转码器 | Copyright (C) 2019–2026 Binomial LLC；web/public/three/basis/，Apache-2.0，来源 https://github.com/BinomialLLC/basis_universal；许可全文见 licenses/Apache-2.0.txt |
@@ -21,3 +27,7 @@ H3 官方指南固定为提交 d21241f0a4b3acbb34c97dae47fa417b7065e438，
 
 这些第三方文件不适用 hei85 自有新增部分的限制。如发现来源或授权
 登记不完整，请通过本仓库 Issue 联系维护者。
+
+便携版是独立组件的合集。FFmpeg、Node、Python、依赖与模型不是按
+衍图限制性许可重新授权；相关部分的查看、修改、复制与再分发权利
+按其各自许可证执行。对应源码与构建记录入口见发布页。
