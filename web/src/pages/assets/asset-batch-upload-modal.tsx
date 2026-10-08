@@ -5,10 +5,11 @@ import { FileImage, UploadCloud, X } from "lucide-react";
 
 import { ASSET_CATEGORY_OPTIONS, type AssetCategory } from "@/lib/asset-category";
 import { readImageMeta } from "@/lib/image-utils";
-import { uploadImage } from "@/services/image-storage";
-import { localSavedRemotePendingMessage, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { setImageBlob } from "@/services/image-storage";
 import { flushAssetStorePersistence, useAssetStore } from "@/stores/use-asset-store";
-import type { AssetFolder } from "@/services/api/user-data";
+import type { AssetFolder } from "@/stores/use-asset-folder-store";
+import { getActiveUserScope } from "@/lib/user-scope";
+import { nanoid } from "nanoid";
 
 type BatchItem = { id: string; file: File; status: "queued" | "uploading" | "done" | "error"; error?: string; percent?: number };
 
@@ -45,9 +46,11 @@ export function AssetBatchUploadModal({ open, defaultFolderId, folders, onClose,
                 const item = pending[cursor++];
                 setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "uploading", percent: 10, error: undefined } : entry));
                 try {
-                    const uploaded = await uploadImage(item.file);
-                    const meta = await readImageMeta(uploaded.url).catch(() => ({ width: uploaded.width, height: uploaded.height, mimeType: uploaded.mimeType }));
-                    addAsset({ kind: "image", title: item.file.name.replace(/\.[^.]+$/, ""), category, folderId: folderId || undefined, coverUrl: uploaded.url, tags, source: "批量上传", metadata: { source: "manual-batch" }, data: { dataUrl: uploaded.url, storageKey: uploaded.storageKey, width: meta.width || uploaded.width, height: meta.height || uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType } });
+                    const previewUrl = URL.createObjectURL(item.file);
+                    const meta = await readImageMeta(previewUrl).finally(() => URL.revokeObjectURL(previewUrl));
+                    const storageKey = `image:${getActiveUserScope()}:${nanoid()}`;
+                    const url = await setImageBlob(storageKey, item.file);
+                    addAsset({ kind: "image", title: item.file.name.replace(/\.[^.]+$/, ""), category, folderId: folderId || undefined, coverUrl: url, tags, source: "批量上传", metadata: { source: "manual-batch" }, data: { dataUrl: url, storageKey, width: meta.width, height: meta.height, bytes: item.file.size, mimeType: item.file.type || meta.mimeType } });
                     setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "done", percent: 100 } : entry));
                 } catch (error) {
                     setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "error", error: error instanceof Error ? error.message : "上传失败" } : entry));
@@ -56,11 +59,6 @@ export function AssetBatchUploadModal({ open, defaultFolderId, folders, onClose,
         };
         await Promise.all(Array.from({ length: Math.min(4, pending.length) }, () => worker()));
         await flushAssetStorePersistence();
-        try {
-            await saveRemoteUserDataNow();
-        } catch (error) {
-            message.warning(localSavedRemotePendingMessage("部分素材已保存在本地", error));
-        }
         setUploading(false);
         await onComplete();
     };

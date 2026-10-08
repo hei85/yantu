@@ -57,7 +57,31 @@ describe("storyboard generation context", () => {
 
         expect(context.characters).toEqual([{
             assetId: "asset-1",
+            characterId: "asset-1",
             versionId: "version-1",
+            name: "李当歌",
+            definition: { role: "镇国公世子" },
+        }]);
+    });
+
+    it("passes only the pinned VoiceVersion reference into storyboard context", () => {
+        const context = resolveStoryboardGenerationContext([
+            styleNode,
+            node("character-card", CanvasNodeType.Text, {
+                workflowKind: "character",
+                characterAssetId: "asset-1",
+                characterVersionId: "version-2",
+                characterVoiceVersionId: "voice-v2",
+                characterName: "李当歌",
+                characterDefinition: { role: "镇国公世子" },
+            }),
+        ]);
+
+        expect(context.characters).toEqual([{
+            assetId: "asset-1",
+            characterId: "asset-1",
+            versionId: "version-2",
+            voiceVersionId: "voice-v2",
             name: "李当歌",
             definition: { role: "镇国公世子" },
         }]);

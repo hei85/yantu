@@ -19,7 +19,6 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,6 +27,7 @@ import (
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/outbound"
 
+	"github.com/goccy/go-yaml"
 	"gorm.io/gorm"
 )
 
@@ -137,6 +137,35 @@ func (s *Service) EnsureSkillPackages() error {
 }
 
 func (s *Service) InstallSkillUpload(userID string, sourceType string, header *multipart.FileHeader, req SkillInstallRequest) (*SkillItem, error) {
+	sourceType, archive, err := readSkillUploadArchive(sourceType, header, req)
+	if err != nil {
+		return nil, err
+	}
+	return s.createSkillFromArchive(userID, archive, req, sourceType, "", "", "", "", false)
+}
+
+func (s *Service) UpdateSkillPackageUpload(userID string, skillID string, header *multipart.FileHeader) (*SkillItem, error) {
+	skill, err := s.ownedSkill(userID, skillID)
+	if err != nil {
+		return nil, err
+	}
+	if skill.SourceType != "zip" {
+		return nil, kernel.BadAuthRequest("只有 ZIP 技能可以上传新包版本")
+	}
+	_, archive, err := readSkillUploadArchive("zip", header, SkillInstallRequest{})
+	if err != nil {
+		return nil, err
+	}
+	skill.Name = archive.Metadata.Name
+	skill.Description = archive.Metadata.Description
+	skill.Instruction = string(archive.Files["SKILL.md"])
+	if err := s.addSkillArchiveVersion(skill, archive, "zip", "", "", "", "", false); err != nil {
+		return nil, err
+	}
+	return s.SkillDetail(userID, skill.ID)
+}
+
+func readSkillUploadArchive(sourceType string, header *multipart.FileHeader, req SkillInstallRequest) (string, skillPackageArchive, error) {
 	sourceType = strings.ToLower(strings.TrimSpace(sourceType))
 	if sourceType == "" && header != nil {
 		switch strings.ToLower(path.Ext(header.Filename)) {
@@ -147,22 +176,22 @@ func (s *Service) InstallSkillUpload(userID string, sourceType string, header *m
 		}
 	}
 	if sourceType != "markdown" && sourceType != "zip" {
-		return nil, kernel.BadAuthRequest("技能文件仅支持 Markdown 或 ZIP")
+		return "", skillPackageArchive{}, kernel.BadAuthRequest("技能文件仅支持 Markdown 或 ZIP")
 	}
 	if header == nil || header.Size <= 0 || header.Size > maxSkillPackageBytes {
-		return nil, kernel.BadAuthRequest("技能文件大小必须在 1B-20MB 之间")
+		return "", skillPackageArchive{}, kernel.BadAuthRequest("技能文件大小必须在 1B-20MB 之间")
 	}
 	file, err := header.Open()
 	if err != nil {
-		return nil, err
+		return "", skillPackageArchive{}, err
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxSkillPackageBytes+1))
 	if err != nil {
-		return nil, err
+		return "", skillPackageArchive{}, err
 	}
 	if len(data) > maxSkillPackageBytes {
-		return nil, kernel.BadAuthRequest("技能文件不能超过 20MB")
+		return "", skillPackageArchive{}, kernel.BadAuthRequest("技能文件不能超过 20MB")
 	}
 	var archive skillPackageArchive
 	if sourceType == "markdown" {
@@ -171,9 +200,9 @@ func (s *Service) InstallSkillUpload(userID string, sourceType string, header *m
 		archive, err = archiveFromZip(data, "")
 	}
 	if err != nil {
-		return nil, err
+		return "", skillPackageArchive{}, err
 	}
-	return s.createSkillFromArchive(userID, archive, req, sourceType, "", "", "", "", false)
+	return sourceType, archive, nil
 }
 
 func (s *Service) InstallGitHubSkill(userID string, req SkillGitHubInstallRequest) (*SkillItem, error) {
@@ -591,11 +620,10 @@ func archiveFromZip(data []byte, subdir string) (skillPackageArchive, error) {
 	if err != nil {
 		return skillPackageArchive{}, kernel.BadAuthRequest("ZIP 文件无法解析")
 	}
-	if len(reader.File) > maxSkillPackageFiles+64 {
-		return skillPackageArchive{}, kernel.BadAuthRequest("技能包文件数量不能超过 512 个")
-	}
-	raw := make(map[string][]byte)
-	var total int64
+	// Select the requested skill before reading file contents. A repository can
+	// contain many independent skills; package limits apply to the chosen one.
+	entries := make(map[string]*zip.File)
+	paths := make(map[string][]byte)
 	for _, entry := range reader.File {
 		if entry.FileInfo().IsDir() {
 			continue
@@ -610,9 +638,23 @@ func archiveFromZip(data []byte, subdir string) (skillPackageArchive, error) {
 		if strings.HasPrefix(entryPath, "__MACOSX/") || path.Base(entryPath) == ".DS_Store" {
 			continue
 		}
-		if _, exists := raw[entryPath]; exists {
+		if _, exists := entries[entryPath]; exists {
 			return skillPackageArchive{}, kernel.BadAuthRequest("技能包包含重复文件路径")
 		}
+		entries[entryPath] = entry
+		paths[entryPath] = []byte(entryPath)
+	}
+	selected, err := normalizeSkillArchiveRoot(paths, subdir)
+	if err != nil {
+		return skillPackageArchive{}, err
+	}
+	if len(selected) > maxSkillPackageFiles {
+		return skillPackageArchive{}, kernel.BadAuthRequest("技能包文件数量不能超过 512 个")
+	}
+	files := make(map[string][]byte, len(selected))
+	var total int64
+	for filePath, originalPath := range selected {
+		entry := entries[string(originalPath)]
 		if entry.UncompressedSize64 > maxSkillFileBytes {
 			return skillPackageArchive{}, kernel.BadAuthRequest("技能包中单个文件不能超过 8MB")
 		}
@@ -635,11 +677,7 @@ func archiveFromZip(data []byte, subdir string) (skillPackageArchive, error) {
 		if total > maxSkillPackageBytes {
 			return skillPackageArchive{}, kernel.BadAuthRequest("技能包解压后不能超过 20MB")
 		}
-		raw[entryPath] = content
-	}
-	files, err := normalizeSkillArchiveRoot(raw, subdir)
-	if err != nil {
-		return skillPackageArchive{}, err
+		files[filePath] = content
 	}
 	metadata := parseSkillPackageMetadata(files["SKILL.md"])
 	return finalizeSkillArchive(files, metadata)
@@ -768,38 +806,32 @@ func encodeSkillArchive(files map[string][]byte) ([]byte, error) {
 }
 
 func parseSkillPackageMetadata(data []byte) skillPackageMetadata {
-	text := string(data)
+	text := strings.TrimPrefix(string(data), "\uFEFF")
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	metadata := skillPackageMetadata{}
 	bodyStart := 0
 	if len(lines) > 2 && strings.TrimSpace(lines[0]) == "---" {
-		metadataIndent := -1
 		for index := 1; index < len(lines); index++ {
-			line := lines[index]
-			if strings.TrimSpace(line) == "---" {
+			if strings.TrimSpace(lines[index]) == "---" {
 				bodyStart = index + 1
+				var header struct {
+					Name        string `yaml:"name"`
+					Description string `yaml:"description"`
+					Version     any    `yaml:"version"`
+					Metadata    struct {
+						Version any `yaml:"version"`
+					} `yaml:"metadata"`
+				}
+				if err := yaml.Unmarshal([]byte(strings.Join(lines[1:index], "\n")), &header); err == nil {
+					metadata.Name = header.Name
+					metadata.Description = header.Description
+					if header.Metadata.Version != nil {
+						metadata.Version = fmt.Sprint(header.Metadata.Version)
+					} else if header.Version != nil {
+						metadata.Version = fmt.Sprint(header.Version)
+					}
+				}
 				break
-			}
-			trimmed := strings.TrimSpace(line)
-			indent := len(line) - len(strings.TrimLeft(line, " \t"))
-			if indent == 0 {
-				metadataIndent = -1
-			}
-			key, value, ok := strings.Cut(trimmed, ":")
-			if !ok {
-				continue
-			}
-			key = strings.TrimSpace(key)
-			value = yamlScalar(value)
-			switch {
-			case indent == 0 && key == "name":
-				metadata.Name = value
-			case indent == 0 && key == "description":
-				metadata.Description = value
-			case indent == 0 && key == "metadata":
-				metadataIndent = indent
-			case metadataIndent >= 0 && indent > metadataIndent && key == "version":
-				metadata.Version = value
 			}
 		}
 	}
@@ -833,19 +865,6 @@ func parseSkillPackageMetadata(data []byte) skillPackageMetadata {
 	metadata.Description = kernel.TruncateRunes(strings.TrimSpace(metadata.Description), 500)
 	metadata.Version = kernel.TruncateRunes(strings.TrimSpace(metadata.Version), 64)
 	return metadata
-}
-
-func yamlScalar(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) >= 2 && value[0] == '"' {
-		if decoded, err := strconv.Unquote(value); err == nil {
-			return strings.TrimSpace(decoded)
-		}
-	}
-	if len(value) >= 2 && value[0] == '\'' && value[len(value)-1] == '\'' {
-		return strings.TrimSpace(value[1 : len(value)-1])
-	}
-	return value
 }
 
 func parseGitHubSkillURL(rawURL string, requestedRef string, requestedSubdir string) (githubSkillSpec, error) {

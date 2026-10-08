@@ -5,32 +5,33 @@ import { getMediaBlob } from "@/services/file-storage";
 import { getImageBlob } from "@/services/image-storage";
 import type { CanvasExportAsset, CanvasExportFile } from "@/types/canvas-export";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
-import { loadCanvasDrawing, loadCanvasDrawingPreview, loadCanvasDrawingRender } from "@/lib/canvas/canvas-drawing-storage";
+import { loadCanvasDrawing, loadCanvasDrawingPreview, loadCanvasDrawingRender, waitForCanvasDrawingInitialization } from "@/lib/canvas/canvas-drawing-storage";
 import type { CanvasDrawingExport } from "@/types/canvas-export";
 
-export async function exportCanvasProjects(projects: CanvasProject[], fileName = "画布", options: { includeLocalDrawings?: boolean } = {}) {
+export async function buildCanvasProjectsZip(projects: CanvasProject[]) {
     const zipFiles: { name: string; data: BlobPart }[] = [];
     const exportedProjects = await Promise.all(
         projects.map(async (project) => {
             const files: CanvasExportAsset[] = [];
             await Promise.all(
-                collectStorageKeys(project).map(async (storageKey) => {
+                collectCanvasStorageKeys(project).map(async (storageKey, index) => {
                     const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
-                    if (!blob) return;
-                    const path = `projects/${project.id}/files/${safeFileName(storageKey)}.${fileExtension(blob.type, storageKey)}`;
+                    if (!blob) throw new Error(`画布「${project.title}」的媒体文件不可读取：${storageKey}`);
+                    const path = `projects/${project.id}/files/${safeFileName(storageKey)}-${index}.${fileExtension(blob.type, storageKey)}`;
                     files.push({ storageKey, path, mimeType: blob.type || "application/octet-stream", bytes: blob.size });
                     zipFiles.push({ name: path, data: blob });
                 }),
             );
-            const drawingDocuments = (await Promise.all(project.nodes.filter((node) => options.includeLocalDrawings !== false && node.type === "drawing" && node.metadata?.drawingId).map(async (node): Promise<CanvasDrawingExport | null> => {
+            const drawingDocuments = (await Promise.all(project.nodes.filter((node) => node.type === "drawing" && node.metadata?.drawingId).map(async (node): Promise<CanvasDrawingExport | null> => {
                 const drawingId = node.metadata?.drawingId;
                 if (!drawingId) return null;
+                await waitForCanvasDrawingInitialization(project.id, drawingId);
                 const [saved, preview, render] = await Promise.all([
                     loadCanvasDrawing(project.id, drawingId),
                     loadCanvasDrawingPreview(project.id, drawingId),
                     loadCanvasDrawingRender(project.id, drawingId),
                 ]);
-                if (!saved) return null;
+                if (!saved) throw new Error(`画布「${project.title}」的绘图文件不可读取：${drawingId}`);
                 const previewPath = preview ? `projects/${project.id}/drawings/${safeFileName(drawingId)}.png` : undefined;
                 if (preview && previewPath) zipFiles.push({ name: previewPath, data: preview });
                 const generationRenderPath = render ? `projects/${project.id}/drawings/${safeFileName(drawingId)}.generation.png` : undefined;
@@ -50,14 +51,18 @@ export async function exportCanvasProjects(projects: CanvasProject[], fileName =
     );
 
     const data: CanvasExportFile = { app: "infinite-canvas", version: 4, exportedAt: new Date().toISOString(), projects: exportedProjects };
-    const zip = await createZip([{ name: "projects.json", data: JSON.stringify(data, null, 2) }, ...zipFiles]);
+    return await createZip([{ name: "projects.json", data: JSON.stringify(data, null, 2) }, ...zipFiles]);
+}
+
+export async function exportCanvasProjects(projects: CanvasProject[], fileName = "画布") {
+    const zip = await buildCanvasProjectsZip(projects);
     saveAs(zip, `${safeFileName(fileName)}.zip`);
 }
 
-function collectStorageKeys(value: unknown, keys = new Set<string>()) {
+export function collectCanvasStorageKeys(value: unknown, keys = new Set<string>()): string[] {
     if (!value || typeof value !== "object") return [...keys];
     if ("storageKey" in value && typeof value.storageKey === "string" && value.storageKey.includes(":")) keys.add(value.storageKey);
-    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectStorageKeys(child, keys)) : collectStorageKeys(item, keys)));
+    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectCanvasStorageKeys(child, keys)) : collectCanvasStorageKeys(item, keys)));
     return [...keys];
 }
 

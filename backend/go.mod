@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/aws/aws-sdk-go v1.40.45
 	github.com/gin-gonic/gin v1.12.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.5.0
 	github.com/qiniu/go-sdk/v7 v7.27.0
 	github.com/redis/go-redis/v9 v9.22.0
@@ -34,7 +35,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

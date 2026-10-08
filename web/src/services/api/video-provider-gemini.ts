@@ -3,7 +3,7 @@ import { modelOptionName } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-import { normalizeVideoResolution, normalizeVideoSeconds, normalizeVideoSize } from "./video-validation";
+import { normalizeVideoAspectRatio, normalizeVideoResolution, normalizeVideoSeconds } from "./video-validation";
 import type { RequestOptions, ResolvedAiConfig, VideoGenerationTask, VideoGenerationTaskState } from "./video-contracts";
 import type { VideoProviderDeps } from "./video-provider-deps";
 
@@ -24,10 +24,11 @@ export async function createGeminiVeoTask(deps: VideoProviderDeps, config: Resol
         if (!matched) throw new Error("Gemini Veo 起始图读取失败");
         instance.image = { bytesBase64Encoded: matched[2], mimeType: matched[1] };
     }
+    const aspectRatio = normalizeVideoAspectRatio(config.size);
     const payload = {
         instances: [instance],
         parameters: {
-            aspectRatio: normalizeVideoSize(config.size) || "16:9",
+            ...(aspectRatio ? { aspectRatio } : {}),
             durationSeconds: Number.parseInt(normalizeVideoSeconds(config.videoSeconds), 10) || 6,
             resolution: normalizeVideoResolution(config.vquality),
             sampleCount: 1,

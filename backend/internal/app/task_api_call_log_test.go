@@ -58,13 +58,11 @@ func TestEnsureFailedProviderAttemptLoggedFillsPreflightGapOnce(t *testing.T) {
 	if err := db.AutoMigrate(
 		&model.SystemSetting{},
 		&model.Asset{},
-		&model.CanvasProject{},
 		&model.Task{},
 		&model.TaskLog{},
 		&model.Result{},
 		&model.ApiCallLog{},
 		&model.TaskTextDelta{},
-		
 	); err != nil {
 		t.Fatal(err)
 	}

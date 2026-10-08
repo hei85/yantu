@@ -1,6 +1,6 @@
 export const CONTENT_MODERATION_ERROR_CODE = "sensitive_words_detected";
 
-export const CONTENT_MODERATION_MESSAGE = "内容审核未通过，请修改提示词后重新生成。";
+export const CONTENT_MODERATION_MESSAGE = "模型服务的内容审核拒绝了请求。若提示词正常，可能是误判，请联系渠道处理。";
 
 const DEFAULT_GENERATION_ERROR_MESSAGE = "生成失败，请稍后重试。";
 const NETWORK_ERROR_MESSAGE = "网络异常。";
@@ -22,20 +22,27 @@ export function generationFailureMetadata(error: unknown, prompt: string): Gener
 }
 
 export function generationErrorMessage(error: unknown) {
+    const errorCode = taskErrorCode(error);
     const raw = rawGenerationError(error);
-    if (isContentModerationError(raw)) return CONTENT_MODERATION_MESSAGE;
+    if (errorCode === "model_access_denied") return "当前渠道的 API Key 无权使用所选模型。请在中转站开通该模型，或切换有权限的模型。";
+    if (errorCode === "model_not_found" || errorCode === "model_missing" || /\bmodel_not_found\b/i.test(raw)) return "当前中转站分组中的模型不可用，请检查模型名称或分组配置。";
+    if (errorCode === CONTENT_MODERATION_ERROR_CODE || isContentModerationError(raw)) return CONTENT_MODERATION_MESSAGE;
+    if (/^模型服务拒绝了请求，请检查模型和参数[。.]?$/.test(raw)) return "模型服务拒绝了请求；可能是内容审核、渠道路由或参数限制，请查看问题诊断。";
+    if (/Axon H3 参考图需要公网 URL/i.test(raw)) return "参考图尚未成功传到生成上游，视频任务未提交。请检查素材上传连接。";
+    if (/Axon H3 参考音频需要公网 URL/i.test(raw)) return "参考音频尚未成功传到生成上游，视频任务未提交。请检查素材上传连接。";
 
     const providerMessage = extractStructuredProviderMessage(raw) || extractWrappedProviderMessage(raw);
     const displayMessage = providerMessage || raw;
     if (isContentModerationError(displayMessage)) return CONTENT_MODERATION_MESSAGE;
     const resourceStorageMessage = resourceStorageFailureMessage(raw) || resourceStorageFailureMessage(displayMessage);
     if (resourceStorageMessage) return resourceStorageMessage;
+    if (hasHttpStatus(raw, 503)) return "中转站返回 HTTP 503，请检查模型/分组或稍后重试。";
     if (isNetworkFailure(displayMessage)) return NETWORK_ERROR_MESSAGE;
     if (!providerMessage) {
         if (hasHttpStatus(raw, 429)) return "服务当前繁忙，请稍后重试。";
         if (hasHttpStatus(raw, 401, 403)) return "生成服务鉴权失败，请检查渠道配置。";
         if (hasHttpStatus(raw, 404)) return "生成服务地址不可用，请检查渠道配置。";
-        if (hasHttpStatus(raw, 500, 502, 503, 504) || containsInfrastructureDetails(raw)) return NETWORK_ERROR_MESSAGE;
+        if (hasHttpStatus(raw, 500, 502, 504) || containsInfrastructureDetails(raw)) return NETWORK_ERROR_MESSAGE;
     }
     return displayMessage || DEFAULT_GENERATION_ERROR_MESSAGE;
 }
@@ -50,7 +57,7 @@ export function generationErrorCode(error: unknown) {
 
 export function isContentModerationError(value: unknown) {
     const text = value instanceof Error ? value.message : String(value || "");
-    return text.toLowerCase().includes(CONTENT_MODERATION_ERROR_CODE) || text.includes("容容审核未通过");
+    return text.toLowerCase().includes(CONTENT_MODERATION_ERROR_CODE) || text.includes("内容审核未通过") || text.includes("内容审核拒绝");
 }
 
 export function unchangedModeratedPrompt(metadata: { errorDetails?: string; generationErrorCode?: string; failedPromptFingerprint?: string } | undefined, prompt: string) {
@@ -74,7 +81,21 @@ export function generationPromptFingerprint(value: string) {
 function rawGenerationError(error: unknown) {
     if (error instanceof Error) return error.message.trim();
     if (typeof error === "string") return error.trim();
+    if (error && typeof error === "object") {
+        const record = error as Record<string, unknown>;
+        if (typeof record.error === "string") return record.error.trim();
+        if (typeof record.message === "string") return record.message.trim();
+        // Task records can carry upstream detail; only consume known-safe codes and status here.
+        if (typeof record.statusCode === "number") return String(record.statusCode);
+        if (record.status === "cancelled" && !record.error) return "任务已取消";
+    }
     return providerPayloadMessage(error);
+}
+
+function taskErrorCode(error: unknown) {
+    if (!error || typeof error !== "object") return "";
+    const value = (error as Record<string, unknown>).errorCode;
+    return typeof value === "string" ? value.toLowerCase() : "";
 }
 
 function extractStructuredProviderMessage(raw: string) {

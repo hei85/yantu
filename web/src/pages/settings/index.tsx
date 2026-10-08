@@ -8,13 +8,11 @@ import { useNavigate, useSearchParams } from "react-router";
 import { refreshSystemChannels } from "@/lib/user-session";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { ChannelSettingsPane, channelValidationError, focusInvalidChannelField, isChannelReady } from "./channel-settings-pane";
-import { ModelDefaultGrid } from "./model-default-grid";
+import { isChannelReady } from "./channel-settings-pane";
 import { PromptPreferencesPane } from "./prompt-preferences-pane";
-import { ModelQuickConnectPane } from "./model-quick-connect-pane";
+import { ModelSetupPane } from "./model-setup-pane";
 import DiagnosticsPanel from "./diagnostics-panel";
-import { AnalyticsSettingsPane, AppearanceSettingsPane, DrawingEnginePane, FeatureAvailabilityPane, PromptTemplatesPane, RequestLogsPane, ResponseInterceptionPane, RuntimePolicyPane, StorageSettingsPane, SystemUpdatePane, ThirdPartySettingsPane } from "./system-settings-pane";
-import { RunningHubSettingsPane } from "./runninghub-settings-pane";
+import { DrawingEnginePane, PromptTemplatesPane, ThirdPartySettingsPane } from "./system-settings-pane";
 
 export default function SettingsPage() {
     const { message } = App.useApp();
@@ -23,16 +21,13 @@ export default function SettingsPage() {
     const requestedSection = searchParams.get("section");
     const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
     const initialSection = isConfigSection(requestedSection) ? requestedSection : customChannelsEnabled ? "quick" : "models";
-    const [activeTab, setActiveTab] = useState<ConfigSectionKey>(initialSection === "channels" && !customChannelsEnabled ? "models" : initialSection);
+    const [activeTab, setActiveTab] = useState<ConfigSectionKey>(!customChannelsEnabled && (initialSection === "channels" || initialSection === "quick") ? "models" : initialSection);
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const shouldPromptContinue = searchParams.get("continue") === "1";
     const userId = useUserStore((state) => state.user?.id);
-    const userChannels = config.channels.filter((channel) => channel.scope !== "system");
-    const visibleConfigSections = useMemo(() => (customChannelsEnabled ? configSections : configSections.filter((section) => section.key !== "channels")), [customChannelsEnabled]);
-
-    const isVisibleConfigSection = (value: string | null): value is ConfigSectionKey => isConfigSection(value) && visibleConfigSections.some((section) => section.key === value);
+    const visibleConfigSections = useMemo(() => configSections.filter((section) => !["channels", "models"].includes(section.key) && (customChannelsEnabled || section.key !== "channels")), [customChannelsEnabled]);
 
     useLayoutEffect(() => {
         document.body.classList.add("app-user-overlays");
@@ -40,7 +35,7 @@ export default function SettingsPage() {
     }, []);
 
     useEffect(() => {
-        if (isVisibleConfigSection(requestedSection)) {
+        if (isConfigSection(requestedSection) && (customChannelsEnabled || (requestedSection !== "channels" && requestedSection !== "quick"))) {
             setActiveTab(requestedSection);
             return;
         }
@@ -59,45 +54,27 @@ export default function SettingsPage() {
     }, [message, userId]);
 
     const selectSection = (section: ConfigSectionKey) => {
-        setActiveTab(section);
+        const nextSection = !customChannelsEnabled && (section === "quick" || section === "channels") ? "models" : section;
+        setActiveTab(nextSection);
         const next = new URLSearchParams(searchParams);
-        next.set("section", section);
+        next.set("section", nextSection);
         setSearchParams(next, { replace: true });
     };
 
     const finishConfig = () => {
-        const invalidChannel = customChannelsEnabled ? userChannels.find((channel) => channelValidationError(channel)) : undefined;
-        if (invalidChannel) {
-            selectSection("channels");
-            message.warning(`${invalidChannel.name || "未命名渠道"}：${channelValidationError(invalidChannel)}`);
-            focusInvalidChannelField(invalidChannel);
-            return;
-        }
         if (!effectiveConfig.channels.some(isChannelReady)) {
-            selectSection(customChannelsEnabled ? "channels" : "models");
+            selectSection(customChannelsEnabled ? "quick" : "models");
             message.error(customChannelsEnabled ? (shouldPromptContinue ? "请先完成至少一个渠道的 Base URL、API Key 和模型配置" : "当前没有可用渠道，请先完成连接信息和模型配置") : "当前没有可用的系统模型，请联系管理员配置系统渠道");
             return;
         }
-        message.success("配置已保存，正在返回创作页面");
+        message.success("接入信息已保存，实际生成请在创作页面验证");
         navigate(-1);
     };
 
     const panes: Record<ConfigSectionKey, ReactNode> = {
-        quick: <SettingsPane><ModelQuickConnectPane onOpenAdvanced={() => selectSection("channels")} /></SettingsPane>,
-        channels: <SettingsPane><ChannelSettingsPane onOpenModels={() => selectSection("models")} /></SettingsPane>,
-        models: (
-            <SettingsPane>
-                <div className="settings-pane-header">
-                    <div className="min-w-0">
-                        <h2>模型选择</h2>
-                        <p>按领域选择默认模型；模型能力与请求协议在渠道“模型与能力”中配置。</p>
-                    </div>
-                </div>
-                <div className="settings-section">
-                    <ModelDefaultGrid config={effectiveConfig} onChange={(key, model) => updateConfig(key, model)} />
-                </div>
-            </SettingsPane>
-        ),
+        quick: <ModelSetupPane view="quick" onViewChange={selectSection} />,
+        channels: <ModelSetupPane view="channels" onViewChange={selectSection} />,
+        models: <ModelSetupPane view="models" onViewChange={selectSection} />,
         preferences: (
             <SettingsPane>
                 <div className="settings-pane-header">
@@ -133,17 +110,8 @@ export default function SettingsPage() {
         prompts: <SettingsPane fill><PromptPreferencesPane /></SettingsPane>,
         diagnostics: <SettingsPane><DiagnosticsPanel taskId={searchParams.get("taskId") || undefined} projectId={searchParams.get("projectId") || undefined} /></SettingsPane>,
         "prompt-templates": <PromptTemplatesPane />,
-        features: <FeatureAvailabilityPane />,
         "drawing-engine": <DrawingEnginePane />,
         "third-party": <ThirdPartySettingsPane />,
-        appearance: <AppearanceSettingsPane />,
-        storage: <StorageSettingsPane />,
-        interception: <ResponseInterceptionPane />,
-        "runtime-policy": <RuntimePolicyPane />,
-        "system-update": <SystemUpdatePane />,
-        runninghub: <SettingsPane><RunningHubSettingsPane /></SettingsPane>,
-        analytics: <AnalyticsSettingsPane />,
-        logs: <RequestLogsPane />,
     };
 
     return (
@@ -160,7 +128,7 @@ export default function SettingsPage() {
                 <aside className="settings-nav-panel w-full shrink-0 md:w-[200px]">
                     <nav className="thin-scrollbar flex gap-1 overflow-x-auto p-2 md:block md:space-y-1 md:p-2.5" aria-label="配置分类">
                         {visibleConfigSections.map((item, index) => {
-                            const selected = item.key === activeTab;
+                            const selected = item.key === activeTab || (item.key === "quick" && ["channels", "models"].includes(activeTab));
                             return (
                                 <Fragment key={item.key}>
                                     {item.group !== visibleConfigSections[index - 1]?.group ? <span className="settings-nav-group-label">{item.group}</span> : null}

@@ -17,10 +17,13 @@ export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: Bra
     const currentTheme = useActiveTheme();
     const source = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
     const [failedSource, setFailedSource] = useState<string | null>(null);
-    if (!appearance.logoConfigured) return <>{fallback}</>;
+    // logoConfigured describes a custom upload. The portable app also has a
+    // bundled logo, which must render when no custom upload is configured.
     // A configured custom logo must never fall through to the built-in brand
     // when its file becomes unavailable. Keep its footprint neutral instead.
-    if (failedSource === source) return <span className={cn("block", className)} aria-hidden="true" />;
+    if (failedSource === source) return appearance.logoConfigured
+        ? <span className={cn("block", className)} aria-hidden="true" />
+        : <>{fallback}</>;
     return (
         <img
             src={source}

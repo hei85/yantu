@@ -60,7 +60,9 @@ describe("creation library button", () => {
         expect(createSource).toContain('setPreviewType(kind === "video" ? "video" : "image")');
         expect(createSource).toContain("<CreationMediaPreviewModal url={previewUrl} type={previewType}");
         expect(canvasSource).toContain("canPreview ? setImagePreview(reference) : onInsert(reference)");
-        expect(canvasSource).toContain("<AntImage");
+        expect(canvasSource).toContain("<CanvasImagePreview");
+        expect(canvasSource).toContain("storageKey={imagePreview.previewStorageKey ||");
+        expect(canvasSource).toContain("imagePreview.storageKey : undefined");
         expect(canvasSource).toContain("onClick={() => onInsert(reference)}");
     });
 
@@ -69,14 +71,14 @@ describe("creation library button", () => {
         const styles = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8");
 
         expect(source).toContain("import { Reorder, LayoutGroup, motion, useReducedMotion } from \"motion/react\"");
-        expect(source).toContain("<Reorder.Group");
+        expect(source).toMatch(/<Reorder\.Group\b/u);
         expect(source).toContain('axis="x"');
         expect(source).toContain("values={visibleAttachments}");
         expect(source).toContain("onReorder={reorderVisibleAttachments}");
         expect(source).toContain('className="creation-reference-card-remove"');
         expect(source).toContain("onPointerDownCapture");
         expect(source).toContain("event.stopPropagation()");
-        expect(source).toContain("<Reorder.Item");
+        expect(source).toMatch(/<Reorder\.Item\b/u);
         expect(source).toContain('layout="position"');
         expect(source).toContain("isExpanded");
         expect(source).toContain("setReferencePanelExpanded");
@@ -92,7 +94,8 @@ describe("creation library button", () => {
         expect(source).toContain("creation-reference-add-button");
         expect(source).toContain("addReferenceLabel");
         expect(source).toContain("aria-busy={interactionBusy}");
-        expect(source).toContain("disabled={interactionBusy || !canAddMoreReferences}");
+        expect(source).toContain("disabled={interactionBusy}");
+        expect(source).toContain("drag={trackState.isExpanded && canDragReferences && !interactionBusy}");
         expect(source).toContain("creation-reference-track-button");
         expect(source).toContain("imageReferenceAtPoint");
         expect(source).toContain("setDropTargetReferenceId");

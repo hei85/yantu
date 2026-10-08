@@ -37,8 +37,8 @@ func (r *Repository) DeleteDetachedResources(resources []model.Resource, deletio
 			return ErrResourceCleanupSetChanged
 		}
 		// The service performs exact JSON parsing before entering this transaction.
-		// This conservative second check closes the common race where an Asset or
-		// canvas is attached after that snapshot but before Resource deletion.
+		// This conservative second check closes the common race where an Asset is
+		// attached after that snapshot but before Resource deletion.
 		documentsByUser := map[string][]string{}
 		for _, resource := range current {
 			if _, loaded := documentsByUser[resource.UserID]; loaded {
@@ -48,11 +48,7 @@ func (r *Repository) DeleteDetachedResources(resources []model.Resource, deletio
 			if err := tx.Model(&model.Asset{}).Where("user_id = ?", resource.UserID).Pluck("payload_json", &assetDocuments).Error; err != nil {
 				return err
 			}
-			var canvasDocuments []string
-			if err := tx.Model(&model.CanvasProject{}).Where("user_id = ?", resource.UserID).Pluck("payload_json", &canvasDocuments).Error; err != nil {
-				return err
-			}
-			documentsByUser[resource.UserID] = append(assetDocuments, canvasDocuments...)
+			documentsByUser[resource.UserID] = assetDocuments
 		}
 		for _, resource := range current {
 			storageKey := "resource:" + resource.ID + `"`

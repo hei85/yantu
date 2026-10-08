@@ -113,7 +113,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                 <IconButton className="welcome-icon mobile-menu" variant="ghost" size="lg" icon={menu ? X : Menu} aria-label={menu ? "关闭菜单" : "打开菜单"} aria-expanded={menu} onClick={() => setMenu(!menu)} />
             </header>
             <aside className="welcome-look-picker" aria-label="首页素材版本">
-                <Select id="welcome-look-select" aria-label="素材版本" value={look.id} options={welcomeLooks.map((item) => ({ label: item.label, value: item.id }))} onChange={onLookChange} popupMatchSelectWidth={false} />
+                <Select id="welcome-look-select" aria-label="素材版本" value={look.id} options={welcomeLooks.map((item) => ({ label: item.label, value: item.id }))} onChange={onLookChange} />
                 {look.credit && <a href={`/welcome/credits.html#${look.id}`} target="_blank" rel="noreferrer" title={look.credit}>演示素材 · CC BY<ArrowUpRight size={12} /></a>}
             </aside>
 

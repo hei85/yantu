@@ -54,6 +54,16 @@ export type RuntimeRecord = {
 export type RuntimeDiskState = { version: 1; records: RuntimeRecord[]; nextQueueTicket?: number };
 export type StateLockLease = (() => Promise<void>) & { assertOwned: () => Promise<void> };
 
+type LocalStateLockWaiter = {
+    resolve(release: () => void): void;
+    reject(error: unknown): void;
+    signal?: AbortSignal;
+    onAbort?: () => void;
+};
+
+type LocalStateLockQueue = { locked: boolean; waiters: LocalStateLockWaiter[] };
+const localStateLockQueues = new Map<string, LocalStateLockQueue>();
+
 const BACKUP_SUFFIX = ".replace-backup";
 const REPLACE_DENIED_CODES = new Set(["EACCES", "EEXIST", "ENOTEMPTY", "EPERM"]);
 const TEMP_UUID = "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}";
@@ -527,31 +537,90 @@ export async function acquireStateLock(stateFile: string, signal?: AbortSignal) 
     const lockDirectory = `${stateFile}.lock`;
     const leaseFile = path.join(lockDirectory, "lease");
     const deadline = Date.now() + LOCK_WAIT_MS;
-    await fs.mkdir(path.dirname(stateFile), { recursive: true, mode: 0o700 });
-    while (true) {
-        throwIfCancelled(signal);
-        const nonce = crypto.randomUUID();
-        try {
-            await fs.mkdir(lockDirectory, { mode: 0o700 });
-            try { await fs.writeFile(leaseFile, nonce, { encoding: "utf8", flag: "wx", mode: 0o600 }); }
-            catch (error) {
-                await fs.rm(lockDirectory, { recursive: true, force: true }).catch(() => undefined);
-                throw error;
+    const releaseLocal = await acquireLocalStateLock(lockDirectory, signal);
+    try {
+        await fs.mkdir(path.dirname(stateFile), { recursive: true, mode: 0o700 });
+        while (true) {
+            throwIfCancelled(signal);
+            const nonce = crypto.randomUUID();
+            try {
+                await fs.mkdir(lockDirectory, { mode: 0o700 });
+                try { await fs.writeFile(leaseFile, nonce, { encoding: "utf8", flag: "wx", mode: 0o600 }); }
+                catch (error) {
+                    await fs.rm(lockDirectory, { recursive: true, force: true }).catch(() => undefined);
+                    throw error;
+                }
+                const lease = createLease(lockDirectory, nonce);
+                if (signal?.aborted) {
+                    await lease();
+                    throw cancelled();
+                }
+                const release = async () => {
+                    try { await lease(); }
+                    finally { releaseLocal(); }
+                };
+                return Object.assign(release, { assertOwned: lease.assertOwned });
+            } catch (error) {
+                if (error instanceof DreaminaCliError) throw error;
+                if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw stateInvalid();
             }
-            const lease = createLease(lockDirectory, nonce);
-            if (signal?.aborted) {
-                await lease();
-                throw cancelled();
-            }
-            return lease;
-        } catch (error) {
-            if (error instanceof DreaminaCliError) throw error;
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw stateInvalid();
+            if (await takeoverStaleLease(lockDirectory)) continue;
+            if (Date.now() >= deadline) throw new DreaminaCliError("dreamina_state_busy", "Dreamina 幂等状态正在由另一个本机进程处理", 503);
+            await delayWithAbort(25, signal);
         }
-        if (await takeoverStaleLease(lockDirectory)) continue;
-        if (Date.now() >= deadline) throw new DreaminaCliError("dreamina_state_busy", "Dreamina 幂等状态正在由另一个本机进程处理", 503);
-        await delayWithAbort(25, signal);
+    } catch (error) {
+        releaseLocal();
+        throw error;
     }
+}
+
+function acquireLocalStateLock(lockDirectory: string, signal?: AbortSignal) {
+    throwIfCancelled(signal);
+    const key = process.platform === "win32" ? lockDirectory.toLowerCase() : path.resolve(lockDirectory);
+    let queue = localStateLockQueues.get(key);
+    if (!queue) {
+        queue = { locked: false, waiters: [] };
+        localStateLockQueues.set(key, queue);
+    }
+    if (!queue.locked) {
+        queue.locked = true;
+        return Promise.resolve(createLocalStateLockRelease(key, queue));
+    }
+    return new Promise<() => void>((resolve, reject) => {
+        const waiter: LocalStateLockWaiter = { resolve, reject, signal };
+        waiter.onAbort = () => {
+            const index = queue!.waiters.indexOf(waiter);
+            if (index < 0) return;
+            queue!.waiters.splice(index, 1);
+            reject(cancelled());
+            if (!queue!.locked && queue!.waiters.length === 0 && localStateLockQueues.get(key) === queue) {
+                localStateLockQueues.delete(key);
+            }
+        };
+        queue!.waiters.push(waiter);
+        signal?.addEventListener("abort", waiter.onAbort, { once: true });
+        if (signal?.aborted) waiter.onAbort();
+    });
+}
+
+function createLocalStateLockRelease(key: string, queue: LocalStateLockQueue) {
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        while (queue.waiters.length > 0) {
+            const waiter = queue.waiters.shift()!;
+            if (waiter.onAbort) waiter.signal?.removeEventListener("abort", waiter.onAbort);
+            if (waiter.signal?.aborted) {
+                waiter.reject(cancelled());
+                continue;
+            }
+            waiter.resolve(createLocalStateLockRelease(key, queue));
+            return;
+        }
+        queue.locked = false;
+        if (localStateLockQueues.get(key) === queue) localStateLockQueues.delete(key);
+    };
 }
 
 function createLease(lockDirectory: string, nonce: string): StateLockLease {

@@ -3,6 +3,7 @@ import { Check, Star } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { canvasNodeVideoPreviewUrl } from "@/lib/canvas/canvas-media-preview";
+import { CanvasVideoPreviewImage } from "./canvas-video-preview-image";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -21,7 +22,7 @@ export function CanvasVersionCompareModal({ open, versions, onClose, onSetPrimar
                             {node.metadata?.versionPrimary ? <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[var(--fs-tiny)] font-medium" style={{ color: theme.accent.primary }}><Check className="size-3" />主版本</span> : null}
                         </div>
                         <button type="button" className="block h-52 w-full overflow-hidden" style={{ background: theme.node.fill }} onClick={() => onFocus(node.id)}>
-                            {node.type === CanvasNodeType.Image && node.metadata?.content ? <img src={node.metadata.content} alt={node.title || "版本图片"} className="size-full object-contain" /> : videoPreview ? <img src={videoPreview} alt={node.title || "版本视频"} className="size-full object-contain" loading="lazy" decoding="async" /> : <span className="grid size-full place-items-center px-4 text-center text-xs" style={{ color: theme.node.muted }}>点击定位到画布节点</span>}
+                            {node.type === CanvasNodeType.Image && node.metadata?.content ? <img src={node.metadata.content} alt={node.title || "版本图片"} className="size-full object-contain" /> : videoPreview ? <CanvasVideoPreviewImage node={node} alt={node.title || "版本视频"} className="size-full object-contain" loading="lazy" decoding="async" fallback={<span className="grid size-full place-items-center text-xs" style={{ color: theme.node.muted }}>点击播放视频</span>} /> : <span className="grid size-full place-items-center px-4 text-center text-xs" style={{ color: theme.node.muted }}>点击定位到画布节点</span>}
                         </button>
                         <div className="space-y-2 p-3 text-[var(--fs-label)]">
                             <Info label="模型" value={node.metadata?.model || "默认模型"} />

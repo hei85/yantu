@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"hash/crc64"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1053,5 +1055,44 @@ func TestPersistGeneratedMediaAppliesStoredFileQuota(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "20GB 上限") {
 		t.Fatalf("persistGeneratedMediaResult() error = %v", err)
+	}
+}
+
+func TestPersistGeneratedVideoFillsProbedDimensions(t *testing.T) {
+	ffmpeg := requireCommand(t, "ffmpeg")
+	_ = requireCommand(t, "ffprobe")
+	svc := newResourceTestService(t)
+	source := filepath.Join(t.TempDir(), "clip.mp4")
+	cmd := exec.Command(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=1280x736:d=0.4:r=15", "-c:v", "libx264", "-pix_fmt", "yuv420p", source)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("ffmpeg 生成测试视频失败：%v %s", err, output)
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.persistGeneratedMediaResult("user-1", map[string]interface{}{
+		"video": map[string]interface{}{"url": "data:video/mp4;base64," + base64.StdEncoding.EncodeToString(data)},
+	})
+	if err != nil {
+		t.Fatalf("persistGeneratedMediaResult() error = %v", err)
+	}
+	video, _ := result["video"].(map[string]interface{})
+	if video == nil {
+		t.Fatalf("video payload missing: %#v", result)
+	}
+	resourceID := stringValue(video["resourceId"])
+	resource, err := svc.repo.Resource(resourceID)
+	if err != nil || resource == nil {
+		t.Fatalf("resource %q = %v, %v", resourceID, resource, err)
+	}
+	if resource.Width != 1280 || resource.Height != 736 {
+		t.Fatalf("stored resource dimensions = %dx%d, want 1280x736", resource.Width, resource.Height)
+	}
+	if intValue(video["width"]) != 1280 || intValue(video["height"]) != 736 {
+		t.Fatalf("result dimensions = %dx%d, want 1280x736", intValue(video["width"]), intValue(video["height"]))
+	}
+	if resource.DurationMs <= 0 || intValue(video["durationMs"]) <= 0 {
+		t.Fatalf("duration metadata missing: result=%d resource=%d", intValue(video["durationMs"]), resource.DurationMs)
 	}
 }

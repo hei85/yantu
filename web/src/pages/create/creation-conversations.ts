@@ -120,7 +120,7 @@ export function reconcileCreationTaskMessages(runtime: CreationRuntime, conversa
                 return { ...message, status: "cancelled" as const, content: "已停止", error: undefined, taskIds: nextTaskIds };
             }
             const failed = matches.find((task) => task.status === "failed" || task.creationError);
-            return { ...message, status: "error" as const, content: "生成失败", error: generationErrorMessage(failed?.creationError || failed?.error || "任务已结束，但生成结果暂时无法读取"), taskIds: nextTaskIds };
+            return { ...message, status: "error" as const, content: "生成失败", error: failed?.creationError ? generationErrorMessage(failed.creationError) : failed ? generationErrorMessage(failed) : generationErrorMessage("任务已结束，但生成结果暂时无法读取"), taskIds: nextTaskIds };
         });
         return conversationChanged ? { ...conversation, messages, updatedAt: completedAt } : conversation;
     });

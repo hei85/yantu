@@ -18,9 +18,10 @@ const (
 )
 
 type LinkProjectAssetRequest struct {
-	AssetID  string  `json:"assetId"`
-	Category string  `json:"category"`
-	FolderID *string `json:"folderId"`
+	AssetID      string          `json:"assetId"`
+	Category     string          `json:"category"`
+	FolderID     *string         `json:"folderId"`
+	AssetPayload json.RawMessage `json:"assetPayload"`
 	// Title 媒体导入场景下由前端携带原始文件名；已有资产时忽略。
 	Title string `json:"title"`
 	// Source 仅媒体导入合成时生效：uploaded（默认）或 canvas（画布产物自动同步）。
@@ -122,9 +123,12 @@ func (s *Service) LinkProjectAsset(userID string, projectID string, req LinkProj
 		return ProjectAssetSummary{}, err
 	}
 	if asset == nil {
-		// 媒体导入只落 resources 表；首次链接时按资源元数据合成资产记录，
-		// 避免“资源存在但无资产记录”导致导入永远失败。
-		asset, err = s.assetFromUploadedResource(userID, assetID, req.Title, source)
+		if len(req.AssetPayload) > 0 {
+			asset, err = s.assetFromCanvasSnapshot(userID, assetID, req.Title, req.AssetPayload)
+		} else {
+			// 媒体导入只落 resources 表；首次链接时按资源元数据合成资产记录。
+			asset, err = s.assetFromUploadedResource(userID, assetID, req.Title, source)
+		}
 		if err != nil {
 			return ProjectAssetSummary{}, err
 		}
@@ -181,6 +185,86 @@ func (s *Service) LinkProjectAsset(userID string, projectID string, req LinkProj
 		return s.projectAssetSummary(userID, projectID, current)
 	}
 	return s.projectAssetSummary(userID, projectID, asset)
+}
+
+func (s *Service) assetFromCanvasSnapshot(userID, assetID, title string, raw json.RawMessage) (*model.Asset, error) {
+	if len(raw) == 0 || len(raw) > 1<<20 {
+		return nil, BadAuthRequest("画布资产数据无效或超过 1 MB")
+	}
+	var snapshot struct {
+		Kind     string          `json:"kind"`
+		Title    string          `json:"title"`
+		Category string          `json:"category"`
+		Data     json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil || len(snapshot.Data) == 0 {
+		return nil, BadAuthRequest("画布资产数据不完整")
+	}
+	kind := strings.TrimSpace(snapshot.Kind)
+	switch kind {
+	case "text", "image", "video", "audio", "model", "entity":
+	default:
+		return nil, BadAuthRequest("不支持的画布资产类型")
+	}
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(snapshot.Data, &data); err != nil || data == nil {
+		return nil, BadAuthRequest("画布资产内容无效")
+	}
+	if kind == "image" || kind == "video" || kind == "audio" || kind == "model" {
+		var storageKey string
+		if err := json.Unmarshal(data["storageKey"], &storageKey); err != nil || !strings.HasPrefix(storageKey, "resource:") {
+			return nil, BadAuthRequest("项目媒体资产必须先上传为资源")
+		}
+		resourceID := strings.TrimPrefix(storageKey, "resource:")
+		resource, err := s.repo.ResourceForUser(userID, resourceID)
+		if err != nil {
+			return nil, err
+		}
+		if (kind == "model" && resource.Kind != "file") || (kind != "model" && resource.Kind != kind) {
+			return nil, BadAuthRequest("媒体资源类型与画布资产不匹配")
+		}
+		delete(data, "dataUrl")
+		delete(data, "url")
+		encodedData, err := json.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, err
+		}
+		payload["data"] = encodedData
+		if coverURL, ok := payload["coverUrl"]; ok {
+			var value string
+			if json.Unmarshal(coverURL, &value) == nil && (strings.HasPrefix(value, "data:") || strings.HasPrefix(value, "blob:")) {
+				payload["coverUrl"] = json.RawMessage(`""`)
+			}
+		}
+		raw, err = json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	resolvedTitle := strings.TrimSpace(title)
+	if resolvedTitle == "" {
+		resolvedTitle = strings.TrimSpace(snapshot.Title)
+	}
+	if resolvedTitle == "" {
+		return nil, BadAuthRequest("画布资产名称不能为空")
+	}
+	category := model.NormalizeAssetCategory(model.AssetCategory(strings.TrimSpace(snapshot.Category)), kind)
+	now := time.Now()
+	return &model.Asset{
+		ID:          assetID,
+		UserID:      userID,
+		Kind:        kind,
+		Category:    category,
+		Status:      model.AssetVersionStatusConfirmed,
+		Title:       resolvedTitle,
+		PayloadJSON: string(raw),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}, nil
 }
 
 // assetFromUploadedResource 把媒体导入上传的 Resource 合成为资产记录（内存构造，不落库）。
@@ -243,24 +327,8 @@ func (s *Service) UnlinkProjectAsset(userID string, projectID string, assetID st
 	if _, err := s.repo.ProjectForUser(userID, projectID); err != nil {
 		return err
 	}
-	asset, err := s.repo.AssetForUser(userID, assetID)
-	if err != nil {
+	if _, err := s.repo.AssetForUser(userID, assetID); err != nil {
 		return err
-	}
-	if asset.Category == model.AssetCategoryCharacter {
-		canvases, canvasErr := s.repo.ProjectCanvasDocuments(userID, projectID)
-		if canvasErr != nil {
-			return canvasErr
-		}
-		for _, canvas := range canvases {
-			referenced, parseErr := canvasReferencesCharacterAsset(canvas.PayloadJSON, assetID)
-			if parseErr != nil {
-				return BadAuthRequest("画布数据格式错误，无法确认角色引用")
-			}
-			if referenced {
-				return BadAuthRequest("角色仍被项目画布引用，请先删除对应角色卡节点")
-			}
-		}
 	}
 	references, err := s.repo.ProjectAssetShotReferenceCount(projectID, assetID)
 	if err != nil {
@@ -273,26 +341,6 @@ func (s *Service) UnlinkProjectAsset(userID string, projectID string, assetID st
 		return err
 	}
 	return s.repo.BumpProjectRevision(projectID)
-}
-
-func canvasReferencesCharacterAsset(payloadJSON string, assetID string) (bool, error) {
-	var payload struct {
-		Nodes []struct {
-			Metadata struct {
-				WorkflowKind     string `json:"workflowKind"`
-				CharacterAssetID string `json:"characterAssetId"`
-			} `json:"metadata"`
-		} `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
-		return false, err
-	}
-	for _, node := range payload.Nodes {
-		if node.Metadata.WorkflowKind == "character" && node.Metadata.CharacterAssetID == assetID {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (s *Service) UpdateProjectAsset(userID string, projectID string, assetID string, req UpdateProjectAssetRequest) (ProjectAssetSummary, error) {

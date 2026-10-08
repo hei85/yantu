@@ -3,6 +3,7 @@ import { useLocation } from "react-router";
 import { ConfigProvider } from "antd";
 
 import { AppWorkspaceShell } from "@/components/layout/app-top-nav";
+import { CanvasAgentBootstrapBridge } from "@/components/canvas/canvas-agent-bootstrap-bridge";
 import { cn } from "@/lib/utils";
 import { isSpatialWorkbenchPath } from "@/lib/workspace-routes";
 import { getWorkspaceAntThemeConfig } from "@/lib/app-theme";
@@ -35,6 +36,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     return (
         <ConfigProvider theme={productWorkspace ? workspaceTheme : undefined}>
             <div className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}>
+                <CanvasAgentBootstrapBridge enabled={pathname === "/" || pathname === "/create"} />
                 <AppWorkspaceShell>{children}</AppWorkspaceShell>
             </div>
         </ConfigProvider>

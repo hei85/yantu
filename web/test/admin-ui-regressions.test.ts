@@ -110,25 +110,26 @@ test("channel model manager supports bounded atomic batch deletion", async () =>
     expect(component).toContain("批量删除");
 });
 
-test("analytics keeps fixed range presets distinct and uses enabled channel models for pricing", async () => {
-    const source = compactSource(await Bun.file(new URL("../src/pages/admin/components/analytics-panel.tsx", import.meta.url)).text());
+test("batch protocol picker keeps long provider routes inside its modal", async () => {
+    const source = compactSource(await Bun.file(new URL("../src/pages/admin/components/channel-model-manager.tsx", import.meta.url)).text());
+    const modal = sourceSection(source, 'title="批量配置所选模型"', "{editorOpen && (");
 
-    expect(source).toContain('type RangePreset = "7d" | "30d" | "60d"');
-    expect(source).toContain('["60d", "60 天"]');
-    expect(source).toContain('next.set("rangePreset", rangePreset)');
-    expect(source).toContain("setRangePreset(undefined)");
+    expect(modal).toContain('<div className="grid gap-3">');
+    expect(modal).toContain("showSearch optionFilterProp=\"label\"");
+    expect(modal).not.toContain("popupMatchSelectWidth={false}");
 });
 
 test("system settings group only exposes the kept panels", async () => {
     const { configSections } = await import("../src/pages/settings/settings-sections");
     const keys = configSections.map((section) => section.key);
 
-    for (const key of ["prompt-templates", "features", "drawing-engine", "third-party"]) {
+    for (const key of ["prompt-templates", "drawing-engine", "third-party"]) {
         expect(keys).toContain(key);
     }
-    // 存储资源、系统性能已下线，不再出现在设置导航里。
-    expect(keys).not.toContain("resources");
-    expect(keys).not.toContain("system-performance");
+    // 功能开放、对象存储、响应拦截、运行策略、系统更新、RunningHub、用量分析、请求日志、外观与品牌已彻底删除。
+    for (const key of ["features", "storage", "interception", "runtime-policy", "system-update", "runninghub", "analytics", "logs", "appearance", "resources", "system-performance"]) {
+        expect(keys).not.toContain(key);
+    }
 });
 
 test("nested admin pages return to their own parent entry", async () => {
@@ -137,22 +138,6 @@ test("nested admin pages return to their own parent entry", async () => {
     expect(compacted).toContain("const currentItem = currentSection?.items.find");
     // 面板允许调用方覆盖表头归属（设置页复用），未指定时仍回到自己的父级入口。
     expect(compacted).toContain("const sectionPath = section?.path ?? (back ? (currentItem?.path");
-});
-
-test("feature availability only exposes creative workspace switches", async () => {
-    const source = await Bun.file(new URL("../src/pages/admin/components/feature-availability-panel.tsx", import.meta.url)).text();
-
-    // 本地工作站已下线积分计费与前台模型目录，功能开放页不再暴露这两个开关。
-    expect(source).not.toContain('title: "积分计费"');
-    expect(source).not.toContain('title: "前台模型目录"');
-    expect(source).not.toContain("FeatureSourceRow");
-
-    // 创作相关开关保留，关闭短剧入口仍需二次确认。
-    expect(source).toContain('title: "短剧创作"');
-    expect(source).toContain('title: "任务中心"');
-    expect(source).toContain('title: "自己的模型 API"');
-    expect(source).toContain('title: "关闭短剧创作？"');
-    expect(source).toContain("onChange={requestFeatureChange}");
 });
 
 test("admin settings use full-width summaries without selected-card side stripes", async () => {
@@ -167,19 +152,6 @@ test("admin settings use full-width summaries without selected-card side stripes
     const drawingSelected = sourceSection(cssSource, ".admin-drawing-engine-choice.is-selected {", ".admin-drawing-engine-choice.is-unavailable");
     expect(featureSelected).not.toContain("inset 3px 0 0");
     expect(drawingSelected).not.toContain("inset 3px 0 0");
-});
-
-test("admin tables keep requested filters and actions in the intended positions", async () => {
-    const storageSource = await Bun.file(new URL("../src/pages/admin/components/storage-resources-panel.tsx", import.meta.url)).text();
-
-    const storageToolbar = sourceSection(storageSource, "toolbar={", "toolbarActiveFilters=");
-    expect(storageToolbar).toContain('className="admin-storage-resource-filters"');
-    expect(storageToolbar).toContain('placeholder="资源 ID 或对象路径"');
-    // 本地工作站只有一个账号，按用户 ID 筛选的输入框已下线。
-    expect(storageToolbar).not.toContain('placeholder="用户"');
-    expect(storageToolbar).toContain('aria-label="筛选资源类型"');
-    expect(storageToolbar).toContain('aria-label="筛选资源状态"');
-    expect(storageToolbar).toContain('aria-label="筛选存储类型"');
 });
 
 test("banner announcement editor keeps title styles through edit, save and status toggle", async () => {

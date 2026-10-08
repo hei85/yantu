@@ -4,7 +4,8 @@ import { nanoid } from "nanoid";
 
 import { generationBatchStatus, isGenerationCostUncertainError } from "@/lib/canvas/canvas-generation-batch";
 import { buildGenerationConfig, createGenerationRetryContext, generationTaskMetadata, resetGenerationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
-import { unchangedModeratedPrompt } from "@/lib/generation-error";
+import { generationPromptFingerprint, unchangedModeratedPrompt } from "@/lib/generation-error";
+import { batchRowClientOperationId, batchRowRequestFingerprint } from "@/lib/canvas/canvas-generation-batch-idempotency";
 import { listGenerationTasks } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -14,7 +15,6 @@ import type { CanvasNodeGenerationOptions } from "./use-canvas-generation-execut
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 
 const SCHEDULER_INTERVAL_MS = 2_000;
-const MAX_BATCH_HISTORY = 20;
 
 type BatchTarget = Pick<CanvasGenerationBatchItem, "rowId" | "nodeId">;
 
@@ -30,6 +30,10 @@ type UseCanvasGenerationBatchesOptions = {
 export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, nodesRef, setNodes, handleGenerateNode }: UseCanvasGenerationBatchesOptions) {
     const { message, modal } = App.useApp();
     const effectiveConfig = useEffectiveConfig();
+    const effectiveConfigRef = useRef(effectiveConfig);
+    effectiveConfigRef.current = effectiveConfig;
+    const handleGenerateNodeRef = useRef(handleGenerateNode);
+    handleGenerateNodeRef.current = handleGenerateNode;
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const activeTaskLimit = useUserStore((state) => state.runtimeLimits.activeTaskLimit);
     const schedulingRef = useRef(false);
@@ -56,23 +60,48 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
     );
 
     const enqueueGenerationBatch = useCallback(
-        (sourceNodeId: string, mode: CanvasGenerationBatchMode, targets: BatchTarget[], options?: { concurrency?: number }) => {
+        (sourceNodeId: string, mode: CanvasGenerationBatchMode, targets: BatchTarget[], options?: { concurrency?: number; batchId?: string; clientOperationId?: string }) => {
             const sourceNode = nodesRef.current.find((node) => node.id === sourceNodeId);
             if (!sourceNode || !targets.length) return;
+            const requestedOperationId = options?.clientOperationId?.trim() || options?.batchId?.trim() || undefined;
+            if (options?.clientOperationId !== undefined && (!requestedOperationId || requestedOperationId.length > 96)) throw new Error("批次 clientOperationId 必须是 1 至 96 个字符");
+            if (options?.batchId !== undefined && (!options.batchId.trim() || options.batchId.length > 120)) throw new Error("batchId 必须是 1 至 120 个字符");
             const activeNodeIds = new Set((sourceNode.metadata?.generationBatches || []).flatMap((batch) => batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status)).map((item) => item.nodeId)));
-            const availableTargets = targets.filter((target) => !activeNodeIds.has(target.nodeId));
+            const availableTargets = requestedOperationId ? targets : targets.filter((target) => !activeNodeIds.has(target.nodeId));
             if (!availableTargets.length) {
                 message.info("所选镜头已在生成批次中");
                 return;
             }
+            const operationId = requestedOperationId || nanoid();
+            const generationMode: CanvasNodeGenerationMode = mode === "storyboard_video" ? "video" : "image";
+            const preparedItems = availableTargets.map((target) => {
+                const node = nodesRef.current.find((item) => item.id === target.nodeId);
+                if (!node) throw new Error(`批次目标节点不存在：${target.nodeId}`);
+                return {
+                    ...target,
+                    clientOperationId: batchRowClientOperationId(operationId, target.rowId),
+                    requestFingerprint: createBatchRowRequestFingerprint(projectId, target.rowId, node, generationMode, effectiveConfigRef.current, sourceNode, nodesRef.current),
+                };
+            });
+            const requestFingerprint = generationPromptFingerprint(JSON.stringify({ sourceNodeId, projectId, mode, items: preparedItems.map(({ rowId, nodeId, requestFingerprint: fingerprint }) => ({ rowId, nodeId, fingerprint })).sort((a, b) => a.rowId.localeCompare(b.rowId)) }));
+            const priorBatch = (nodesRef.current.flatMap((node) => node.metadata?.generationBatches || [])).find((batch) =>
+                (options?.batchId && batch.id === options.batchId) || (requestedOperationId && batch.clientOperationId === requestedOperationId),
+            );
+            if (priorBatch) {
+                if (priorBatch.requestFingerprint !== requestFingerprint || priorBatch.sourceNodeId !== sourceNodeId || priorBatch.mode !== mode) throw new Error("相同 batchId/clientOperationId 已用于不同分镜请求，已拒绝复用收费操作 ID");
+                return priorBatch.id;
+            }
+            if (requestedOperationId && availableTargets.some((target) => activeNodeIds.has(target.nodeId))) throw new Error("分镜目标已属于其他活动批次，拒绝将其重新绑定到新的收费操作 ID");
             const now = new Date().toISOString();
             const batch: CanvasGenerationBatch = {
-                id: nanoid(),
+                id: options?.batchId?.trim() || `batch:${generationPromptFingerprint(operationId)}`,
+                clientOperationId: operationId,
+                requestFingerprint,
                 projectId,
                 sourceNodeId,
                 mode,
                 status: "queued",
-                items: availableTargets.map((target) => ({ id: nanoid(), ...target, status: "waiting", retryCount: 0 })),
+                items: preparedItems.map((target) => ({ id: nanoid(), ...target, status: "waiting", retryCount: 0 })),
                 concurrency: options?.concurrency ? Math.max(1, Math.min(10, Math.floor(options.concurrency))) : undefined,
                 createdAt: now,
                 updatedAt: now,
@@ -84,7 +113,9 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                               ...node,
                               metadata: {
                                   ...node.metadata,
-                                  generationBatches: [...(node.metadata?.generationBatches || []), batch].slice(-MAX_BATCH_HISTORY),
+                                  // Keep operation IDs queryable for idempotent recovery. Dropping an old
+                                  // non-terminal batch can make its charged operation impossible to find.
+                                  generationBatches: [...(node.metadata?.generationBatches || []), batch],
                               },
                           }
                         : node,
@@ -129,9 +160,10 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                                 // 后端成功后还要下载并写入媒体，节点真正拿到内容才算批次成功。
                                 status: taskStatus === "queued" ? "queued" : taskStatus === "failed" ? "failed" : taskStatus === "cancelled" ? "cancelled" : "running",
                                 errorDetails: undefined,
+                                submissionUncertain: false,
                             };
                         } else if (item.status === "submitting" && !controllersRef.current.has(batchItemKey(batch.id, item.id))) {
-                            patch = { status: "waiting", errorDetails: undefined };
+                            patch = { status: "waiting", submissionUncertain: true, errorDetails: "提交回执不确定；恢复时将复用同一 clientOperationId" };
                         }
                         if (!patch || !itemChanged(item, patch)) return item;
                         batchChanged = true;
@@ -156,7 +188,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
         if (!projectLoaded || schedulingRef.current) return;
         schedulingRef.current = true;
         try {
-            const currentNodes = nodesRef.current;
+            let currentNodes = nodesRef.current;
             // 没有当前画布的等待项时无需查询任务中心，避免空画布持续轮询。
             const hasWaitingItems = currentNodes.some((sourceNode) =>
                 (sourceNode.metadata?.generationBatches || []).some((batch) => batch.projectId === projectId && batch.status !== "completed" && batch.status !== "cancelled" && batch.items.some((item) => item.status === "waiting")),
@@ -165,6 +197,9 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
 
             const tasks = await listGenerationTasks(100, { projectId, activeOnly: true }).catch(() => null);
             if (!tasks) return;
+            // The task-center query yields control. Re-read canvas state after
+            // it so the fingerprint and executor see the same prompt/references.
+            currentNodes = nodesRef.current;
             const activeTaskCount = tasks.filter((task) => task.status === "queued" || task.status === "running").length;
             const nodeById = new Map(currentNodes.map((node) => [node.id, node]));
             const pendingReservations = [...controllersRef.current.keys()].filter((key) => {
@@ -202,26 +237,53 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                 const key = batchItemKey(batch.id, item.id);
                 if (controllersRef.current.has(key)) continue;
                 const generationMode: CanvasNodeGenerationMode = batch.mode === "storyboard_video" ? "video" : "image";
-                const generationConfig = buildGenerationConfig(effectiveConfig, node, generationMode);
+                if (node.metadata?.status === "loading" && !node.metadata.taskId) {
+                    if (node.metadata.taskClientOperationId !== item.clientOperationId || !item.submissionUncertain) {
+                        updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: "目标节点正由其他操作处理；为避免覆盖其状态，已停止批次提交" }));
+                        continue;
+                    }
+                    // A previous request may have reached the server before the tab lost its response.
+                    // Clear only this item's stale loading marker, then resubmit with the same id on the next scheduler pass.
+                    setNodes((current) => current.map((candidate) => candidate.id === node.id && candidate.metadata?.taskClientOperationId === item.clientOperationId && !candidate.metadata?.taskId
+                        ? { ...candidate, metadata: { ...candidate.metadata, status: "idle", taskStage: undefined, taskProgress: undefined, errorDetails: undefined } }
+                        : candidate));
+                    continue;
+                }
+                const generationConfig = buildGenerationConfig(effectiveConfigRef.current, node, generationMode);
+                if (!item.clientOperationId) {
+                    updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: "此旧批次缺少稳定 clientOperationId，已阻止自动提交；请显式重试创建新 ID" }));
+                    continue;
+                }
+                const prompt = (node.metadata?.composerContent || node.metadata?.prompt || "").trim();
+                const sourceNode = currentNodes.find((candidate) => candidate.id === batch.sourceNodeId);
+                const currentFingerprint = createBatchRowRequestFingerprint(projectId, item.rowId, node, generationMode, effectiveConfigRef.current, sourceNode, currentNodes);
+                if (!item.requestFingerprint || currentFingerprint !== item.requestFingerprint) {
+                    updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: "入队后提示词、模型或生成参数已变化；为避免重复收费，已阻止使用旧幂等 ID 提交" }));
+                    continue;
+                }
                 if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                     updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: "生成模型未配置，请完成配置后重试" }));
                     continue;
                 }
-                const prompt = (node.metadata?.composerContent || node.metadata?.prompt || "").trim();
                 if (!prompt) {
                     updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: "生成提示词为空" }));
                     continue;
                 }
                 const controller = new AbortController();
                 controllersRef.current.set(key, controller);
-                updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "submitting", errorDetails: undefined }));
-                void handleGenerateNode(node.id, generationMode, prompt, {
+                updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "submitting", submissionUncertain: true, errorDetails: undefined }));
+                setNodes((current) => current.map((candidate) => candidate.id === node.id
+                    ? { ...candidate, metadata: { ...candidate.metadata, taskClientOperationId: item.clientOperationId } }
+                    : candidate));
+                void handleGenerateNodeRef.current(node.id, generationMode, prompt, {
                     controller,
                     waitForTaskCapacity: true,
                     skipDuplicateConfirmation: true,
+                    clientOperationId: item.clientOperationId,
+                    onTaskUpdate: (task) => updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { taskId: task.id, status: task.status === "queued" ? "queued" : "running", submissionUncertain: false, errorDetails: undefined })),
                     retryContext:
-                        node.metadata?.retryOf && node.metadata.attemptGroupId && node.metadata.taskClientOperationId
-                            ? { retryOf: node.metadata.retryOf, attemptGroupId: node.metadata.attemptGroupId, clientOperationId: node.metadata.taskClientOperationId }
+                        node.metadata?.retryOf && node.metadata.attemptGroupId
+                            ? { retryOf: node.metadata.retryOf, attemptGroupId: node.metadata.attemptGroupId, clientOperationId: item.clientOperationId }
                             : undefined,
                 }).finally(() => {
                     controllersRef.current.delete(key);
@@ -231,7 +293,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
         } finally {
             schedulingRef.current = false;
         }
-    }, [activeTaskLimit, effectiveConfig, handleGenerateNode, isAiConfigReady, nodesRef, projectId, projectLoaded, reconcileBatches, updateBatch]);
+    }, [activeTaskLimit, isAiConfigReady, nodesRef, projectId, projectLoaded, reconcileBatches, setNodes, updateBatch]);
 
     const retryFailedBatchItems = useCallback(
         (sourceNodeId: string, batchId: string, itemId?: string) => {
@@ -249,11 +311,21 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             if (!retryableItems.length) return;
             const retry = async () => {
                 const retryContexts = new Map<string, Awaited<ReturnType<typeof createGenerationRetryContext>>>();
+                const retryClientOperationIds = new Map<string, string>();
+                const retryFingerprints = new Map<string, string>();
                 await Promise.all(
                     retryableItems.map(async (item) => {
                         const retryNode = nodeById.get(item.nodeId);
-                        if (!retryNode?.metadata?.taskId) return;
-                        retryContexts.set(item.nodeId, await createGenerationRetryContext(retryNode.metadata.taskId, retryNode.metadata.attemptGroupId));
+                        if (!retryNode) return;
+                        const operationId = batchRowClientOperationId(nanoid(), item.rowId);
+                        retryClientOperationIds.set(item.id, operationId);
+                        const generationMode: CanvasNodeGenerationMode = batch.mode === "storyboard_video" ? "video" : "image";
+                        const sourceNode = nodeById.get(batch.sourceNodeId);
+                        retryFingerprints.set(item.id, createBatchRowRequestFingerprint(projectId, item.rowId, retryNode, generationMode, effectiveConfigRef.current, sourceNode, nodesRef.current));
+                        if (retryNode.metadata?.taskId) {
+                            const context = await createGenerationRetryContext(retryNode.metadata.taskId, retryNode.metadata.attemptGroupId);
+                            retryContexts.set(item.nodeId, { ...context, clientOperationId: operationId });
+                        }
                     }),
                 );
                 const retryItemIds = new Set(retryableItems.map((item) => item.id));
@@ -263,9 +335,17 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                         if (node.id === sourceNodeId) {
                             const batches = (node.metadata?.generationBatches || []).map((currentBatch) => {
                                 if (currentBatch.id !== batchId) return currentBatch;
-                                const items = currentBatch.items.map((item) =>
-                                    retryItemIds.has(item.id) ? { ...item, status: "waiting" as const, taskId: undefined, errorDetails: undefined, costUncertain: false, retryCount: item.retryCount + 1 } : item,
-                                );
+                                const items = currentBatch.items.map((item) => retryItemIds.has(item.id) ? {
+                                    ...item,
+                                    clientOperationId: retryClientOperationIds.get(item.id),
+                                    requestFingerprint: retryFingerprints.get(item.id),
+                                    status: "waiting" as const,
+                                    submissionUncertain: false,
+                                    taskId: undefined,
+                                    errorDetails: undefined,
+                                    costUncertain: false,
+                                    retryCount: item.retryCount + 1,
+                                } : item);
                                 const nextBatch = { ...currentBatch, items, updatedAt: new Date().toISOString() };
                                 return { ...nextBatch, status: generationBatchStatus(nextBatch) };
                             });
@@ -302,7 +382,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             }
             retry();
         },
-        [message, modal, nodesRef, setNodes],
+        [message, modal, nodesRef, projectId, setNodes],
     );
 
     const stopRemainingBatchItems = useCallback(
@@ -351,7 +431,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             void scheduleWaitingItems();
         }, SCHEDULER_INTERVAL_MS);
         return () => window.clearInterval(timer);
-    }, [projectLoaded, reconcileBatches, scheduleWaitingItems]);
+    }, [effectiveConfig, projectLoaded, reconcileBatches, scheduleWaitingItems]);
 
     return {
         enqueueGenerationBatch,
@@ -376,4 +456,23 @@ function withUpdatedItem(batch: CanvasGenerationBatch, itemId: string, patch: Pa
 
 function findBatch(nodes: CanvasNodeData[], sourceNodeId: string, batchId: string) {
     return nodes.find((node) => node.id === sourceNodeId)?.metadata?.generationBatches?.find((batch) => batch.id === batchId);
+}
+
+function createBatchRowRequestFingerprint(projectId: string, rowId: string, node: CanvasNodeData, mode: CanvasNodeGenerationMode, config: Parameters<typeof buildGenerationConfig>[0], sourceNode?: CanvasNodeData, allNodes: CanvasNodeData[] = [node]) {
+    const generationConfig = buildGenerationConfig(config, node, mode);
+    const values = generationConfig as unknown as Record<string, unknown>;
+    return batchRowRequestFingerprint(projectId, rowId, node, mode, generationConfig.model, {
+        size: values.size,
+        quality: values.quality,
+        aspectRatio: values.aspectRatio,
+        seconds: values.seconds,
+        videoSeconds: values.videoSeconds,
+        transparentBackground: values.transparentBackground,
+        taskWorkflowProvider: values.taskWorkflowProvider,
+        runningHubWorkflowId: values.runningHubWorkflowId,
+        runningHubWorkflowKind: values.runningHubWorkflowKind,
+        workflowParameters: node.metadata?.workflowParameters,
+        promptTemplateOperation: node.metadata?.promptTemplateOperation,
+        promptTemplateVariables: node.metadata?.promptTemplateVariables,
+    }, sourceNode, allNodes);
 }

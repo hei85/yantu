@@ -1,12 +1,73 @@
-import type { ModelProtocol, ModelProtocolWorkflow } from "@/lib/model-protocols";
-import type { ImageResolutionOption, ImageResolutionTier } from "@/lib/image-resolution-tiers";
+import { isHeihanAxonGptImage, isHeihanAxonH3Video, type ModelProtocol, type ModelProtocolWorkflow } from "@/lib/model-protocols";
+import { buildImageResolutionOptions, type ImageResolutionOption, type ImageResolutionTier } from "@/lib/image-resolution-tiers";
 
 export type ModelCapabilityConfig = {
     version: number;
+    observed?: Array<{ verdict?: string; feature: string; reason?: string; source?: string; at?: string; details?: Record<string, unknown> }>;
     text?: TextCapabilityConfig;
     image?: ImageCapabilityConfig;
     video?: VideoCapabilityConfig;
+    audio?: AudioCapabilityConfig;
 };
+
+export type AudioCapabilityStatus = "configured" | "unsupported" | "unknown";
+export type AudioCapabilityConfig = {
+    tts: AudioCapabilityStatus;
+    voiceDesign: AudioCapabilityStatus;
+    voiceReference: AudioCapabilityStatus;
+    ambientSound: AudioCapabilityStatus;
+    soundEffects: AudioCapabilityStatus;
+    music: AudioCapabilityStatus;
+    speechRecognition: AudioCapabilityStatus;
+    alignment: AudioCapabilityStatus;
+    voiceIdParameter?: string;
+    referenceAudioParameter?: string;
+    toneParameter?: string;
+    emotionStyleParameter?: string;
+    speakingRateParameter?: string;
+    languageParameter?: string;
+    accentParameter?: string;
+    voiceIds?: string[];
+    defaultVoiceId?: string;
+};
+
+export function defaultAudioCapabilityConfig(): AudioCapabilityConfig {
+    return {
+        tts: "unknown",
+        voiceDesign: "unknown",
+        voiceReference: "unknown",
+        ambientSound: "unknown",
+        soundEffects: "unknown",
+        music: "unknown",
+        speechRecognition: "unknown",
+        alignment: "unknown",
+    };
+}
+
+export function normalizeAudioCapabilityConfig(config?: Partial<AudioCapabilityConfig> | null): AudioCapabilityConfig {
+    const status = (value: unknown): AudioCapabilityStatus =>
+        value === "configured" || value === "unsupported" || value === "unknown" ? value : "unknown";
+    const parameter = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : undefined;
+    return {
+        tts: status(config?.tts),
+        voiceDesign: status(config?.voiceDesign),
+        voiceReference: status(config?.voiceReference),
+        ambientSound: status(config?.ambientSound),
+        soundEffects: status(config?.soundEffects),
+        music: status(config?.music),
+        speechRecognition: status(config?.speechRecognition),
+        alignment: status(config?.alignment),
+        voiceIdParameter: parameter(config?.voiceIdParameter),
+        referenceAudioParameter: parameter(config?.referenceAudioParameter),
+        toneParameter: parameter(config?.toneParameter),
+        emotionStyleParameter: parameter(config?.emotionStyleParameter),
+        speakingRateParameter: parameter(config?.speakingRateParameter),
+        languageParameter: parameter(config?.languageParameter),
+        accentParameter: parameter(config?.accentParameter),
+        voiceIds: Array.isArray(config?.voiceIds) ? normalizeCapabilityStrings(config.voiceIds) : undefined,
+        defaultVoiceId: parameter(config?.defaultVoiceId),
+    };
+}
 
 export type TextCapabilityConfig = {
     /** Whether the upstream text endpoint accepts SSE streaming responses. */
@@ -67,9 +128,16 @@ export type VideoCapabilityConfig = {
         maxVideos: number;
         maxVideoBytes: number;
         maxVideoDurationSeconds: number;
+        minAudios?: number;
         maxAudios: number;
         maxAudioBytes: number;
         maxAudioDurationSeconds: number;
+        /** Explicit image-role slots for models whose inputs are structured as frames, not generic reference images. */
+        frameSlots?: {
+            firstFrame: { min: number; max: number };
+            lastFrame: { min: number; max: number };
+            operations: string[];
+        };
     };
     duration: {
         selection: "range" | "enum";
@@ -83,6 +151,8 @@ export type VideoCapabilityConfig = {
     ratios: string[];
     defaultRatio: string;
     resolutions: string[];
+    resolutionSource?: "catalog" | "model-id" | "model-profile";
+    resolutionSourceURL?: string;
     defaultResolution: string;
     generateAudio: { supported: boolean; default: boolean };
     watermark: { supported: boolean; default: boolean };
@@ -105,37 +175,62 @@ export const STANDARD_IMAGE_SIZE_VALUES = [
     "1024x1536",
 ] as const;
 
-export function normalizeCapabilityString(value: string) {
+export function normalizeCapabilityString(value: unknown) {
+    if (typeof value !== "string") return "";
     const normalized = value.trim();
     return normalized.startsWith("string:") ? normalized.slice("string:".length) : normalized;
 }
 
-function normalizeCapabilityStrings(values: string[]) {
-    return Array.from(new Set(values.map(normalizeCapabilityString)));
+function normalizeCapabilityStrings(values: unknown) {
+    return Array.from(new Set((Array.isArray(values) ? values : []).map(normalizeCapabilityString).filter(Boolean)));
 }
 
-export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig): ModelCapabilityConfig {
+export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig, fallback = defaultModelCapabilityConfig()): ModelCapabilityConfig {
+    // Provider/persisted JSON can contain null slices despite the TS shape.
+    // The UI and native MCP model catalog use this same normalization path.
+    const imageFallback = fallback.image!;
+    const videoFallback = fallback.video!;
     return {
         ...config,
-        text: config.text ? { ...config.text, streaming: config.text.streaming !== false } : config.text,
+        observed: Array.isArray(config.observed) ? config.observed : undefined,
+        text: config.text ? { ...config.text, references: { ...fallback.text!.references, ...config.text.references }, streaming: config.text.streaming !== false } : undefined,
         image: config.image
             ? {
+                  ...imageFallback,
                   ...config.image,
+                  references: { ...imageFallback.references, ...config.image.references },
                   size: {
+                      ...imageFallback.size,
                       ...config.image.size,
-                      values: normalizeCapabilityStrings(config.image.size.values),
-                      default: normalizeCapabilityString(config.image.size.default),
+                      values: normalizeCapabilityStrings(config.image.size?.values),
+                      default: normalizeCapabilityString(config.image.size?.default ?? imageFallback.size.default),
                   },
                   quality: {
+                      ...imageFallback.quality,
                       ...config.image.quality,
-                      values: normalizeCapabilityStrings(config.image.quality.values),
-                      default: normalizeCapabilityString(config.image.quality.default),
+                      values: normalizeCapabilityStrings(config.image.quality?.values),
+                      default: normalizeCapabilityString(config.image.quality?.default ?? imageFallback.quality.default),
                   },
+                  transparentBackground: { ...imageFallback.transparentBackground, ...config.image.transparentBackground },
+                  responseFormat: { ...imageFallback.responseFormat, ...config.image.responseFormat },
+                  outputFormat: { ...imageFallback.outputFormat, ...config.image.outputFormat },
               }
             : undefined,
         video: config.video
             ? {
+                  ...videoFallback,
                   ...config.video,
+                  references: { ...videoFallback.references, ...config.video.references },
+                  duration: {
+                      ...(config.video.duration ?? videoFallback.duration),
+                      selection: config.video.duration?.selection ?? videoFallback.duration.selection,
+                      default: config.video.duration?.default ?? videoFallback.duration.default,
+                      values: Array.isArray(config.video.duration?.values)
+                          ? config.video.duration.values.filter((value) => typeof value === "number" && Number.isFinite(value))
+                          : config.video.duration ? config.video.duration.selection === "enum" ? [] : undefined : videoFallback.duration.values,
+                  },
+                  generateAudio: { ...videoFallback.generateAudio, ...config.video.generateAudio },
+                  watermark: { ...videoFallback.watermark, ...config.video.watermark },
                   ratios: normalizeCapabilityStrings(config.video.ratios),
                   defaultRatio: normalizeCapabilityString(config.video.defaultRatio),
                   resolutions: normalizeCapabilityStrings(config.video.resolutions),
@@ -144,6 +239,7 @@ export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig): M
                   defaultOperation: normalizeCapabilityString(config.video.defaultOperation),
               }
             : undefined,
+        audio: config.audio ? normalizeAudioCapabilityConfig(config.audio) : config.audio,
     };
 }
 
@@ -166,7 +262,7 @@ const defaultImageSizes = [
     "1024x1536",
     "1024x1280",
     "1280x1024",
-    "2048x878",
+    "2016x864",
     "1824x1024",
     "1024x1824",
     "2048x2048",
@@ -283,6 +379,47 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
     return image;
 }
 
+/**
+ * Evidence is limited: Axon gpt-image-2 accepted a submitted 1824x1024 value
+ * only as far as the request, then returned a 503 group-route failure, so its
+ * output dimensions remain unverified. The same model and size succeeded via
+ * www.hejuapi.com and returned 1674x940. Axon's catalog description mentions
+ * custom sizes but has no structured size options. Expose only this 16:9 size
+ * for its stale 1:1-only profile, without enabling arbitrary custom sizes.
+ */
+export function migrateObservedAxonGptImageCapabilityConfig(baseUrl: string, model: string, config?: ModelCapabilityConfig): ModelCapabilityConfig | undefined {
+    if (!config?.image || !isHeihanAxonGptImage(baseUrl, model)) return config;
+    const image = config.image;
+    const size = image.size;
+    const values = (size.values || []).map(normalizeCapabilityString);
+    const defaultValue = normalizeCapabilityString(size.default || "");
+    const legacySquareOnly = size.parameter === "size"
+        && size.allowCustom === false
+        && values.length === 1
+        && values[0] === "1:1"
+        && defaultValue === "1:1"
+        && (!size.presets || (size.presets.length === 1 && size.presets[0]?.tier === "1k" && size.presets[0]?.ratio === "1:1" && size.presets[0]?.size === "1024x1024"));
+    if (!legacySquareOnly) return config;
+
+    const nextValues = [...size.values];
+    if (!values.includes("1024x1024")) nextValues.push("1024x1024");
+    if (!values.includes("1824x1024")) nextValues.push("1824x1024");
+    const presets = size.presets
+        ? [...size.presets, ...buildImageResolutionOptions(["1024x1024", "1824x1024"]).filter((preset) => !size.presets!.some((existing) => existing.size === preset.size))]
+        : undefined;
+    return {
+        ...config,
+        image: {
+            ...image,
+            size: {
+                ...size,
+                values: nextValues,
+                ...(presets ? { presets } : {}),
+            },
+        },
+    };
+}
+
 export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = ""): ModelCapabilityConfig {
     const text: TextCapabilityConfig = {
         streaming: true,
@@ -389,17 +526,21 @@ export function pluginWorkflowCapabilityConfig(protocol: ModelProtocol, workflow
     return { ...fallback, video: workflowVideoCapabilityConfig(fields, fallback.video!) };
 }
 
-export function modelCapabilityConfigFor(config: { channels: Array<{ id: string; models: string[]; modelCosts?: Array<{ model: string; capabilityConfig?: ModelCapabilityConfig; protocol?: ModelProtocol }> }> }, model: string) {
+export function modelCapabilityConfigFor(config: { channels: Array<{ id: string; baseUrl?: string; models: string[]; modelCosts?: Array<{ model: string; capabilityConfig?: ModelCapabilityConfig; protocol?: ModelProtocol }> }> }, model: string) {
     const separator = model.indexOf("::");
     const channelId = separator >= 0 ? model.slice(0, separator) : "";
     const modelName = separator >= 0 ? model.slice(separator + 2) : model;
     const channel = config.channels.find((item) => item.id === channelId) || config.channels.find((item) => item.models.includes(modelName));
     const cost = channel?.modelCosts?.find((item) => item.model === modelName);
     const fallback = defaultModelCapabilityConfig(cost?.protocol, modelName);
+    const axonH3WithoutAudioSwitch = isHeihanAxonH3Video(channel?.baseUrl || "", modelName);
+    if (axonH3WithoutAudioSwitch) fallback.video!.generateAudio = { supported: false, default: false };
     if (!cost?.capabilityConfig) return fallback;
-    const capabilityConfig = normalizeModelCapabilityConfig(cost.capabilityConfig);
+    const capabilityConfig = normalizeModelCapabilityConfig(cost.capabilityConfig, fallback);
     const text = capabilityConfig.text ? { ...fallback.text!, ...capabilityConfig.text, references: { ...fallback.text!.references, ...capabilityConfig.text.references } } : fallback.text;
     const video = capabilityConfig.video ? { ...fallback.video!, ...capabilityConfig.video, references: { ...fallback.video!.references, ...capabilityConfig.video.references } } : fallback.video;
+    if (axonH3WithoutAudioSwitch && video) video.generateAudio = { supported: false, default: false };
+    const audio = normalizeAudioCapabilityConfig(capabilityConfig.audio);
     const configuredImage = capabilityConfig.image;
     const image = configuredImage
         ? (() => {
@@ -423,7 +564,7 @@ export function modelCapabilityConfigFor(config: { channels: Array<{ id: string;
               };
           })()
         : fallback.image;
-    return { ...fallback, ...capabilityConfig, text, image, video };
+    return { ...fallback, ...capabilityConfig, text, image, video, audio };
 }
 
 // 工作流字段是供应商参数的唯一事实来源；不能用普通视频模型的固定清晰度列表覆盖它。
@@ -971,6 +1112,8 @@ export function imageSizeRequest(profile: ImageCapabilityConfig, value?: string)
 }
 
 export function normalizeVideoValue(profile: VideoCapabilityConfig, value: { seconds?: string; ratio?: string; resolution?: string }) {
+    // Public callers may pass a raw catalog profile before store hydration.
+    profile = normalizeModelCapabilityConfig({ version: 1, video: profile }).video!;
     const duration = profile.duration.selection === "enum" ? ((profile.duration.values || []).includes(Number(value.seconds)) ? Number(value.seconds) : profile.duration.default) : normalizeRangeDuration(profile, Number(value.seconds));
     const ratio = resolveVideoRatioValue(profile, value.ratio);
     // 前端状态历史上保存过 `720`，而能力配置和供应商通常使用 `720p`；统一按能力中的原始值返回，避免被误判为不支持。
@@ -979,11 +1122,12 @@ export function normalizeVideoValue(profile: VideoCapabilityConfig, value: { sec
 }
 
 export function resolveVideoRatioValue(profile: VideoCapabilityConfig, value: string | undefined) {
-    return profile.ratios.includes(value || "") ? value! : profile.defaultRatio || profile.ratios[0] || "";
+    const ratios = normalizeCapabilityStrings(profile.ratios);
+    return ratios.includes(value || "") ? value! : normalizeCapabilityString(profile.defaultRatio) || ratios[0] || "";
 }
 
 export function resolveVideoResolutionValue(profile: VideoCapabilityConfig, value: string | undefined) {
-    return videoResolutionRequest(profile, value) || profile.defaultResolution || profile.resolutions[0] || "";
+    return videoResolutionRequest(profile, value) || normalizeCapabilityString(profile.defaultResolution) || normalizeCapabilityStrings(profile.resolutions)[0] || "";
 }
 
 export function videoResolutionRequest(profile: VideoCapabilityConfig, value: string | undefined) {
@@ -993,12 +1137,13 @@ export function videoResolutionRequest(profile: VideoCapabilityConfig, value: st
     if (!requested || requested === "auto" || requested === "default" || requested === "medium" || requested === "high") return undefined;
     const candidates = [requested];
     if (/^\d+$/.test(requested)) candidates.push(`${requested}p`);
+    if (requested === "720" || requested === "720p") candidates.push("736p");
     if (requested === "low") candidates.push("480p");
     if (requested === "2k") candidates.push("1440p");
     if (requested === "1440" || requested === "1440p") candidates.push("2k");
     if (requested === "4k") candidates.push("2160p");
     if (requested === "2160" || requested === "2160p") candidates.push("4k");
-    const supported = new Map(profile.resolutions.map((resolution) => [resolution.trim().toLowerCase(), resolution.trim()]));
+    const supported = new Map(normalizeCapabilityStrings(profile.resolutions).map((resolution) => [resolution.toLowerCase(), resolution]));
     for (const candidate of candidates) {
         const match = supported.get(candidate);
         if (match) return match;

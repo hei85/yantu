@@ -1,12 +1,12 @@
 import { useRef, useState } from "react";
-import { Alert, App, Button, Form, Input, Segmented, Switch, Tabs } from "antd";
+import { Alert, App, Button, Form, Input, Segmented, Select, Switch, Tabs } from "antd";
 import { AdminModal } from "@/pages/admin/ui/overlays";
 import { FlaskConical, Plus } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
 import { ModelCapabilityEditor } from "@/components/model-capability-editor";
-import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultAudioCapabilityConfig, defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type AudioCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
 import { createAdminChannelModel, testAdminChannelModel, updateAdminChannelModel, type ChannelModel } from "@/services/api/channel-models";
 import type { ModelChannel } from "@/stores/use-config-store";
@@ -64,7 +64,7 @@ export function ChannelModelEditor({
             form.setFieldsValue(changeChannelModelCapability(form.getFieldsValue(true), protocols));
             setConfigurationChanged(true);
         } else if (changed.protocol) {
-            form.setFieldValue("capabilityConfig", modelCapability === "audio" ? undefined : defaultModelCapabilityConfig(changed.protocol, providerModelKey.trim() || modelKey.trim()));
+            form.setFieldValue("capabilityConfig", modelCapability === "audio" ? { version: 1, audio: defaultAudioCapabilityConfig() } : defaultModelCapabilityConfig(changed.protocol, providerModelKey.trim() || modelKey.trim()));
             setConfigurationChanged(true);
         }
     };
@@ -92,8 +92,7 @@ export function ChannelModelEditor({
         const values = await validateEditor();
         if (!values) return;
         const upstreamModel = values.providerModelKey?.trim() || values.modelKey.trim();
-        const capabilityConfig =
-            values.capability === "text" || values.capability === "image" || values.capability === "video" ? normalizeModelCapabilityConfig(values.capabilityConfig || defaultModelCapabilityConfig(values.protocol, upstreamModel)) : undefined;
+        const capabilityConfig = capabilityConfigFor(values.capability, values.capabilityConfig, values.protocol, upstreamModel);
         busyRef.current = true;
         setSaving(true);
         try {
@@ -108,6 +107,15 @@ export function ChannelModelEditor({
                 protocol: values.protocol,
                 enabled: values.enabled !== false,
                 capabilityConfig,
+                ...(editing?.capability === values.capability && editing.variants?.length ? {
+                    variants: editing.variants.map((variant) => ({
+                        selector: variant.selector,
+                        resolution: variant.resolution,
+                        videoSeconds: variant.videoSeconds,
+                        providerModelKey: variant.providerModelKey,
+                        enabled: variant.enabled,
+                    })),
+                } : {}),
             };
             if (editing) await updateAdminChannelModel(channel.id, editing.id, payload);
             else await createAdminChannelModel(channel.id, payload);
@@ -131,8 +139,7 @@ export function ChannelModelEditor({
         const values = await validateEditor(["modelKey", "providerModelKey", "capability", "protocol", "capabilityConfig"]);
         if (!values) return;
         const upstreamModel = values.providerModelKey?.trim() || values.modelKey.trim();
-        const capabilityConfig =
-            values.capability === "text" || values.capability === "image" || values.capability === "video" ? normalizeModelCapabilityConfig(values.capabilityConfig || defaultModelCapabilityConfig(values.protocol, upstreamModel)) : undefined;
+        const capabilityConfig = capabilityConfigFor(values.capability, values.capabilityConfig, values.protocol, upstreamModel);
         busyRef.current = true;
         setTesting(true);
         try {
@@ -230,6 +237,7 @@ export function ChannelModelEditor({
                                         <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
                                             <Form.Item name="modelKey" label="产品模型标识" tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。" rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}>
                                                 <Input
+                                                    readOnly
                                                     prefix={
                                                         <span className="grid size-6 place-items-center">
                                                             <ModelIcon model={modelKey} />
@@ -239,7 +247,7 @@ export function ChannelModelEditor({
                                                 />
                                             </Form.Item>
                                             <Form.Item name="providerModelKey" label="上游模型 ID" tooltip="实际发送给供应商；留空时使用产品模型标识。规格档可配置独立上游 ID，命中时优先于此处。">
-                                                <Input placeholder="留空则使用产品模型标识" />
+                                                <Input readOnly placeholder="从 Axon 目录导入的模型标识" />
                                             </Form.Item>
                                             <Form.Item name="displayName" label="模型展示名（一级目录）" tooltip="跨所有系统渠道按此名称分组，例如 MiniMax H3。同名模型归入同一组，不改变调用 ID。">
                                                 <Input placeholder="不填则使用模型标识" />
@@ -333,7 +341,20 @@ export function ChannelModelEditor({
                                             </div>
                                         </section>
                                     ) : null}
-                                    {modelCapability === "audio" && <Alert type="info" title="音频模型无需额外配置引用与参数" description="调用协议仍需在对应分组中配置。" />}
+                                    {modelCapability === "audio" && (
+                                        <section className="admin-model-editor-section admin-model-editor-section-stacked">
+                                            <SectionHeading title="音频能力目录" description="按当前上游模型的实际能力逐项声明；unknown 会阻止该用途进入制作计划，不按模型名称猜测。" />
+                                            <div className="admin-model-editor-section-content">
+                                                <AudioCapabilityEditor
+                                                    value={capabilityConfig?.audio || defaultAudioCapabilityConfig()}
+                                                    onChange={(audio) => {
+                                                        dirtyRef.current = true;
+                                                        form.setFieldValue("capabilityConfig", { version: 1, audio });
+                                                    }}
+                                                />
+                                            </div>
+                                        </section>
+                                    )}
                                 </div>
                             ),
                         },
@@ -352,6 +373,68 @@ function SectionHeading({ title, description }: { title: string; description: st
             <h2>{title}</h2>
             <p>{description}</p>
         </header>
+    );
+}
+function capabilityConfigFor(capability: string, value: ModelCapabilityConfig | undefined, protocol: string | undefined, model: string) {
+    if (capability === "audio") return { version: 1, audio: { ...defaultAudioCapabilityConfig(), ...value?.audio } };
+    if (capability === "text" || capability === "image" || capability === "video") return normalizeModelCapabilityConfig(value || defaultModelCapabilityConfig(protocol, model));
+    return undefined;
+}
+
+const audioFeatureLabels: Array<[keyof Pick<AudioCapabilityConfig, "tts" | "voiceDesign" | "voiceReference" | "ambientSound" | "soundEffects" | "music" | "speechRecognition" | "alignment">, string]> = [
+    ["tts", "普通对白 / 旁白 TTS"],
+    ["voiceDesign", "固定角色音色 ID / Voice Design 能力"],
+    ["voiceReference", "按参考声音复用身份"],
+    ["ambientSound", "环境声"],
+    ["soundEffects", "Foley / 音效"],
+    ["music", "音乐 / BGM"],
+    ["speechRecognition", "语音识别"],
+    ["alignment", "字幕对齐"],
+];
+
+const audioParameterLabels: Array<[keyof Pick<AudioCapabilityConfig, "voiceIdParameter" | "referenceAudioParameter" | "toneParameter" | "emotionStyleParameter" | "speakingRateParameter" | "languageParameter" | "accentParameter">, string]> = [
+    ["voiceIdParameter", "上游 voice ID 字段"],
+    ["referenceAudioParameter", "上游参考音频字段"],
+    ["toneParameter", "上游音色描述字段"],
+    ["emotionStyleParameter", "上游情绪字段"],
+    ["speakingRateParameter", "上游语速字段"],
+    ["languageParameter", "上游语言字段"],
+    ["accentParameter", "上游口音字段"],
+];
+
+function AudioCapabilityEditor({ value, onChange }: { value: AudioCapabilityConfig; onChange: (value: AudioCapabilityConfig) => void }) {
+    const update = (patch: Partial<AudioCapabilityConfig>) => onChange({ ...value, ...patch });
+    return (
+        <div className="grid gap-3 md:grid-cols-2">
+            {audioFeatureLabels.map(([key, label]) => (
+                <label className="grid gap-1" key={key}>
+                    <span className="text-sm">{label}</span>
+                    <Select
+                        value={value[key]}
+                        options={[
+                            { value: "unknown", label: "未知（不可路由）" },
+                            { value: "configured", label: "已配置并可用" },
+                            { value: "unsupported", label: "明确不支持" },
+                        ]}
+                        onChange={(status) => update({ [key]: status })}
+                    />
+                </label>
+            ))}
+            {audioParameterLabels.map(([key, label]) => (
+                <label className="grid gap-1" key={key}>
+                    <span className="text-sm">{label}</span>
+                    <Input value={value[key] || ""} maxLength={80} onChange={(event) => update({ [key]: event.target.value })} />
+                </label>
+            ))}
+            <label className="grid gap-1 md:col-span-2">
+                <span className="text-sm">此模型实际支持的 Voice ID 列表</span>
+                <Select mode="tags" tokenSeparators={[","]} value={value.voiceIds || []} onChange={(voiceIds) => update({ voiceIds })} placeholder="只填上游已验证可用的 voice ID" />
+            </label>
+            <label className="grid gap-1">
+                <span className="text-sm">模型默认 Voice ID</span>
+                <Input value={value.defaultVoiceId || ""} maxLength={160} onChange={(event) => update({ defaultVoiceId: event.target.value })} />
+            </label>
+        </div>
     );
 }
 function CapabilityConfigField(_: { value?: ModelCapabilityConfig; onChange?: (value: ModelCapabilityConfig) => void }) {

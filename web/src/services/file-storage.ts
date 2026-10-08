@@ -19,18 +19,23 @@ export type UploadedFile = {
     preview?: UploadedImage;
     /**
      * true 表示直传失败、文件当前只存在于本机 IndexedDB。语义与 UploadedImage 一致：
-     * 云端数据同步会用同一幂等键重传，但在那之前 `url` 是页面级 objectURL，刷新即失效。
+     * 后续明确的生产操作才会再次尝试上传；本机 `url` 是页面级 objectURL，刷新即失效。
      */
-    pendingRemoteUpload?: boolean;
-    /** 直传失败原因，仅在 pendingRemoteUpload 为 true 时有值。 */
-    remoteUploadError?: string;
+    pendingResourceUpload?: boolean;
+    /** 资源上传失败原因。 */
+    resourceUploadError?: string;
 };
+
+export function withMeasuredDurationMs<T extends { durationMs?: number }>(metadata: T, measuredDurationMs?: number): T {
+    if (!Number.isFinite(measuredDurationMs) || !measuredDurationMs || measuredDurationMs <= 0) return metadata;
+    return { ...metadata, durationMs: Math.round(measuredDurationMs) };
+}
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
 
-export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<UploadedFile> {
-    // 直传和失败后的本地同步必须复用同一上传身份，避免响应丢失后创建第二个对象。
+export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?: (uploadedBytes: number, totalBytes: number) => void, metadataOverride?: { durationMs?: number }): Promise<UploadedFile> {
+    // 资源上传重试必须复用同一身份，避免响应丢失后创建第二个对象。
     const storageKey = `${prefix}:${getActiveUserScope()}:${nanoid()}`;
     const blob = input;
     const previewUrl = URL.createObjectURL(blob);
@@ -72,6 +77,9 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
         } else {
             meta = { hasAudio: resolvedHasAudio };
         }
+        // Director MediaRecorder WebM 可能没有容器时长头，浏览器视频元素会报 0；
+        // 允许调用方传入同一 Blob 的已验证播放时长，供资源记录和时间线使用。
+        meta = withMeasuredDurationMs(meta, metadataOverride?.durationMs);
 
         let poster: UploadedImage | undefined;
         if (captured?.poster) {
@@ -83,7 +91,7 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             }
         }
 
-        let remoteUploadError = "";
+        let resourceUploadError = "";
         try {
             const kind = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
             const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
@@ -95,16 +103,16 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             }
             return { url: resource.publicUrl || resourceFileUrl(resource.id), storageKey: resourceStorageKey(resource.id), bytes: resource.size || blob.size, mimeType: resource.mimeType || blob.type || "application/octet-stream", width: resource.width || meta.width, height: resource.height || meta.height, durationMs: resource.durationMs || meta.durationMs, hasAudio: meta.hasAudio, preview: poster };
         } catch (error) {
-            // 与图片上传同一套判定：永久性失败必须当场暴露，不能混进“稍后自动同步”。
+            // 与图片上传同一套判定：永久性失败必须当场暴露，不能混进本机暂存。
             if (error instanceof ResourceUploadError && error.permanent) throw error;
-            remoteUploadError = error instanceof Error ? error.message : "媒体直传失败";
+            resourceUploadError = error instanceof Error ? error.message : "媒体资源上传失败";
         }
 
-        // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
+        // 上传失败时退回本机，后续是否上传由明确的生产操作决定。
         await store.setItem(storageKey, blob);
         retainPreviewUrl = true;
         objectUrls.set(storageKey, previewUrl);
-        return { url: previewUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta, preview: poster, pendingRemoteUpload: true, remoteUploadError };
+        return { url: previewUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta, preview: poster, pendingResourceUpload: true, resourceUploadError };
     } finally {
         // 只有本地降级结果需要把 objectURL 留给页面；成功上传和所有异常路径都及时释放。
         if (!retainPreviewUrl) URL.revokeObjectURL(previewUrl);

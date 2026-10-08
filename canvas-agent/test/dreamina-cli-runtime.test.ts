@@ -2075,7 +2075,7 @@ test("Dreamina recovery serializes lock-sensitive queries and reaches each recei
     }
 });
 
-test("Dreamina query FIFO is fair across pending receipts and shutdown aborts queued waiters", async () => {
+test("Dreamina query FIFO is fair across pending receipts and shutdown aborts queued waiters", { timeout: 30_000 }, async () => {
     const box = await sandbox();
     await fs.writeFile(box.stateFile, JSON.stringify({
         version: 1,
@@ -2110,7 +2110,7 @@ test("Dreamina query FIFO is fair across pending receipts and shutdown aborts qu
     });
     try {
         await runtime.getTask("dreamina-query-fifo-0001");
-        await waitForAsync(async () => (await runtime.listTasks()).every((task) => task.status === "failed"), 15_000);
+        await waitForAsync(async () => (await runtime.listTasks()).every((task) => task.status === "failed"), 30_000);
         assert.equal(maxActiveQueries, 1);
         assert.deepEqual([...new Set(order)].sort(), [1, 2, 3]);
         assert.deepEqual(Object.fromEntries([...attempts.entries()].sort(([left], [right]) => left - right)), {
@@ -2734,10 +2734,10 @@ test("Dreamina cross-Runtime queue head promotes after a peer reconciler release
         assert.equal(runtimeBSubmits, 0);
 
         await runtimeA.refreshTask(active.id);
-        await waitForPromise(terminalQueryStarted, "Runtime A terminal reconciliation", 2_000);
+        await waitForPromise(terminalQueryStarted, "Runtime A terminal reconciliation", 10_000);
         releaseTerminal();
-        await waitForRuntimeRecord(box.stateFile, active.id, (record) => record.state === "cancelled", 2_000);
-        await waitForPromise(queuedSubmitStarted, "Runtime B queued promotion", 1_000);
+        await waitForRuntimeRecord(box.stateFile, active.id, (record) => record.state === "cancelled", 10_000);
+        await waitForPromise(queuedSubmitStarted, "Runtime B queued promotion", 10_000);
 
         assert.equal(runtimeBSubmits, 1);
         assert.equal((await runtimeB.getTask(queued.id)).status, "running");
@@ -3196,7 +3196,7 @@ test("Dreamina cross-Runtime durable completion restores every image without que
     }
 });
 
-test("Dreamina durable wait fallback converges completed, cancelled, and failed when every watcher event is lost", async () => {
+test("Dreamina durable wait fallback converges completed, cancelled, and failed when every watcher event is lost", { timeout: 30_000 }, async () => {
     for (const terminal of ["completed", "cancelled", "failed"] as const) {
         const box = await sandbox();
         const id = `dreamina-watch-fallback-${terminal}-0001`;

@@ -141,6 +141,58 @@ describe("逻辑模型选择", () => {
         expect(resolveModelGenerationDefaults(config, model, "video", {}, { videoSeconds: "6" }).videoSeconds).toBe("15");
     });
 
+    test("视频比例从通用 options.size 校验并参与兼容模型路由", () => {
+        const portrait = defaultModelCapabilityConfig(undefined, "portrait-video");
+        portrait.video!.ratios = ["9:16"];
+        portrait.video!.defaultRatio = "9:16";
+        const landscape = defaultModelCapabilityConfig(undefined, "landscape-video");
+        landscape.video!.ratios = ["16:9"];
+        landscape.video!.defaultRatio = "16:9";
+        const channel: ModelChannel = {
+            id: "ratio-relay",
+            name: "比例路由",
+            baseUrl: "https://api.example.com",
+            apiKey: "test-key",
+            apiFormat: "openai",
+            models: ["portrait-video", "landscape-video"],
+            modelCosts: [
+                { model: "portrait-video", displayName: "Cinema Video", capability: "video", billingMode: "per_second", unitPriceMicrocredits: 1, capabilityConfig: portrait },
+                { model: "landscape-video", displayName: "Cinema Video", capability: "video", billingMode: "per_second", unitPriceMicrocredits: 1, capabilityConfig: landscape },
+            ],
+        };
+        const config: AiConfig = {
+            ...defaultConfig,
+            channels: [channel],
+            models: ["ratio-relay::portrait-video", "ratio-relay::landscape-video"],
+            videoModels: ["ratio-relay::portrait-video", "ratio-relay::landscape-video"],
+            videoModel: "ratio-relay::portrait-video",
+        };
+        const requirements = { capability: "video" as const, options: { size: "16:9" } };
+
+        expect(modelCompatibilityError(config, "ratio-relay::portrait-video", requirements)).toBe("不支持当前视频画幅");
+        expect(resolveCompatibleModel(config, "ratio-relay::portrait-video", requirements)).toBe("ratio-relay::landscape-video");
+    });
+
+    test("显式画幅不受模型 profile 支持时保留请求并由兼容性检查拒绝", () => {
+        const model = "ratio-relay::portrait-only";
+        const profile = defaultModelCapabilityConfig(undefined, "portrait-only");
+        profile.video!.ratios = ["9:16"];
+        profile.video!.defaultRatio = "9:16";
+        const config: AiConfig = {
+            ...defaultConfig,
+            channels: [{ id: "ratio-relay", name: "比例路由", baseUrl: "https://api.example.com", apiKey: "test-key", apiFormat: "openai", models: ["portrait-only"], modelCosts: [{ model: "portrait-only", capability: "video", billingMode: "per_second", unitPriceMicrocredits: 1, capabilityConfig: profile }] }],
+            models: [model],
+            videoModels: [model],
+            videoModel: model,
+        };
+        const videoNode = { ...node("video", CanvasNodeType.Video), metadata: { model, size: "16:9", generationMode: "video" as const } };
+
+        const generationConfig = buildGenerationConfig(config, videoNode, "video");
+
+        expect(generationConfig.size).toBe("16:9");
+        expect(modelCompatibilityError(generationConfig, model, { capability: "video", options: { size: generationConfig.size } })).toBe("不支持当前视频画幅");
+    });
+
     test("镜头视频不会向不支持同步音频的模型提交全局 true 默认值", () => {
         const model = "platform::silent-video";
         const profile = defaultModelCapabilityConfig(undefined, "silent-video");
@@ -301,6 +353,31 @@ describe("逻辑模型选择", () => {
         expect(resolveCompatibleModel(config, "relay::cinema-text", requirements)).toBe(imageModel);
     });
 
+    test("至少需要参考图的模型不会把零图文生视频误报为兼容", () => {
+        const config = policyConfig();
+        const model = "relay::cinema-text";
+        const profile = config.channels[0]?.modelCosts?.find((item) => item.model === "cinema-text")?.capabilityConfig?.video;
+        if (!profile) throw new Error("缺少视频能力配置");
+        profile.references.minImages = 1;
+        profile.references.maxImages = 1;
+        // Simulate a stale/over-broad catalog that still advertises T2V.
+        profile.operations = ["text_to_video", "image_to_video"];
+        const requirements = {
+            capability: "video" as const,
+            input: { textCount: 1, imageCount: 0, videoCount: 0, audioCount: 0, characterCount: 0 },
+            videoOperation: "text_to_video",
+        };
+
+        expect(modelCompatibilityError(config, model, requirements)).toContain("至少需要 1 张参考图");
+        expect(modelCompatibilityError(config, model, { capability: "video", videoOperation: "text_to_video" })).toContain("至少需要 1 张参考图");
+        expect(resolveCompatibleModel(config, model, requirements)).toBe("");
+        expect(modelCompatibilityError(config, model, {
+            ...requirements,
+            input: { ...requirements.input, imageCount: 1 },
+            videoOperation: "image_to_video",
+        })).toBe("");
+    });
+
     test("逻辑视频模型将 720 与 720p 视为同一分辨率", () => {
         const model = "cinema-720p";
         const channel: ModelChannel = {
@@ -339,6 +416,64 @@ describe("逻辑模型选择", () => {
             input: { textCount: 1, imageCount: 0, videoCount: 0, audioCount: 0, characterCount: 0 },
             options: { size: "16:9", videoSeconds: 6, vquality: "720", videoGenerateAudio: false, videoWatermark: false },
         })).toBe("");
+    });
+
+    test("逻辑视频模型把 720 请求路由到明确声明的 736P 档", () => {
+        const model = "cinema-nearest-tier";
+        const value = `logical-video::${model}`;
+        const config = {
+            ...defaultConfig,
+            channels: [{
+                id: "logical-video",
+                name: "中转视频模型",
+                baseUrl: "/api",
+                apiKey: "system",
+                apiFormat: "openai" as const,
+                scope: "system" as const,
+                models: [model],
+                modelCosts: [{
+                    model,
+                    capability: "video" as const,
+                    billingMode: "per_second" as const,
+                    unitPriceMicrocredits: 1,
+                    logicalCapabilitySpec: {
+                        version: 1,
+                        capability: "video" as const,
+                        operations: ["text_to_video"],
+                        inputs: {},
+                        options: { vquality: { values: ["736P"] } },
+                    },
+                }],
+            }],
+            models: [value],
+            videoModels: [value],
+            videoModel: value,
+        };
+
+        expect(modelCompatibilityError(config, value, {
+            capability: "video",
+            videoOperation: "text_to_video",
+            input: { textCount: 1, imageCount: 0, videoCount: 0, audioCount: 0, characterCount: 0 },
+            options: { vquality: "720" },
+        })).toBe("");
+    });
+
+    test("模型仅声明 736P 时接受 720P 请求并产出 736 档参数", () => {
+        const config = policyConfig();
+        const model = "relay::cinema-text";
+        const profile = config.channels[0]?.modelCosts?.find((item) => item.model === "cinema-text")?.capabilityConfig?.video;
+        if (!profile) throw new Error("缺少视频能力配置");
+        profile.resolutions = ["736P"];
+        profile.defaultResolution = "736P";
+        const requirements = {
+            capability: "video" as const,
+            input: { textCount: 1, imageCount: 0, videoCount: 0, audioCount: 0, characterCount: 0 },
+            videoOperation: "text_to_video",
+            videoResolution: "720",
+        };
+
+        expect(modelCompatibilityError(config, model, requirements)).toBe("");
+        expect(resolveModelGenerationDefaults(config, model, "video", { vquality: "720" }).vquality).toBe("736");
     });
 
     test("已保存的旧 SKU 选择会解析到新的模型家族", () => {

@@ -72,6 +72,11 @@ export function CanvasAudioPlayer({ node, theme }: CanvasAudioPlayerProps) {
                 <div className="relative min-w-0 flex-1">
                     <div className="relative mb-1 flex items-center gap-2 text-[var(--fs-label)] tabular-nums" style={{ color: theme.node.muted }}>
                         <span>{formatAudioTime(snapshot.currentTimeMs)}/{durationMs ? formatAudioTime(durationMs) : "--:--"}</span>
+                        {node.metadata?.audioRequestedFormat && node.metadata?.audioActualFormat && node.metadata.audioRequestedFormat.toLowerCase() !== node.metadata.audioActualFormat.toLowerCase() ? (
+                            <span className="truncate text-[var(--fs-micro)]" role="status" title={`上游返回 ${node.metadata.audioActualFormat.toUpperCase()}，请求格式为 ${node.metadata.audioRequestedFormat.toUpperCase()}`} style={{ color: theme.accent.danger || theme.node.muted }}>
+                                实际 {node.metadata.audioActualFormat.toUpperCase()}（请求 {node.metadata.audioRequestedFormat.toUpperCase()}）
+                            </span>
+                        ) : null}
                     </div>
                     <input
                         type="range"

@@ -124,6 +124,10 @@ func (s *Service) CurrentUser(cookieValue string) (*model.User, error) {
 	return s.authDomain().CurrentUser(cookieValue)
 }
 
+func (s *Service) PortableAdminUser() (*model.User, error) {
+	return s.authDomain().PortableAdminUser()
+}
+
 func (s *Service) PublicAuthUser(user *model.User) (AuthUser, error) {
 	return s.authDomain().PublicAuthUser(user)
 }
@@ -140,12 +144,12 @@ func (s *Service) TestLibTV(actor *model.User, projectUUID string) error {
 	return s.authDomain().TestLibTV(actor, projectUUID)
 }
 
-func (s *Service) ImportLibTV(userID, canvasProjectID, projectUUID string) (*LibTVImportResult, error) {
-	return s.authDomain().ImportLibTV(userID, canvasProjectID, projectUUID)
+func (s *Service) ImportLibTV(userID, projectUUID string) (*LibTVImportResult, error) {
+	return s.authDomain().ImportLibTV(userID, projectUUID)
 }
 
-func (s *Service) ImportTapNow(userID, canvasProjectID, shareID string) (*TapNowImportResult, error) {
-	return s.authDomain().ImportTapNow(userID, canvasProjectID, shareID)
+func (s *Service) ImportTapNow(userID, shareID string) (*TapNowImportResult, error) {
+	return s.authDomain().ImportTapNow(userID, shareID)
 }
 
 func hashPassword(password string) (string, error) {

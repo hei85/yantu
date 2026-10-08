@@ -109,3 +109,51 @@ func TestLinkProjectAssetMissingResourceKeepsFailingClosed(t *testing.T) {
 		t.Fatal("LinkProjectAsset succeeded for missing resource, want error")
 	}
 }
+
+func TestLinkProjectAssetFromLocalCanvasTextSnapshot(t *testing.T) {
+	service, db := newProjectAssetLinkTestService(t)
+	project := model.Project{ID: "project-text", UserID: "user-text", Name: "短剧", Status: model.ProjectStatusActive}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := service.LinkProjectAsset("user-text", "project-text", LinkProjectAssetRequest{
+		AssetID:      "local-text-1",
+		Category:     string(model.AssetCategoryMaterial),
+		Title:        "分镜备注",
+		Source:       AssetSourceCanvas,
+		AssetPayload: json.RawMessage(`{"id":"local-text-1","kind":"text","title":"分镜备注","category":"material","data":{"content":"开场镜头保持角色服装连续。"}}`),
+	})
+	if err != nil {
+		t.Fatalf("LinkProjectAsset: %v", err)
+	}
+	if summary.ID != "local-text-1" || summary.PreviewText != "开场镜头保持角色服装连续。" {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	var asset model.Asset
+	if err := db.First(&asset, "id = ?", "local-text-1").Error; err != nil {
+		t.Fatalf("asset not created: %v", err)
+	}
+	if asset.UserID != "user-text" || asset.Kind != "text" || asset.Title != "分镜备注" {
+		t.Fatalf("unexpected project asset record: %#v", asset)
+	}
+}
+
+func TestLinkProjectAssetSnapshotRejectsUnownedMediaResource(t *testing.T) {
+	service, db := newProjectAssetLinkTestService(t)
+	project := model.Project{ID: "project-owner", UserID: "user-owner", Name: "短剧", Status: model.ProjectStatusActive}
+	foreignResource := model.Resource{ID: "resource-foreign", UserID: "other-user", Kind: "image", Status: model.ResourceStatusReady, MimeType: "image/png", Size: 20}
+	for _, item := range []any{&project, &foreignResource} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatalf("seed %T: %v", item, err)
+		}
+	}
+	_, err := service.LinkProjectAsset("user-owner", "project-owner", LinkProjectAssetRequest{
+		AssetID:      "local-image-1",
+		Category:     string(model.AssetCategoryMaterial),
+		AssetPayload: json.RawMessage(`{"kind":"image","title":"参考图","category":"material","data":{"storageKey":"resource:resource-foreign","dataUrl":"data:image/png;base64,AA=="}}`),
+	})
+	if err == nil {
+		t.Fatal("LinkProjectAsset accepted another user's media resource")
+	}
+}

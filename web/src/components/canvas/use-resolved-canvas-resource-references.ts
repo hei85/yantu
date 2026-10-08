@@ -25,23 +25,13 @@ export function useResolvedCanvasResourceReferences(references: CanvasResourceRe
     useEffect(() => {
         if (!requests.length) return;
         let cancelled = false;
-        void Promise.all(
-            requests.map(async ({ reference, identity }) => ({
-                id: reference.id,
-                identity,
-                url: await resolveReferencePreview(reference, identity, projectId),
-            })),
-        ).then((resolved) => {
-            if (cancelled) return;
-            setResolvedById((current) => {
-                let changed = false;
-                const next = { ...current };
-                resolved.forEach(({ id, identity, url }) => {
-                    if (!url || (current[id]?.identity === identity && current[id]?.url === url)) return;
-                    next[id] = { identity, url };
-                    changed = true;
+        requests.forEach(({ reference, identity }) => {
+            void resolveReferencePreview(reference, identity, projectId).then((url) => {
+                if (cancelled || !url) return;
+                setResolvedById((current) => {
+                    if (current[reference.id]?.identity === identity && current[reference.id]?.url === url) return current;
+                    return { ...current, [reference.id]: { identity, url } };
                 });
-                return changed ? next : current;
             });
         });
         return () => {
@@ -71,27 +61,28 @@ function previewIdentity(reference: CanvasResourceReference, projectId?: string)
 }
 
 function resolveReferencePreview(reference: CanvasResourceReference, identity: string, projectId?: string) {
-    const cached = previewPromiseCache.get(identity);
+    const cacheKey = JSON.stringify([identity, reference.previewUrl || ""]);
+    const cached = previewPromiseCache.get(cacheKey);
     if (cached) return cached;
     if (reference.drawingId && projectId) {
         const pending = loadCanvasDrawingPreview(projectId, reference.drawingId)
             .then((preview) => preview ? blobToDataUrl(preview) : reference.previewUrl || "")
-            .catch(() => reference.previewUrl || "")
-            .then((url) => {
-                if (!url) previewPromiseCache.delete(identity);
-                return url;
-            });
-        previewPromiseCache.set(identity, pending);
+            .catch(() => reference.previewUrl || "");
+        previewPromiseCache.set(cacheKey, pending);
+        void pending.finally(() => {
+            if (previewPromiseCache.get(cacheKey) === pending) previewPromiseCache.delete(cacheKey);
+        });
         return pending;
     }
     const storageKey = reference.kind === "video" ? reference.previewStorageKey : reference.storageKey;
     const pending = resolveImageUrl(storageKey, reference.previewUrl || "", { cacheMiss: true })
-        .catch(() => reference.previewUrl || "")
-        .then((url) => {
-            if (!url) previewPromiseCache.delete(identity);
-            return url;
-        });
-    previewPromiseCache.set(identity, pending);
+        .catch(() => reference.previewUrl || "");
+    // Deduplicate in-flight reads only. A transient URL/cache miss must not be
+    // frozen for the lifetime of the page after the resource becomes available.
+    previewPromiseCache.set(cacheKey, pending);
+    void pending.finally(() => {
+        if (previewPromiseCache.get(cacheKey) === pending) previewPromiseCache.delete(cacheKey);
+    });
     return pending;
 }
 

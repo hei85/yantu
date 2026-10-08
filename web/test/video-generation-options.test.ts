@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
-import { formatVideoResolutionLabel, normalizeVideoResolution, videoDimensionsForRatioAndResolution, videoResolutionComparisonKey, VIDEO_RESOLUTION_CAPABILITY_OPTIONS, VIDEO_RESOLUTION_OPTIONS } from "../src/lib/video-generation-options";
+import { formatVideoResolutionLabel, normalizeVideoResolution, resolveVideoResolutionCapabilityValue, videoDimensionsForRatioAndResolution, videoResolutionComparisonKey, VIDEO_RESOLUTION_CAPABILITY_OPTIONS, VIDEO_RESOLUTION_OPTIONS } from "../src/lib/video-generation-options";
 
 describe("video generation resolution options", () => {
     test("统一档位包含 1440P 与 4K，并识别常见别名", () => {
@@ -18,6 +18,12 @@ describe("video generation resolution options", () => {
         expect(normalizeVideoResolution("HD_Portrait")).toBe("HD_Portrait");
         expect(videoResolutionComparisonKey("768P竖")).toBe("768p竖");
         expect(formatVideoResolutionLabel("768p竖")).toBe("768P竖");
+    });
+
+    test("中转模型没有 720P 档时将请求映射到声明的 736P 档", () => {
+        expect(resolveVideoResolutionCapabilityValue("720", ["736P"])).toBe("736P");
+        expect(resolveVideoResolutionCapabilityValue("720p", ["720P", "736P"])).toBe("720P");
+        expect(resolveVideoResolutionCapabilityValue("720", ["1080P"])).toBe("");
     });
 
     test("根据当前比例和分辨率推导视频尺寸", () => {

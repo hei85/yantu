@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
-import { deleteCanvasProjectsWithRemoteSync } from "@/services/user-data-sync";
+import { deleteLocalCanvasProjects } from "@/services/local-canvas-projects";
 
 export function CanvasDeleteProjectsDialog() {
     const { message } = App.useApp();
@@ -15,7 +15,7 @@ export function CanvasDeleteProjectsDialog() {
     const confirm = async () => {
         setDeleting(true);
         try {
-            await deleteCanvasProjectsWithRemoteSync(ids);
+            await deleteLocalCanvasProjects(ids);
             void cleanupImages();
             removeSelectedIds(ids);
             setDeleteIds([]);

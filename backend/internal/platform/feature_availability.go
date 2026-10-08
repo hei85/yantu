@@ -97,6 +97,9 @@ func (s *Service) UpdateFeatureAvailability(actor *model.User, value FeatureAvai
 }
 
 func (s *Service) FeatureEnabled(feature string) (bool, error) {
+	if feature == FeatureCustomChannels || feature == FeatureFrontendModels {
+		return false, nil
+	}
 	_, value, err := s.readFeatureAvailability()
 	if err != nil {
 		return false, err
@@ -166,6 +169,8 @@ func (s *Service) readFeatureAvailability() (*model.SystemSetting, FeatureAvaila
 }
 
 func publicFeatureAvailability(setting *model.SystemSetting, value FeatureAvailability) *PublicFeatureAvailability {
+	value.CustomChannelsEnabled = false
+	value.FrontendModelsEnabled = false
 	result := &PublicFeatureAvailability{FeatureAvailability: value, Configured: setting != nil}
 	if setting != nil {
 		result.UpdatedBy = setting.UpdatedBy

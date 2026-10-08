@@ -130,6 +130,7 @@ export type PublicChannelModel = {
     icon: string;
     capability: string;
     protocol?: string;
+    capabilityVersion?: number;
     capabilityConfig?: Record<string, any>;
     variants: PublicChannelModelVariant[];
     available: boolean;

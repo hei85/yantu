@@ -14,11 +14,8 @@ import {
     type MediaConversionNodeState,
     type MediaConversionOperation,
 } from "@/lib/media-conversion/contracts";
-import { convertImageLocally, LocalImageConversionError } from "@/lib/media-conversion/local-converter";
-import { getActiveUserScope } from "@/lib/user-scope";
-import { runLocalDepthEstimation } from "@/services/depth-runtime";
-import { runLocalLineartEstimation } from "@/services/lineart-runtime";
-import { runLocalPoseEstimation } from "@/services/pose-runtime";
+import { LocalImageConversionError } from "@/lib/media-conversion/local-converter";
+import { executeMediaConversion, localConversionStorageKey } from "@/lib/media-conversion/execute-conversion";
 import { resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { resolveMediaUrl } from "@/services/file-storage";
 import { LocalRuntimeClientError } from "@/services/local-runtime-session";
@@ -46,7 +43,12 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
     const inputKind = input ? getNodeInputKind(input.type) : undefined;
     const storedState = node.metadata?.mediaConversion;
     const state = storedState || createDefaultMediaConversionState();
-    const currentFingerprint = input ? mediaConversionSourceFingerprint(input) : "";
+    const selectedVideoTime = Number.isFinite(state.videoFrameTimeSeconds) ? Math.max(0, state.videoFrameTimeSeconds || 0) : 0;
+    const [videoTimeDraft, setVideoTimeDraft] = useState(String(selectedVideoTime));
+    const [videoDurationSeconds, setVideoDurationSeconds] = useState<number | null>(null);
+    const draftTimeValid = /^\d+(?:\.\d*)?$/.test(videoTimeDraft) && Number.isFinite(Number(videoTimeDraft)) && Number(videoTimeDraft) >= 0;
+    const sourceFingerprint = input ? mediaConversionSourceFingerprint(input) : "";
+    const currentFingerprint = inputKind === "video" ? `${sourceFingerprint}|frame:${selectedVideoTime}` : sourceFingerprint;
     const hasMultipleInputs = mediaInputs.length > 1;
     const isStale = Boolean(state.status === "completed" && (!currentFingerprint || state.sourceFingerprint !== currentFingerprint));
     const status = isStale ? "stale" : state.status;
@@ -54,11 +56,14 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
     const [resultUrl, setResultUrl] = useState("");
     const [showResult, setShowResult] = useState(status === "completed" || status === "stale");
     const [notice, setNotice] = useState("");
+    const videoRef = useRef<HTMLVideoElement>(null);
     const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         let active = true;
-        const fallback = input?.metadata?.previewContent || input?.metadata?.content || "";
+        const fallback = input?.type === CanvasNodeType.Video
+            ? input.metadata?.content || input.metadata?.previewContent || ""
+            : input?.metadata?.previewContent || input?.metadata?.content || "";
         setSourceUrl(fallback);
         if (!input?.metadata?.storageKey) return () => { active = false; };
         const resolver = input.type === CanvasNodeType.Image ? resolveImageUrl : resolveMediaUrl;
@@ -123,6 +128,22 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
         updateMetadata?.(node.id, { mediaConversion: { ...state, ...patch, schemaVersion: 1 } });
     };
 
+    const commitVideoTime = () => {
+        const parsed = Number(videoTimeDraft);
+        if (!draftTimeValid || !Number.isFinite(parsed) || parsed < 0) {
+            setVideoTimeDraft(String(selectedVideoTime));
+            return;
+        }
+        if (videoDurationSeconds !== null && parsed > videoDurationSeconds) {
+            setNotice(`取帧时间不能超过视频时长 ${videoDurationSeconds.toFixed(1)} 秒`);
+            setVideoTimeDraft(String(selectedVideoTime));
+            return;
+        }
+        setNotice("");
+        setVideoTimeDraft(String(parsed));
+        updateState({ videoFrameTimeSeconds: parsed, updatedAt: new Date().toISOString() });
+    };
+
     const selectOperation = (operation: MediaConversionOperation) => {
         if (operation === state.operation) return;
         setNotice("");
@@ -138,6 +159,10 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
 
     const run = async () => {
         setNotice("");
+        if (inputKind === "video" && (!draftTimeValid || (videoDurationSeconds !== null && Number(videoTimeDraft) > videoDurationSeconds))) {
+            setNotice(videoDurationSeconds !== null && Number(videoTimeDraft) > videoDurationSeconds ? `取帧时间不能超过视频时长 ${videoDurationSeconds.toFixed(1)} 秒` : "请输入有效的取帧秒数");
+            return;
+        }
         if (!input || !currentFingerprint) {
             setNotice("请先连接一张图片或一个视频");
             return;
@@ -146,12 +171,7 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
             setNotice("转换节点只能连接一个输入，请移除多余连线");
             return;
         }
-        if (inputKind === "video") {
-            updateState({ status: "unavailable", outputKind: "video", errorCode: "video_not_ready", errorMessage: "本地视频转换还在进行短片性能验证", updatedAt: new Date().toISOString() });
-            setNotice("视频转换暂未开启，先完成单图模型验证");
-            return;
-        }
-        if (!isLocalImageOperation(state.operation) && state.operation !== "depth" && state.operation !== "lineart" && state.operation !== "pose") {
+        if (!isLocalImageOperation(state.operation) && state.operation !== "depth" && state.operation !== "lineart" && state.operation !== "pose" && state.operation !== "cutout") {
             updateState({ status: "unavailable", outputKind: "image", errorCode: "model_missing", errorMessage: "该转换需要先安装并验证本地模型", updatedAt: new Date().toISOString() });
             setNotice(mediaConversionOperationDescription(state.operation));
             return;
@@ -168,18 +188,12 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
         const startedAt = new Date().toISOString();
         updateState({ status: "processing", sourceNodeId: input.id, sourceFingerprint: currentFingerprint, outputKind: "image", errorCode: undefined, errorMessage: undefined, startedAt, updatedAt: startedAt });
         try {
-            const result = state.operation === "depth"
-                ? await runLocalDepthEstimation(sourceUrl, controller.signal)
-                : state.operation === "lineart"
-                    ? await runLocalLineartEstimation(sourceUrl, controller.signal)
-                : state.operation === "pose"
-                    ? await runLocalPoseEstimation(sourceUrl, controller.signal)
-                : await convertImageLocally(sourceUrl, state.operation, { signal: controller.signal, maxDimension: 1024 });
+            const result = await executeMediaConversion({ sourceUrl, sourceKind: inputKind === "video" ? "video" : "image", operation: state.operation, videoFrameTimeSeconds: selectedVideoTime, signal: controller.signal });
             if (controller.signal.aborted) return;
             const storageKey = localConversionStorageKey(node.id, currentFingerprint, state.operation);
             const url = await setImageBlob(storageKey, result.blob);
             const completedAt = new Date().toISOString();
-            const detectedPeople = state.operation === "pose" && "personCount" in result && typeof result.personCount === "number" ? result.personCount : undefined;
+            const detectedPeople = result.detectedPeople;
             const completedPatch = {
                 content: "",
                 previewContent: "",
@@ -238,7 +252,7 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
                     setNotice("未检测到可用人物姿态，可更换含人物的图片或选择其他转换方式");
                     return;
                 }
-                const nextStatus = ["depth_model_missing", "depth_runtime_unavailable", "lineart_model_missing", "lineart_runtime_unavailable", "pose_model_missing", "pose_runtime_unavailable"].includes(error.code) ? "unavailable" : "error";
+                const nextStatus = ["depth_model_missing", "depth_runtime_unavailable", "lineart_model_missing", "lineart_runtime_unavailable", "pose_model_missing", "pose_runtime_unavailable", "cutout_model_missing", "cutout_runtime_unavailable"].includes(error.code) ? "unavailable" : "error";
                 updateState({ status: nextStatus, errorCode: error.code, errorMessage: error.message, updatedAt: new Date().toISOString() });
                 setNotice(localRuntimeNotice(error, useLocalRuntimeStore.getState().connection));
                 return;
@@ -260,12 +274,28 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
 
     const effectiveResult = Boolean(resultUrl && (status === "completed" || status === "stale"));
     const displayResult = showResult && effectiveResult;
-    const buttonDisabled = !input || hasMultipleInputs || status === "processing";
+    const videoTimeOutOfRange = inputKind === "video" && videoDurationSeconds !== null && selectedVideoTime > videoDurationSeconds;
+    const videoDraftOutOfRange = inputKind === "video" && videoDurationSeconds !== null && Number(videoTimeDraft) > videoDurationSeconds;
+    const buttonDisabled = !input || hasMultipleInputs || status === "processing" || videoTimeOutOfRange || videoDraftOutOfRange || (inputKind === "video" && !draftTimeValid);
+    const buttonDisabledReason = status === "processing"
+        ? "正在处理，请稍候"
+        : !input
+            ? "按钮已禁用：先上传/创建图片或视频节点，再从该节点输出端连接到转换节点输入端"
+        : hasMultipleInputs
+                ? "按钮已禁用：转换节点只能连接一个输入，请移除多余连线"
+                : videoTimeOutOfRange
+                    ? `取帧时间不能超过视频时长 ${videoDurationSeconds?.toFixed(1)} 秒`
+                : videoDraftOutOfRange
+                    ? `取帧时间不能超过视频时长 ${videoDurationSeconds?.toFixed(1)} 秒`
+                : "";
     const statusText = mediaConversionStatusLabel(status);
+    const operationDescription = state.operation === "edge-canny"
+        ? "浏览器本地图像算法，无需安装模型，提取清晰轮廓"
+        : mediaConversionOperationDescription(state.operation);
     const previewStatusText = state.operation === "pose" && status === "completed" && typeof state.detectedPeople === "number"
         ? `${statusText} · ${state.detectedPeople} 人`
         : statusText;
-    const showRuntimeRecovery = (state.operation === "depth" || state.operation === "lineart" || state.operation === "pose") && (localRuntimeConnection === "unreachable" || state.errorCode === "depth_runtime_unavailable" || state.errorCode === "lineart_runtime_unavailable" || state.errorCode === "pose_runtime_unavailable");
+    const showRuntimeRecovery = (state.operation === "depth" || state.operation === "lineart" || state.operation === "pose" || state.operation === "cutout") && (localRuntimeConnection === "unreachable" || state.errorCode === "depth_runtime_unavailable" || state.errorCode === "lineart_runtime_unavailable" || state.errorCode === "pose_runtime_unavailable" || state.errorCode === "cutout_runtime_unavailable");
     const retryLocalRuntime = async () => {
         setNotice("");
         await reconnectLocalRuntime();
@@ -290,7 +320,7 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
                 </span>
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[var(--fs-label)] font-semibold">{node.title || "转换"}</div>
-                    <div className="truncate text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>本地处理 · 单图优先</div>
+                    <div className="truncate text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>本地图片转换 · 视频按帧处理</div>
                 </div>
                 <StatusBadge status={status} />
             </div>
@@ -302,7 +332,10 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
                     ) : input?.type === CanvasNodeType.Image && sourceUrl ? (
                         <img src={sourceUrl} alt="转换输入" className="absolute inset-0 size-full object-contain" draggable={false} />
                     ) : input?.type === CanvasNodeType.Video && sourceUrl ? (
-                        <video src={sourceUrl} className="absolute inset-0 size-full object-contain" controls preload="metadata" />
+                        <video ref={videoRef} src={sourceUrl} className="absolute inset-0 size-full object-contain" controls preload="metadata" onLoadedMetadata={(event) => {
+                            const duration = event.currentTarget.duration;
+                            setVideoDurationSeconds(Number.isFinite(duration) && duration >= 0 ? duration : null);
+                        }} />
                     ) : (
                         <div className="absolute inset-0 grid place-items-center" style={{ color: theme.node.muted }}>
                             {input?.type === CanvasNodeType.Video ? <Video className="size-8 opacity-35" aria-hidden="true" /> : <ImageIcon className="size-8 opacity-35" aria-hidden="true" />}
@@ -310,12 +343,29 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
                     )}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/75 to-transparent px-2.5 pb-2 pt-8 text-white">
                         <div className="min-w-0">
-                            <div className="truncate text-[var(--fs-micro)] font-semibold">{displayResult ? (status === "stale" ? "上次结果 · 待更新" : "转换结果") : input?.title || "等待输入"}</div>
-                            <div className="mt-0.5 truncate text-[var(--fs-micro)] opacity-75">{hasMultipleInputs ? "已连接多个输入" : input ? `${input.type === CanvasNodeType.Video ? "视频" : "图片"} · ${previewStatusText}` : "连接图片或视频节点"}</div>
+                            <div className="truncate text-[var(--fs-micro)] font-semibold">{displayResult ? (status === "stale" ? "上次结果 · 待更新" : "转换结果") : input?.title || (input ? "已连接输入" : "等待图片或视频输入")}</div>
+                            <div className="mt-0.5 text-[var(--fs-micro)] opacity-90">{hasMultipleInputs ? "已连接多个输入" : input ? `${inputKind === "video" ? "视频" : "图片"} · ${previewStatusText}` : "先上传/创建图片或视频节点，再从该节点输出端连接到此节点输入端"}</div>
                         </div>
                         {state.resultWidth && state.resultHeight && displayResult ? <span className="shrink-0 text-[var(--fs-micro)] tabular-nums">{state.resultWidth} × {state.resultHeight}</span> : null}
                     </div>
                 </div>
+
+                {inputKind === "video" ? <div className="flex items-center gap-2 text-[var(--fs-micro)]" data-canvas-no-zoom>
+                    <label className="shrink-0" htmlFor={`${node.id}-frame-time`} style={{ color: theme.node.muted }}>取帧时间（秒）</label>
+                    <input id={`${node.id}-frame-time`} type="text" inputMode="decimal" value={videoTimeDraft} onChange={(event) => {
+                        const draft = event.target.value;
+                        setVideoTimeDraft(draft);
+                        if (/^\d+(?:\.\d*)?$/.test(draft)) {
+                            const parsed = Number(draft);
+                            if (Number.isFinite(parsed) && parsed >= 0 && (videoDurationSeconds === null || parsed <= videoDurationSeconds)) {
+                                updateState({ videoFrameTimeSeconds: parsed, updatedAt: new Date().toISOString() });
+                            }
+                        }
+                    }} onBlur={commitVideoTime} onKeyDown={(event) => {
+                        if (event.key === "Enter") { event.preventDefault(); commitVideoTime(); event.currentTarget.blur(); }
+                    }} onWheel={(event) => event.stopPropagation()} className="h-7 min-w-0 flex-1 rounded-[var(--r-sm)] border px-2 outline-none focus-visible:ring-2" style={{ background: theme.node.fill, borderColor: theme.node.edge, color: theme.node.text, outlineColor: theme.accent.primary }} />
+                    <span className="shrink-0" style={{ color: theme.node.muted }}>{videoDurationSeconds !== null ? `时长 ${videoDurationSeconds.toFixed(1)} 秒 · ` : ""}视频取帧转换，输出静帧图片</span>
+                </div> : null}
 
                 {effectiveResult ? (
                     <div className="flex gap-1" data-canvas-no-zoom>
@@ -342,16 +392,18 @@ export function MediaConversionNodeContent({ node, theme }: MediaConversionNodeC
                     className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[var(--r-md)] px-4 text-[var(--fs-label)] font-semibold outline-none transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: theme.accent.primary, color: theme.accent.onPrimary, outlineColor: theme.accent.primary }}
                     disabled={buttonDisabled}
+                    aria-describedby={buttonDisabledReason ? `${node.id}-conversion-disabled-reason` : undefined}
                     onClick={(event) => { event.stopPropagation(); void run(); }}
                     onMouseDown={(event) => event.stopPropagation()}
                 >
                     {status === "processing" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
                     {status === "processing" ? "处理中" : status === "completed" || status === "stale" ? "重新转换" : "开始转换"}
                 </button>
+                {buttonDisabledReason ? <div id={`${node.id}-conversion-disabled-reason`} className="text-center text-[var(--fs-micro)] leading-relaxed" style={{ color: theme.node.muted }}>{buttonDisabledReason}</div> : null}
             </div>
 
             <div className="flex min-h-4 items-center gap-2 text-[var(--fs-micro)]" style={{ color: status === "unavailable" || status === "skipped" ? "var(--status-warning)" : notice || status === "error" ? "var(--status-error)" : theme.node.muted }}>
-                <span className="min-w-0 flex-1 truncate" title={notice || mediaConversionOperationDescription(state.operation)}>{notice || mediaConversionOperationDescription(state.operation)}</span>
+                <span className="min-w-0 flex-1 truncate" title={notice || operationDescription}>{notice || operationDescription}</span>
                 {showRuntimeRecovery ? (
                     <button
                         type="button"
@@ -489,7 +541,7 @@ function OperationPicker({ theme, nodeId, value, disabled, onSelect }: { theme: 
                                   >
                                       <span className="min-w-0 flex-1">
                                           <span className="block text-[var(--fs-tiny)] font-semibold leading-5">{mediaConversionOperationLabel(operation)}</span>
-                                          <span className="mt-0.5 block text-[var(--fs-micro)] leading-relaxed" style={{ color: theme.node.muted }}>{mediaConversionOperationDescription(operation)}</span>
+                                          <span className="mt-0.5 block text-[var(--fs-micro)] leading-relaxed" style={{ color: theme.node.muted }}>{operation === "edge-canny" ? "浏览器本地图像算法，无需安装模型，提取清晰轮廓" : mediaConversionOperationDescription(operation)}</span>
                                       </span>
                                       {selected ? <Check className="size-3.5 shrink-0" aria-hidden="true" /> : null}
                                   </button>
@@ -569,9 +621,6 @@ function localRuntimeNotice(error: LocalRuntimeClientError, connection: ReturnTy
     if (error.code === "depth_model_missing") return "深度模型尚未安装，请先完成本地模型安装";
     if (error.code === "lineart_model_missing") return "AI 线稿依赖或模型尚未安装，请先完成本地线稿模型安装";
     if (error.code === "pose_model_missing") return "姿态模型或依赖尚未安装，请先完成本地姿态模型安装";
+    if (error.code === "cutout_model_missing") return "抠图模型或依赖尚未安装，请先完成本地抠图模型安装";
     return error.message;
-}
-
-function localConversionStorageKey(nodeId: string, fingerprint: string, operation: MediaConversionOperation) {
-    return `image:${getActiveUserScope()}:media-conversion:${nodeId}:${fingerprint}:${operation}`;
 }

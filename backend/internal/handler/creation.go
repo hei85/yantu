@@ -20,8 +20,6 @@ func RegisterCreationRoutes(r *gin.RouterGroup, svc *service.Service) {
 				value, err = svc.ListCreationRuns(user.ID)
 			case "get":
 				value, err = svc.GetCreationRun(user.ID, c.Param("id"))
-			case "snapshot":
-				value, err = svc.CreationCanvasSnapshot(user.ID, c.Param("id"))
 			}
 			if err != nil {
 				failService(c, err)
@@ -58,8 +56,6 @@ func RegisterCreationRoutes(r *gin.RouterGroup, svc *service.Service) {
 				value, err = svc.ExecuteCreationSubmission(user.ID, id, req)
 			case "canvas":
 				value, err = svc.CreateRunCanvas(user.ID, id, req)
-			case "commit":
-				value, err = svc.CommitCreationCanvas(user.ID, id, req)
 			default:
 				value, err = svc.ChangeCreationRun(user.ID, id, action, req)
 			}
@@ -82,6 +78,4 @@ func RegisterCreationRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.POST("/creation-runs/:id/submissions/refresh", write("refresh-quote"))
 	r.POST("/creation-runs/:id/execute", write("execute"))
 	r.POST("/creation-runs/:id/canvas", write("canvas"))
-	r.GET("/creation-runs/:id/canvas-snapshot", read("snapshot"))
-	r.POST("/creation-runs/:id/canvas-commit", write("commit"))
 }

@@ -80,6 +80,10 @@ func (s *Service) InstallSkillUpload(userID string, sourceType string, header *m
 	return s.skillDomain().InstallSkillUpload(userID, sourceType, header, req)
 }
 
+func (s *Service) UpdateSkillPackageUpload(userID string, skillID string, header *multipart.FileHeader) (*SkillItem, error) {
+	return s.skillDomain().UpdateSkillPackageUpload(userID, skillID, header)
+}
+
 func (s *Service) InstallGitHubSkill(userID string, req SkillGitHubInstallRequest) (*SkillItem, error) {
 	return s.skillDomain().InstallGitHubSkill(userID, req)
 }

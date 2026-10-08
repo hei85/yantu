@@ -12,20 +12,39 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { buildBackendToolRequests, type ResponseFunctionTool, type ResponseInputMessage, type ToolChoice, type ToolResponseResult } from "@/services/api/image";
 import { assertAgentExchangeBudget } from "@/lib/canvas/agent-context-budget";
+import { normalizeVideoAspectRatio } from "@/services/api/video-validation";
+import { validateGenerationResultDimensions } from "@/services/api/generation-media-dimensions";
 
 export { logicalModelIDForConfig };
 
 export type BackendGenerationMode = "text" | "image" | "video" | "audio";
 
+export type BackendGenerationMediaResult = {
+    dataUrl?: string;
+    resourceId?: string;
+    storageKey?: string;
+    width?: number;
+    height?: number;
+    durationMs?: number;
+    bytes?: number;
+    mimeType?: string;
+};
+
 export type BackendGenerationResult = {
     mode?: BackendGenerationMode;
-    images?: Array<{ dataUrl: string; storageKey?: string; width?: number; height?: number; bytes?: number; mimeType?: string }>;
-    video?: { dataUrl: string; storageKey?: string; width?: number; height?: number; durationMs?: number; bytes?: number; mimeType?: string };
-    audio?: { dataUrl: string; storageKey?: string; durationMs?: number; bytes?: number; mimeType?: string; format?: string };
+    images?: BackendGenerationMediaResult[];
+    video?: BackendGenerationMediaResult;
+    audio?: BackendGenerationMediaResult & { format?: string; actualFormat?: string; requestedFormat?: string };
     text?: string;
     toolCalls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string }; thoughtSignature?: string }>;
     reasoning?: string;
 };
+
+export function backendGenerationMediaStorageKey(media?: BackendGenerationMediaResult) {
+    if (media?.storageKey) return media.storageKey;
+    if (media?.resourceId) return resourceStorageKey(media.resourceId);
+    return "";
+}
 
 type BackendGenerationTaskOptions = {
     projectId?: string;
@@ -141,7 +160,7 @@ export function prepareBackendToolGenerationTask(options: BackendToolGenerationO
         }
     }
     const logicalModelId = logicalModelIDForConfig(options.config);
-    const requestConfig = resolveModelRequestConfig(options.config, options.config.model);
+    const requestConfig = resolveModelRequestConfig(options.config, options.config.model, "text");
     if (!logicalModelId && !requestConfig.channelId && !requestConfig.interfaceType) throw new Error("当前模型未选择可用请求协议");
     const task: CreateTaskInput = {
         type: "canvas_text",
@@ -216,8 +235,8 @@ export function isGenerationTaskCancelled(error: unknown, signal?: AbortSignal) 
 function assertBackendRuntimeConfigured(config: AiConfig, mode: BackendGenerationMode) {
     if (resolveGenerationWorkflowExecution(config, mode)) return;
     if (logicalModelIDForConfig(config)) return;
-    const requestConfig = resolveModelRequestConfig(config, config.model);
-    if (!requestConfig.channelId && !requestConfig.interfaceType) throw new Error("当前模型未选择可用请求协议，请先在模型设置中选择协议插件");
+    const requestConfig = resolveModelRequestConfig(config, config.model, mode);
+    if (!requestConfig.channelId && !requestConfig.interfaceType) throw new Error("这个模型还没配置调用接口，请到「设置 → 模型设置 → 已接入」为它选择请求协议。");
 }
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -226,7 +245,7 @@ function throwIfAborted(signal?: AbortSignal) {
 
 function assertClientPromptLimit(mode: BackendGenerationMode, prompt: string, config: AiConfig, metadata?: Record<string, unknown>) {
     if (mode !== "image" || metadata?.promptTemplateOperation || (config.taskWorkflowProvider || "model") !== "model") return;
-    const requestConfig = resolveModelRequestConfig(config, config.model);
+    const requestConfig = resolveModelRequestConfig(config, config.model, mode);
     const promptLimitError = grokImagePromptLimitError(prompt, requestConfig.interfaceType, requestConfig.model);
     if (promptLimitError) throw new Error(promptLimitError);
 }
@@ -261,7 +280,9 @@ async function createAndWaitGenerationTask(options: BackendGenerationTaskOptions
     const task = await createBackendGenerationTask(options, prepared, dependencies);
     const { signal, onTaskUpdate, onTextDelta } = options;
     const completed = await dependencies.waitTask(task.id, { signal, initialTask: task, onTaskUpdate, onTextDelta });
-    return parseBackendGenerationResult(completed);
+    const result = parseBackendGenerationResult(completed);
+    await validateGenerationResultDimensions(completed, result);
+    return result;
 }
 
 async function createBackendGenerationTask(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences, dependencies: GenerationTaskDependencies) {
@@ -306,6 +327,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
             mask: prepared.mask,
             metadata: generationMetadata(config, {
                 ...metadata,
+                ...(mode === "image" || mode === "video" ? { requestedSize: config.size } : {}),
                 ...(options.clientOperationId ? { clientOperationId: options.clientOperationId } : {}),
                 ...(options.retryOf ? { retryOf: options.retryOf } : {}),
                 ...(options.attemptGroupId ? { attemptGroupId: options.attemptGroupId } : {}),
@@ -392,17 +414,27 @@ function backendMediaReference<T extends ReferenceVideo | ReferenceAudio>(media:
 }
 
 export function backendProviderConfig(config: AiConfig, mode: BackendGenerationMode = "image") {
-    const requestConfig = resolveModelRequestConfig(config, config.model);
+    const requestConfig = resolveModelRequestConfig(config, config.model, mode);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     if (workflow) return workflowProviderConfig(config, requestConfig, workflow);
+    const logicalModelId = logicalModelIDForConfig(config);
+    const videoSize = mode === "video" && !logicalModelId
+        ? backendVideoSizeForProtocol(requestConfig.interfaceType, config.size)
+        : config.size;
+    // A hidden, unsupported audio switch must not turn every video request
+    // into a local validation error. Axon H3 has no generate_audio control;
+    // the workflow itself decides whether its MP4 contains a sound track.
+    const videoGenerateAudio = mode === "video" && !modelCapabilityConfigFor(config, config.model).video?.generateAudio.supported
+        ? "false"
+        : config.videoGenerateAudio;
     const generationOptions = {
-        size: config.size,
+        size: videoSize,
         quality: omittedImageQuality(config.quality),
         transparentBackground: config.transparentBackground,
         count: config.count,
         videoSeconds: config.videoSeconds,
         vquality: config.vquality,
-        videoGenerateAudio: config.videoGenerateAudio,
+        videoGenerateAudio,
         videoWatermark: config.videoWatermark,
         videoArkPrivateAssetUpload: config.videoArkPrivateAssetUpload,
         audioVoice: config.audioVoice,
@@ -411,7 +443,7 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
         audioInstructions: config.audioInstructions,
         systemPrompt: config.systemPrompt,
     };
-    if (logicalModelIDForConfig(config)) return generationOptions;
+    if (logicalModelId) return generationOptions;
     return {
         channelId: requestConfig.channelId,
         apiFormat: requestConfig.apiFormat,
@@ -421,9 +453,20 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
         secretKey: requestConfig.secretKey,
         model: requestConfig.model,
         ...generationOptions,
-        capabilityConfig: modelCapabilityConfigFor(config, requestConfig.model),
+        capabilityConfig: modelCapabilityConfigFor(config, config.model),
         systemPrompt: config.systemPrompt,
     };
+}
+
+function backendVideoSizeForProtocol(interfaceType: string | undefined, value: string) {
+    // Keep the model's declared ratio until capability matching is complete.
+    // The backend converts it to pixel dimensions only when writing /videos.
+    if (interfaceType === "newapi-channel-1" || interfaceType === "newapi-channel-2") {
+        const aspectRatio = normalizeVideoAspectRatio(value);
+        if (!aspectRatio) throw new Error("当前视频接口要求明确画幅比例；请把尺寸从 auto/adaptive 改为具体比例后再提交");
+        return aspectRatio;
+    }
+    return value;
 }
 
 function workflowProviderConfig(config: AiConfig, requestConfig: ReturnType<typeof resolveModelRequestConfig>, workflow: GenerationWorkflowExecution) {
@@ -458,7 +501,7 @@ function workflowProviderConfig(config: AiConfig, requestConfig: ReturnType<type
         runningHubUseWallet: false,
         runningHubWalletApiKey: "",
         runningHubUploadApiKey: runningHubActive ? config.runningHub.uploadApiKey || "" : "",
-        capabilityConfig: modelCapabilityConfigFor(config, requestConfig.model),
+        capabilityConfig: modelCapabilityConfigFor(config, config.model),
         systemPrompt: config.systemPrompt,
     };
 }
@@ -499,5 +542,46 @@ export function parseBackendGenerationResult(task: GenerationTask): BackendGener
     if (!task.resultJson) throw new Error("后端任务没有返回结果");
     const result = JSON.parse(task.resultJson) as BackendGenerationResult;
     if (!result || typeof result !== "object") throw new Error("后端任务结果格式错误");
+    validateBackendResultMediaDimensions(task, result);
     return result;
+}
+
+function validateBackendResultMediaDimensions(task: GenerationTask, result: BackendGenerationResult) {
+    const resultMode = result.mode || (task.type === "canvas_image" ? "image" : task.type === "canvas_video" ? "video" : undefined);
+    if (resultMode !== "image" && resultMode !== "video") return;
+    let requestedSize: unknown;
+    try {
+        const input = JSON.parse(task.inputJson || "null") as { metadata?: { requestedSize?: unknown } } | null;
+        requestedSize = input?.metadata?.requestedSize;
+    } catch {
+        return;
+    }
+    const request = parseRequestedMediaRatio(requestedSize);
+    if (!request) return;
+    const media = resultMode === "image" ? result.images || [] : result.video ? [result.video] : [];
+    for (const item of media) {
+        // The async completion path probes the resource/data URL. Avoid
+        // rejecting from provider metadata before that authoritative check.
+        if (item.storageKey || item.resourceId || item.dataUrl) continue;
+        const width = item.width;
+        const height = item.height;
+        if (!Number.isFinite(width) || !Number.isFinite(height) || !width || !height || width! <= 0 || height! <= 0) continue;
+        const actualRatio = width! / height!;
+        if (Math.abs(actualRatio - request.ratio) / request.ratio > 0.08) {
+            throw new Error(`请求比例 ${request.label}，但结果实际为 ${width}×${height}`);
+        }
+    }
+}
+
+function parseRequestedMediaRatio(value: unknown): { ratio: number; label: string } | undefined {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim();
+    if (!normalized || normalized.toLowerCase() === "auto") return undefined;
+    const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([:：x×])\s*(\d+(?:\.\d+)?)$/i);
+    if (!match) return undefined;
+    const width = Number(match[1]);
+    const height = Number(match[3]);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined;
+    const isPixelSize = match[2] === "x" || match[2] === "×";
+    return { ratio: width / height, label: isPixelSize ? `${match[1]}×${match[3]}` : `${match[1]}${match[2]}${match[3]}` };
 }

@@ -37,11 +37,81 @@ const drawingPreviewStore = localforage.createInstance({ name: "infinite-canvas"
 const drawingRenderStore = localforage.createInstance({ name: "infinite-canvas", storeName: "drawing_generation_renders" });
 const INITIAL_DRAWING_RENDER_MAX_DIMENSION = 2048;
 const INITIAL_DRAWING_RENDER_PADDING = 24;
+const pendingDrawingInitializations = new Map<string, Promise<CanvasDrawingSnapshot>>();
 
 type LegacyCanvasDrawingSnapshot = Omit<CanvasDrawingSnapshot, "version" | "engine"> & { version: 1 };
 
 function drawingKey(projectId: string, drawingId: string) {
     return `${getActiveUserScope()}:${projectId}:${drawingId}`;
+}
+
+export type CanvasDrawingInitializationStorage = {
+    load: (projectId: string, drawingId: string) => Promise<CanvasDrawingSnapshot | null>;
+    save: (projectId: string, drawingId: string, engine: CanvasDrawingEngine, snapshot: unknown) => Promise<CanvasDrawingSnapshot>;
+};
+
+const defaultDrawingInitializationStorage: CanvasDrawingInitializationStorage = {
+    load: loadCanvasDrawing,
+    save: (projectId, drawingId, engine, snapshot) => saveCanvasDrawing(projectId, drawingId, engine, snapshot),
+};
+
+/** Create a real, empty editor document for a newly-created drawing node. */
+export async function initializeEmptyCanvasDrawing(
+    projectId: string,
+    drawingId: string,
+    engine: CanvasDrawingEngine,
+    storage: CanvasDrawingInitializationStorage = defaultDrawingInitializationStorage,
+) {
+    if (!projectId || !drawingId) throw new Error("初始化绘图文档缺少 projectId 或 drawingId");
+    const existing = await storage.load(projectId, drawingId);
+    if (existing) {
+        if (existing.engine !== engine) throw new Error(`绘图节点标记为 ${engine}，但已保存文档属于 ${existing.engine}`);
+        return existing;
+    }
+    const snapshot = engine === "excalidraw"
+        ? { elements: [], appState: { viewBackgroundColor: "#ffffff" }, files: {} }
+        : await createEmptyTldrawSnapshot();
+    return storage.save(projectId, drawingId, engine, snapshot);
+}
+
+/** Coalesce concurrent creation/export waits for a drawing's first document write. */
+export function startEmptyCanvasDrawingInitialization(
+    projectId: string,
+    drawingId: string,
+    engine: CanvasDrawingEngine,
+    storage: CanvasDrawingInitializationStorage = defaultDrawingInitializationStorage,
+) {
+    const key = drawingKey(projectId, drawingId);
+    const pending = pendingDrawingInitializations.get(key);
+    if (pending) return pending;
+    let tracked: Promise<CanvasDrawingSnapshot>;
+    tracked = initializeEmptyCanvasDrawing(projectId, drawingId, engine, storage).finally(() => {
+        if (pendingDrawingInitializations.get(key) === tracked) pendingDrawingInitializations.delete(key);
+    });
+    pendingDrawingInitializations.set(key, tracked);
+    return tracked;
+}
+
+/** Await creation if in flight, then fail if the document is genuinely missing or unreadable. */
+export async function waitForCanvasDrawingInitialization(
+    projectId: string,
+    drawingId: string,
+    storage: CanvasDrawingInitializationStorage = defaultDrawingInitializationStorage,
+) {
+    if (!projectId || !drawingId) throw new Error("读取绘图初始化状态缺少 projectId 或 drawingId");
+    const pending = pendingDrawingInitializations.get(drawingKey(projectId, drawingId));
+    if (pending) await pending;
+    const saved = await storage.load(projectId, drawingId);
+    if (!saved) throw new Error(`绘图文档初始化未持久化：${drawingId}`);
+    return saved;
+}
+
+async function createEmptyTldrawSnapshot() {
+    const { createTLStore, PageRecordType } = await import("tldraw");
+    const store = createTLStore();
+    store.put([PageRecordType.create({ id: "page:main" as never, name: "Page 1", index: "a1" as never })]);
+    if (!store.allRecords().some((record) => record.typeName === "page")) throw new Error("无法初始化 tldraw 绘图页面");
+    return store.getStoreSnapshot();
 }
 
 export async function loadCanvasDrawing(projectId: string, drawingId: string) {

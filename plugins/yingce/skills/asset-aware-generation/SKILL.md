@@ -3,13 +3,16 @@ name: asset-aware-generation
 description: 基于衍图画布已有角色、场景、道具、风格和媒体资源创建生成流程；适用于生图、视频、音频或分镜资产工作。
 ---
 
-# 资源感知生成
+# 按镜头使用资产
 
-1. 用 `canvas_get_context` 读取已有提示词、工作流和资产引用。
-2. 用 `canvas_get_resources` 或 `canvas_find_nodes({resourceOnly:true})` 找到可复用的真实参考节点。
-3. 生成前检查资源 `ready`、`status`、`mimeType`、尺寸/时长和资产/版本引用；未就绪资源不能作为参考。
-4. 复用真实 `referenceNodeIds`，不要重复上传同一素材，也不要只在 prompt 里写一个无法定位的资源名称。
-5. 通过 `canvas_create_generation_flow` 或对应 `canvas_generate_*` 工具创建清晰的提示词节点、参考节点和目标节点关系。
-6. 返回结果后确认目标节点、连线和任务状态；生成任务未完成时不要声称成片已完成。
+先读 [画布制作规则](../yingce-film-production/references/canvas-production-rules.md)，采用用户于 2026-10-02 重新确定的顺序和引用方法。
 
-生成任务必须走衍图共享 GenerationTask；不要直接调用 provider、模拟点击或把密钥放进 URL。
+通过 MCP 读取已有图片和真实分镜需求，复用已通过的素材。生图所需参考直接从图片连入目标图片。所有所需图片生成并检查合格后，再逐镜设置实际关联；用稳定节点 ID 写 assetBindings，按本镜需求同步 characters、requiredAssetRoles 和智能 `@` 引用。
+
+每镜只选实际需要的角色、场景和道具。第一镜需要人物与场景，就绑定这两类；第二镜只需要人物，就只绑定人物。场景或角色版本变更时更新对应行，并清除该行无关引用。视频由对应分镜行提供提示词、采用资产和首帧，回读实际输入确认完整。
+
+## 固定空间的参考来源
+
+封闭室内的固定房间或相连室内空间先读 [房型、共用模型与机位](../yingce-film-production/references/fixed-space-workflow.md)。先复用房型和模型源，再从同一模型导出对应机位，检查后作为结构参考。场景外观图、模型取景图、人物身份及前镜状态分别注明用途；不把相反机位整幅复制，不以二维参考图或普通 @ 引用声称精确三维约束。已有采用图片不因补规则重生。
+
+户外按环境与人物参考直接拆镜，不强制房型图或模型。跨镜测量锚点和道具状态按 [距离连续性](../yingce-film-production/references/spatial-distance-continuity.md) 登记；只有实际走位/搬动才改变间距。

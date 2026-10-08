@@ -21,7 +21,7 @@ Content-Type: application/json
 
 {{PARAMETERS}}
 
-每张图片构造为 `content` 中的 `image_url` item。`extra` 可覆盖 `model`、`prompt`、`duration`、`content`、`resolution`、`aspect_ratio`。参考视频、参考音频、音频生成和水印当前不发送。
+每张图片构造为 `content` 中的 `image_url` item。标准化 `aspectRatio` 会映射到 MiniMax 上游的 `ratio` 字段；`extra` 可覆盖 `model`、`prompt`、`duration`、`content`、`resolution`、`ratio`。参考视频、参考音频、音频生成和水印当前不发送。
 
 ## 创建任务示例
 

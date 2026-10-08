@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Dropdown, Form, Input, Modal, Popconfirm, Tabs, type FormInstance } from "antd";
+import { App, Button, Checkbox, Dropdown, Form, Input, InputNumber, Modal, Popconfirm, Select, Tabs, type FormInstance } from "antd";
 import { Box, Check, ChevronDown, Download, FileText, FolderOpen, FolderPlus, Image as ImageIcon, Link2, MoreHorizontal, MoveRight, Music2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UserRound, Video, VolumeX } from "lucide-react";
 
 import { WorkspaceState } from "@/components/layout/workspace-state";
@@ -15,6 +15,7 @@ import { CanvasFolderPreview } from "@/components/canvas/canvas-folder-preview";
 import { CANVAS_FOLDER_THEME_OPTIONS, resolveCanvasFolderTheme } from "@/lib/canvas/canvas-folder-theme";
 import { resolveProjectCanvasStyle } from "@/components/canvas/canvas-style-picker-modal";
 import { CHARACTER_VOICE_FORMAT_LABEL, CHARACTER_VOICE_UPLOAD_ACCEPT, characterVoiceFormatName, characterVoiceTitleFromFileName, isSupportedCharacterVoiceFile } from "@/lib/character-voice-formats";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { ASSET_CATEGORIES, defaultAssetCategoryForKind, normalizeAssetCategory } from "@/lib/asset-category";
 import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import { uploadMediaFile } from "@/services/file-storage";
@@ -30,6 +31,7 @@ import {
     listProjectAssetCandidates,
     listProjectAssetFolders,
     listProjectAssetsPage,
+    listVoiceProfiles,
     moveProjectAsset,
     replaceProjectCharacterRepresentations,
     unbindProjectCharacterVoice,
@@ -40,9 +42,10 @@ import {
     type ProjectAsset,
     type ProjectAssetFolder,
 } from "@/services/api/projects";
-import { saveRemoteUserDataNow } from "@/services/user-data-sync";
-import { useAssetStore, type Asset, type AssetCategory, type AssetStatus, type EntityAsset, type ImageAsset } from "@/stores/use-asset-store";
+import { ensureProjectAssetResource } from "@/services/project-asset-sync";
+import { flushAssetStorePersistence, useAssetStore, type Asset, type AssetCategory, type AssetStatus, type EntityAsset, type ImageAsset } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { selectableModelsByCapability } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasFolderStyle, type CanvasFolderTheme, type CanvasNodeData } from "@/types/canvas";
 import { saveAs } from "file-saver";
 
@@ -89,6 +92,25 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
     const [voiceSample, setVoiceSample] = useState<{ resourceId: string; name: string; url: string } | null>(null);
     const [voicePickerOpen, setVoicePickerOpen] = useState(false);
     const [voiceInstructions, setVoiceInstructions] = useState("");
+    const [voiceModel, setVoiceModel] = useState("");
+    const [voiceStrategy, setVoiceStrategy] = useState<"standard_tts" | "voice_design" | "voice_reference">("voice_design");
+    const [voiceProfileId, setVoiceProfileId] = useState("");
+    const [voiceName, setVoiceName] = useState("");
+    const [voiceId, setVoiceId] = useState("");
+    const [voiceReferenceAuthorized, setVoiceReferenceAuthorized] = useState(false);
+    const [voiceTone, setVoiceTone] = useState("");
+    const [voiceEmotionStyle, setVoiceEmotionStyle] = useState("");
+    const [voiceLanguage, setVoiceLanguage] = useState("");
+    const [voiceAccent, setVoiceAccent] = useState("");
+    const [voiceSpeakingRate, setVoiceSpeakingRate] = useState(1);
+    const voiceCapabilityOptions = useMemo(() => selectableModelsByCapability(effectiveConfig, "audio").flatMap((value) => {
+        const audio = modelCapabilityConfigFor(effectiveConfig, value).audio;
+        if (audio?.tts !== "configured") return [];
+        return [{ value, label: value, voiceDesign: audio.voiceDesign === "configured", voiceReference: audio.voiceReference === "configured" }];
+    }), [effectiveConfig]);
+    const voiceModelOptions = voiceCapabilityOptions.filter((item) => voiceStrategy === "voice_design" ? item.voiceDesign : voiceStrategy === "voice_reference" ? item.voiceReference : true);
+    const voiceProfileQuery = useQuery({ queryKey: ["voice-profiles"], queryFn: listVoiceProfiles });
+    const voiceProfileOptions = (voiceProfileQuery.data?.profiles || []).filter((profile) => profile.status === "active" && profile.provider !== "user_upload").map((profile) => ({ value: profile.id, label: `${profile.name} · ${profile.voiceKey}` }));
     const [form] = Form.useForm<CharacterForm>();
     const queryClient = useQueryClient();
 
@@ -234,18 +256,26 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
                 if (pickerItem?.external) {
                     const imported = await externalAssetSources.importExternalAsset(pickerItem.external);
                     const assetId = addAsset(imported);
+                    const selected = useAssetStore.getState().assets.find((asset) => asset.id === assetId);
+                    if (!selected) throw new Error("外部素材未能写入本机素材库");
+                    const projectAsset = await ensureProjectAssetResource(selected);
                     return linkProjectAsset(detail.project.id, {
                         assetId,
                         category: normalizeAssetCategory(imported.category, defaultAssetCategoryForKind(imported.kind)),
                         folderId: nextFolderId,
+                        title: imported.title,
+                        assetPayload: projectAsset,
                     });
                 }
-                const selected = pickerItem?.asset || useAssetStore.getState().assets.find((asset) => asset.id === id);
+                let selected = pickerItem?.asset || useAssetStore.getState().assets.find((asset) => asset.id === id);
                 if (!selected) throw new Error("所选素材已不存在，请重新选择");
+                selected = await ensureProjectAssetResource(selected);
                 return linkProjectAsset(detail.project.id, {
                     assetId: selected.id,
                     category: normalizeAssetCategory(selected.category, defaultAssetCategoryForKind(selected.kind)),
                     folderId: nextFolderId,
+                    title: selected.title,
+                    assetPayload: selected,
                 });
             });
             return {
@@ -336,19 +366,36 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
     const bindImagesMutation = useMutation({
         mutationFn: async (selectedAssetId: string) => {
             if (!imageAsset) throw new Error("未选择角色");
-            await saveRemoteUserDataNow();
             const latest = useAssetStore.getState().assets;
             const pickerItem = imagePickerItems.find((item) => item.id === selectedAssetId);
-            const selected = latest.find((asset) => asset.id === selectedAssetId) || (pickerItem?.external ? await externalAssetSources.importExternalAsset(pickerItem.external) : undefined);
+            let selected = latest.find((asset) => asset.id === selectedAssetId) || (pickerItem?.external ? await externalAssetSources.importExternalAsset(pickerItem.external) : undefined);
             if (selected?.kind !== "image") throw new Error("请选择一张包含正面、侧面和背面的三视图设定图");
-            const resourceId = resourceIdFromStorageKey((selected as ImageAsset).data.storageKey);
-            if (!resourceId) throw new Error("所选图片尚未同步到后端资源库");
-            return replaceProjectCharacterRepresentations(detail.project.id, imageAsset.id, [{ role: "turnaround_sheet", resourceId, metadata: { sourceAssetId: selected.id } }, { role: "primary", resourceId, metadata: { source: "turnaround_sheet", sourceAssetId: selected.id } }]);
+            const image = await ensureProjectAssetResource(selected);
+            if (image.kind !== "image") throw new Error("请选择一张图片");
+            const resourceId = resourceIdFromStorageKey(image.data.storageKey);
+            if (!resourceId) throw new Error("所选图片尚未保存为项目媒体资源");
+            return replaceProjectCharacterRepresentations(detail.project.id, imageAsset.id, [{ role: "turnaround_sheet", resourceId, metadata: { sourceAssetId: image.id } }, { role: "primary", resourceId, metadata: { source: "turnaround_sheet", sourceAssetId: image.id } }]);
         },
         onSuccess: (result) => { syncPersonalCharacterProjection(result.asset); setImageAsset(null); done("三视图已绑定到新角色版本"); },
         onError: failed("三视图绑定失败"),
     });
-    const bindVoiceMutation = useMutation({ mutationFn: () => voiceAsset && voiceSample ? bindProjectCharacterVoice(detail.project.id, voiceAsset.id, { sampleResourceId: voiceSample.resourceId, voiceName: voiceSample.name, instructions: voiceInstructions }) : Promise.reject(new Error("请选择一份声音素材")), onSuccess: (result) => { syncPersonalCharacterProjection(result.asset); setVoiceAsset(null); setVoiceSample(null); done("声音素材已绑定到新角色版本"); }, onError: failed("声音绑定失败") });
+    const bindVoiceMutation = useMutation({ mutationFn: () => {
+        if (!voiceAsset) return Promise.reject(new Error("未选择角色"));
+        const common = { voiceStrategy, voiceModel: voiceModel || undefined, tone: voiceTone, emotionStyle: voiceEmotionStyle, speakingRate: voiceSpeakingRate, language: voiceLanguage, accent: voiceAccent, instructions: voiceInstructions };
+        if (voiceStrategy === "voice_reference") {
+            return voiceSample && voiceReferenceAuthorized
+                ? bindProjectCharacterVoice(detail.project.id, voiceAsset.id, { ...common, sampleResourceId: voiceSample.resourceId, voiceName: voiceSample.name, referenceAudioAuthorized: true })
+                : Promise.reject(new Error("参考声音必须选择音频并确认具有合法使用权"));
+        }
+        if (voiceStrategy === "voice_design") {
+            return voiceName.trim() && voiceId.trim() && voiceModel
+                ? bindProjectCharacterVoice(detail.project.id, voiceAsset.id, { ...common, voiceName: voiceName.trim(), voiceId: voiceId.trim() })
+                : Promise.reject(new Error("voice design 需要填写上游已创建的音色名称、Voice ID 和已配置该能力的模型"));
+        }
+        return voiceProfileId
+            ? bindProjectCharacterVoice(detail.project.id, voiceAsset.id, { ...common, voiceProfileId })
+            : Promise.reject(new Error("请选择普通 TTS 使用的声音档案"));
+    }, onSuccess: (result) => { syncPersonalCharacterProjection(result.asset); setVoiceAsset(null); setVoiceSample(null); done(result.character.voiceStatus === "awaiting_model_capability" ? "VoiceVersion 已保存；当前模型能力尚未配置，不会用于生成" : "VoiceVersion 已固定到角色新版本"); }, onError: failed("声音绑定失败") });
     const unbindVoiceMutation = useMutation({ mutationFn: () => voiceAsset ? unbindProjectCharacterVoice(detail.project.id, voiceAsset.id) : Promise.reject(new Error("未选择角色")), onSuccess: (result) => { syncPersonalCharacterProjection(result.asset); setVoiceAsset(null); done("声音绑定已解除并生成新角色版本"); }, onError: failed("声音解绑失败") });
 
     const openCharacterEditor = (asset: ProjectAsset | "new") => {
@@ -357,7 +404,25 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
         form.setFieldsValue({ name: asset === "new" ? "" : asset.title, ...Object.fromEntries(characterFields.map(([key]) => [key, fieldValue(definition[key])])) } as CharacterForm);
     };
     const openImages = (asset: ProjectAsset) => setImageAsset(asset);
-    const openVoice = (asset: ProjectAsset) => { const sampleResourceId = asset.character?.voice?.profile.sampleResourceId || ""; setVoiceAsset(asset); setVoiceSample(sampleResourceId ? { resourceId: sampleResourceId, name: asset.character?.voice?.profile.name || "当前声音", url: resourceFileUrl(sampleResourceId) } : null); setVoiceInstructions(asset.character?.voice?.instructions || ""); };
+    const openVoice = (asset: ProjectAsset) => {
+        const voice = asset.character?.voice;
+        const sampleResourceId = voice?.voiceVersion.referenceAudioResourceId || voice?.profile.sampleResourceId || "";
+        const strategy = voice?.voiceVersion.voiceStrategy;
+        setVoiceAsset(asset);
+        setVoiceSample(sampleResourceId ? { resourceId: sampleResourceId, name: voice?.profile.name || "当前声音", url: resourceFileUrl(sampleResourceId) } : null);
+        setVoiceInstructions(voice?.instructions || "");
+        setVoiceModel(voice?.voiceVersion.voiceModel || "");
+        setVoiceStrategy(strategy === "standard_tts" || strategy === "voice_reference" ? strategy : "voice_design");
+        setVoiceProfileId(voice?.profile.id || "");
+        setVoiceName(voice?.profile.name || asset.title);
+        setVoiceId(voice?.voiceVersion.voiceId || "");
+        setVoiceReferenceAuthorized(false);
+        setVoiceTone(voice?.voiceVersion.tone || "");
+        setVoiceEmotionStyle(voice?.voiceVersion.emotionStyle || "");
+        setVoiceSpeakingRate(voice?.voiceVersion.speakingRate || 1);
+        setVoiceLanguage(voice?.voiceVersion.language || "");
+        setVoiceAccent(voice?.voiceVersion.accent || "");
+    };
     const openFolderEditor = (folder?: ProjectAssetFolder, parentId = folderId === ALL_FOLDERS ? "" : folderId) => {
         setFolderEditor({ folder, parentId: folder?.parentId || parentId });
         setFolderName(folder?.name || "");
@@ -465,7 +530,6 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
 
             <AssetLibraryPickerModal
                 open={addOpen}
-                remoteLibrary
                 mediaKinds={["image", "video", "audio", "text"]}
                 items={availablePickerItems}
                 categoryLabels={{ ...pickerCategoryLabels, ...externalAssetSources.categoryLabels }}
@@ -488,8 +552,6 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
             </Modal>
             <AssetLibraryPickerModal
                 open={Boolean(imageAsset)}
-                remoteLibrary
-                remoteKind="image"
                 items={imagePickerItems}
                 categoryLabels={{ ...pickerCategoryLabels, ...externalAssetSources.categoryLabels }}
                 folders={externalAssetSources.folders}
@@ -508,8 +570,6 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
             />
             <AssetLibraryPickerModal
                 open={voicePickerOpen}
-                remoteLibrary
-                remoteKind="audio"
                 items={audioPickerItems}
                 categoryLabels={{ all: "全部音频", audio: "声音素材" }}
                 initialCategory="audio"
@@ -525,9 +585,10 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
                         if (!isSupportedCharacterVoiceFile(file)) throw new Error(`声音素材支持 ${CHARACTER_VOICE_FORMAT_LABEL}`);
                         const uploaded = await uploadMediaFile(file, "character-voice");
                         const resourceId = resourceIdFromStorageKey(uploaded.storageKey);
-                        if (!resourceId) throw new Error("声音上传未同步到服务端资源库，请检查后端连接");
+                        if (!resourceId) throw new Error("声音文件未能保存为项目媒体资源，请检查后端连接");
                         ids.push(addAsset({ kind: "audio", title: characterVoiceTitleFromFileName(file.name), coverUrl: "", tags: ["角色声音"], status: "confirmed", source: "角色卡", data: { url: uploaded.url, storageKey: uploaded.storageKey, durationMs: uploaded.durationMs, bytes: uploaded.bytes, mimeType: uploaded.mimeType || file.type || "application/octet-stream" } }));
                     }
+                    await flushAssetStorePersistence();
                     return ids;
                 } }}
                 onClose={() => setVoicePickerOpen(false)}
@@ -540,11 +601,37 @@ export default function ProjectAssetsView({ detail, refreshProject }: ProjectDet
                     setVoicePickerOpen(false);
                 }}
             />
-            <Modal className="workspace-modal workspace-modal-compact" title={`绑定声音素材 · ${voiceAsset?.title || ""}`} open={Boolean(voiceAsset)} okText="绑定并生成新版本" cancelText="取消" okButtonProps={{ loading: bindVoiceMutation.isPending, disabled: !voiceSample }} onCancel={() => { setVoiceAsset(null); setVoiceSample(null); }} onOk={() => bindVoiceMutation.mutate()}>
+            <Modal className="workspace-modal workspace-modal-compact" title={`角色声音版本 · ${voiceAsset?.title || ""}`} open={Boolean(voiceAsset)} okText="保存 VoiceVersion" cancelText="取消" okButtonProps={{ loading: bindVoiceMutation.isPending, disabled: voiceStrategy === "standard_tts" ? !voiceProfileId : voiceStrategy === "voice_design" ? !voiceName.trim() || !voiceId.trim() || !voiceModel : !voiceSample || !voiceReferenceAuthorized }} onCancel={() => { setVoiceAsset(null); setVoiceSample(null); }} onOk={() => bindVoiceMutation.mutate()}>
                 <div className="grid gap-3">
-                    <div className="rounded-md border border-border/70 bg-foreground/[.025] p-3">
-                        <div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="text-[var(--fs-label)] text-foreground/48">当前声音素材</div><div className="mt-1 truncate text-sm font-medium">{voiceSample?.name || "尚未选择声音素材"}</div></div><Button icon={<FolderOpen className="size-3.5" />} onClick={() => setVoicePickerOpen(true)}>选择或上传音频</Button></div>
-                        {voiceSample ? <audio className="mt-3 w-full" src={voiceSample.url} controls preload="metadata" /> : <div className="mt-2 text-[var(--fs-tiny)] text-foreground/42">从素材库选择已有音频，或上传 {CHARACTER_VOICE_FORMAT_LABEL} 格式的声音样本。</div>}
+                    <Select value={voiceStrategy} options={[{ value: "standard_tts", label: "普通 TTS · 常规/临时声音" }, { value: "voice_design", label: "Voice Design · 固定角色音色 ID" }, { value: "voice_reference", label: "Voice Reference · 复用合法参考声音" }]} onChange={(value) => { setVoiceStrategy(value); setVoiceModel(""); }} />
+                    {voiceStrategy === "standard_tts" ? <div className="grid gap-2">
+                        <label className="text-[var(--fs-label)] text-foreground/55">声音档案</label>
+                        <Select value={voiceProfileId || undefined} options={voiceProfileOptions} placeholder="选择普通 TTS 声音" onChange={setVoiceProfileId} />
+                        <div className="text-[var(--fs-tiny)] text-foreground/45">适合普通对白、旁白和临时人物。短期角色可以直接使用标准 TTS，不必建立长期固定音色。</div>
+                    </div> : null}
+                    {voiceStrategy === "voice_design" ? <div className="grid gap-2">
+                        <label className="text-[var(--fs-label)] text-foreground/55">固定角色音色 ID</label>
+                        <div className="grid gap-2 sm:grid-cols-2"><Input value={voiceName} placeholder="音色名称" onChange={(event) => setVoiceName(event.target.value)} /><Input value={voiceId} placeholder="上游已创建的 Voice ID" onChange={(event) => setVoiceId(event.target.value)} /></div>
+                        <div className="text-[var(--fs-tiny)] text-foreground/45">这里绑定上游已创建的 Voice ID，并保存为不可变 VoiceVersion 供后续镜头复用。当前没有统一的上游音色创建与 Voice ID 回读合同；不会在此处假称已经生成音色。</div>
+                    </div> : null}
+                    {voiceStrategy === "voice_reference" ? <div className="grid gap-2">
+                        <div className="rounded-md border border-border/70 bg-foreground/[.025] p-3">
+                            <div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="text-[var(--fs-label)] text-foreground/48">合法参考声音</div><div className="mt-1 truncate text-sm font-medium">{voiceSample?.name || "尚未选择声音素材"}</div></div><Button icon={<FolderOpen className="size-3.5" />} onClick={() => setVoicePickerOpen(true)}>选择或上传音频</Button></div>
+                            {voiceSample ? <audio className="mt-3 w-full" src={voiceSample.url} controls preload="metadata" /> : <div className="mt-2 text-[var(--fs-tiny)] text-foreground/42">从素材库选择已有音频，或上传 {CHARACTER_VOICE_FORMAT_LABEL} 格式的声音样本。</div>}
+                        </div>
+                        <Checkbox checked={voiceReferenceAuthorized} onChange={(event) => setVoiceReferenceAuthorized(event.target.checked)}>我确认有权将这段声音用于该角色，并在允许范围内用于后续配音。</Checkbox>
+                    </div> : null}
+                    <div className="grid gap-2">
+                        <label className="text-[var(--fs-label)] text-foreground/55">{voiceStrategy === "voice_design" ? "Voice Design 模型（按能力目录筛选）" : voiceStrategy === "voice_reference" ? "参考声音模型（按能力目录筛选）" : "TTS 模型（可留空按能力目录路由）"}</label>
+                        <Select allowClear value={voiceModel || undefined} options={voiceModelOptions} placeholder={voiceStrategy === "voice_design" ? "选择已配置 Voice Design 的模型" : "留空：后续按已声明能力路由"} onChange={(value) => setVoiceModel(value || "")} />
+                        {voiceModelOptions.length === 0 && <div className="text-[var(--fs-tiny)] text-foreground/45">当前能力目录没有可用的{voiceStrategy === "voice_design" ? " Voice Design + TTS" : voiceStrategy === "voice_reference" ? " Voice Reference + TTS" : " TTS"}模型；保存后会标记为待配置，不会伪装成可生成。</div>}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <Input value={voiceTone} placeholder="音色/语气，如低沉、温暖" onChange={(event) => setVoiceTone(event.target.value)} />
+                        <Input value={voiceEmotionStyle} placeholder="情绪风格，如克制、坚定" onChange={(event) => setVoiceEmotionStyle(event.target.value)} />
+                        <Input value={voiceLanguage} placeholder="语言，如普通话" onChange={(event) => setVoiceLanguage(event.target.value)} />
+                        <Input value={voiceAccent} placeholder="口音，如标准普通话" onChange={(event) => setVoiceAccent(event.target.value)} />
+                        <InputNumber className="w-full" min={0.5} max={2} step={0.1} value={voiceSpeakingRate} onChange={(value) => setVoiceSpeakingRate(value || 1)} aria-label="语速" />
                     </div>
                     <Input.TextArea rows={3} value={voiceInstructions} placeholder="表演指令，例如：克制、温暖、语速稍慢" onChange={(event) => setVoiceInstructions(event.target.value)} />
                     {voiceAsset?.character && voiceAsset.character.voiceStatus !== "missing" ? <div className="flex items-center justify-between pt-1"><span className="text-[var(--fs-label)] text-foreground/45">当前绑定：{voiceAsset.character.voice?.profile.name || "声音素材不可用"}</span><Popconfirm title="解除当前声音绑定？" description="该操作会保留历史版本，并创建一个未绑定声音的新版本。" okText="解除" cancelText="取消" onConfirm={() => unbindVoiceMutation.mutate()}><Button type="text" danger size="small" loading={unbindVoiceMutation.isPending} icon={<VolumeX className="size-3.5" />}>解除声音</Button></Popconfirm></div> : null}

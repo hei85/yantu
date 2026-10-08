@@ -37,7 +37,7 @@ func TestBindProjectCharacterVoiceWithSampleResource(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&model.Project{}, &model.Asset{}, &model.AssetVersion{}, &model.AssetRepresentation{}, &model.ProjectAssetLink{},
-		&model.CharacterVoiceBinding{}, &model.VoiceProfile{}, &model.Resource{}, &model.Shot{}, &model.ShotAssetReference{},
+		&model.CharacterVoiceBinding{}, &model.VoiceProfile{}, &model.VoiceProfileVersion{}, &model.Resource{}, &model.Shot{}, &model.ShotAssetReference{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -56,11 +56,15 @@ func TestBindProjectCharacterVoiceWithSampleResource(t *testing.T) {
 		}
 	}
 
-	result, err := (&Service{repo: repository.New(db)}).BindProjectCharacterVoice(project.UserID, project.ID, asset.ID, BindCharacterVoiceRequest{SampleResourceID: resource.ID, VoiceName: "张振天原声"})
+	result, err := (&Service{repo: repository.New(db)}).BindProjectCharacterVoice(project.UserID, project.ID, asset.ID, BindCharacterVoiceRequest{SampleResourceID: resource.ID, VoiceName: "张振天原声", ReferenceAudioAuthorized: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Character.Voice == nil || result.Character.Voice.Profile.SampleResourceID != resource.ID {
 		t.Fatalf("voice binding = %+v, want sample resource %q", result.Character, resource.ID)
+	}
+	voiceVersion, err := repository.New(db).VoiceProfileVersion(result.Character.Voice.VoiceVersion.ID)
+	if err != nil || voiceVersion.Status != "ready" || voiceVersion.VoiceStrategy != "voice_reference" || voiceVersion.ReferenceAudioResourceID != resource.ID || !voiceVersion.ReferenceAudioAuthorized {
+		t.Fatalf("persisted VoiceVersion = %+v, err=%v", voiceVersion, err)
 	}
 }

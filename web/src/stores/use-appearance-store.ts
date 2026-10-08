@@ -7,14 +7,9 @@ export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     schemaVersion: 8,
     brandName: "衍图",
     brandSlug: "open-ai-canvas",
-    authHeroTitle: "让一个故事，\n从文字走向银幕。",
-    authHeroDescription: "",
     logoUrl: "/logo.svg",
     darkLogoUrl: "/logo.svg",
     logoFrameEnabled: true,
-    authVideoUrl: "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4",
-    authVideoPosterUrl: "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg",
-    authVideoAutoplay: true,
     skinId: "classic",
     activeSkin: DEFAULT_CLASSIC_SKIN,
     seoTitle: "衍图",
@@ -25,8 +20,6 @@ export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     icpFilingNumber: "",
     logoConfigured: false,
     darkLogoConfigured: false,
-    authVideoConfigured: false,
-    authVideoPosterConfigured: false,
     configured: false,
     revision: "builtin",
 };
@@ -46,9 +39,6 @@ export const useAppearanceStore = create<AppearanceStore>((set) => ({
 export function normalizePublicAppearance(value?: Partial<PublicAppearance> | null): PublicAppearance {
     const brandName = String(value?.brandName || "").trim();
     const brandSlug = normalizeBrandSlug(value?.brandSlug);
-    const authHeroTitle = normalizeAppearanceCopy(value?.authHeroTitle, DEFAULT_PUBLIC_APPEARANCE.authHeroTitle);
-    const authHeroDescription = normalizeAppearanceCopy(value?.authHeroDescription, DEFAULT_PUBLIC_APPEARANCE.authHeroDescription, true);
-    const customVideo = Boolean(value?.authVideoConfigured);
     const logoUrl = safeAppearanceURL(value?.logoUrl, DEFAULT_PUBLIC_APPEARANCE.logoUrl);
     const darkLogoUrl = safeAppearanceURL(value?.darkLogoUrl, logoUrl);
     const resolvedBrandName = brandName || DEFAULT_PUBLIC_APPEARANCE.brandName;
@@ -63,14 +53,9 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
         schemaVersion: 8,
         brandName: resolvedBrandName,
         brandSlug,
-        authHeroTitle,
-        authHeroDescription,
         logoUrl,
         darkLogoUrl,
         logoFrameEnabled: value?.logoFrameEnabled !== false,
-        authVideoUrl: safeAppearanceURL(value?.authVideoUrl, DEFAULT_PUBLIC_APPEARANCE.authVideoUrl),
-        authVideoPosterUrl: safeAppearanceURL(value?.authVideoPosterUrl, customVideo ? "" : DEFAULT_PUBLIC_APPEARANCE.authVideoPosterUrl),
-        authVideoAutoplay: value?.authVideoAutoplay !== false,
         skinId: normalizeSkinDefinition(value?.activeSkin).id,
         activeSkin: normalizeSkinDefinition(value?.activeSkin),
         seoTitle,
@@ -81,8 +66,6 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
         icpFilingNumber,
         logoConfigured: Boolean(value?.logoConfigured),
         darkLogoConfigured: Boolean(value?.darkLogoConfigured),
-        authVideoConfigured: customVideo,
-        authVideoPosterConfigured: Boolean(value?.authVideoPosterConfigured),
         configured: Boolean(value?.configured),
         revision: String(value?.revision || DEFAULT_PUBLIC_APPEARANCE.revision),
     };

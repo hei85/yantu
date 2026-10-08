@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -164,6 +165,76 @@ func (s *Service) CurrentUser(cookieValue string) (*model.User, error) {
 	if user.Status != model.UserStatusActive {
 		return nil, kernel.Forbidden("该账号已被禁用")
 	}
+	return user, nil
+}
+
+// PortableAdminUser selects a stable local administrator for the explicit
+// loopback-only portable mode. It creates an account only for a fresh database.
+func (s *Service) PortableAdminUser() (*model.User, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("portable local user service is unavailable")
+	}
+	s.portableAdminMu.Lock()
+	defer s.portableAdminMu.Unlock()
+
+	if s.portableAdminID != "" {
+		user, err := s.repo.User(s.portableAdminID)
+		if err == nil && user.Status == model.UserStatusActive && user.Role == model.UserRoleAdmin {
+			return user, nil
+		}
+		s.portableAdminID = ""
+	}
+
+	users, err := s.repo.Users()
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(users, func(i, j int) bool {
+		if users[i].CreatedAt.Equal(users[j].CreatedAt) {
+			return users[i].ID < users[j].ID
+		}
+		return users[i].CreatedAt.Before(users[j].CreatedAt)
+	})
+
+	for i := range users {
+		if users[i].Status == model.UserStatusActive && users[i].Role == model.UserRoleAdmin {
+			s.portableAdminID = users[i].ID
+			return &users[i], nil
+		}
+	}
+	for i := range users {
+		if users[i].Status != model.UserStatusActive {
+			continue
+		}
+		users[i].Role = model.UserRoleAdmin
+		if err := s.repo.Save(&users[i]); err != nil {
+			return nil, err
+		}
+		s.portableAdminID = users[i].ID
+		return &users[i], nil
+	}
+	if len(users) != 0 {
+		return nil, kernel.Unauthorized("便携工作区没有可用的活动用户")
+	}
+
+	var randomPassword [32]byte
+	if _, err := rand.Read(randomPassword[:]); err != nil {
+		return nil, err
+	}
+	passwordHash, err := HashPassword(hex.EncodeToString(randomPassword[:]))
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	user := &model.User{
+		ID: kernel.NewID(), Username: "portable-local", DisplayName: "本地工作区",
+		Role: model.UserRoleAdmin, Status: model.UserStatusActive,
+		PasswordHash: passwordHash, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.repo.Create(user); err != nil {
+		return nil, err
+	}
+	s.portableAdminID = user.ID
 	return user, nil
 }
 

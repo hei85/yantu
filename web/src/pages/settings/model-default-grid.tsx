@@ -3,10 +3,10 @@ import { AudioLines, Check, Film, Image, MessageSquareText } from "lucide-react"
 import { ModelIcon } from "@/components/model-picker";
 import { cn } from "@/lib/utils";
 import {
-    filterModelsByCapability,
     modelDisplayName,
     modelOptionName,
     resolveModelChannel,
+    selectableModelsByCapability,
     type AiConfig,
     type ModelCapability,
 } from "@/stores/use-config-store";
@@ -31,7 +31,8 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
     return (
         <div className="space-y-1">
             {groups.map((group) => {
-                const models = filterModelsByCapability(config.models, group.capability, config.channels);
+                // 从当前渠道重新推导列表；config.models 是旧快照兼容字段，可能滞后于实时目录。
+                const models = selectableModelsByCapability(config, group.capability);
                 const Icon = group.icon;
                 return (
                     <section key={group.capability} className="py-5 first:pt-0 last:pb-0" aria-labelledby={`default-${group.capability}-title`}>
@@ -41,7 +42,7 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
                                 <h3 id={`default-${group.capability}-title`} className="text-sm font-semibold">{group.title}</h3>
                                 <p className="mt-0.5 text-xs text-foreground/48">{group.description}</p>
                             </div>
-                            <span className="ml-auto shrink-0 text-xs tabular-nums text-foreground/38">{models.length} 个可用</span>
+                            <span className="ml-auto shrink-0 text-xs tabular-nums text-foreground/38">{models.length} 个可选</span>
                         </div>
                         {models.length ? (
                             <div role="radiogroup" aria-label={group.title} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -81,7 +82,7 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
                                 })}
                             </div>
                         ) : (
-                            <div className="rounded-md bg-surface-active px-4 py-6 text-center text-xs text-foreground/45">当前渠道中没有可用的{capabilityLabel(group.capability)}模型</div>
+                            <div className="rounded-md bg-surface-active px-4 py-6 text-center text-xs text-foreground/45">当前没有可选的{capabilityLabel(group.capability)}模型，请先添加该用途的模型</div>
                         )}
                     </section>
                 );

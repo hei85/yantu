@@ -52,6 +52,6 @@ export type TapNowImportResult = {
     placeholderNodeCount: number;
 };
 
-export function importTapNowCanvas(projectId: string, shareId: string) {
-    return http.post<TapNowImportResult>(`/canvas-projects/${encodeURIComponent(projectId)}/import/tapnow`, { shareId });
+export function importTapNowCanvas(shareId: string) {
+    return http.post<TapNowImportResult>("/tapnow/import", { shareId });
 }

@@ -5,6 +5,7 @@ import { Camera, Globe, Grid3x3, Loader2, Maximize2, RotateCcw, X } from "lucide
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { useUpstreamNodes } from "@/components/canvas/canvas-node-graph-context";
 import { getNodeResourceKind } from "@/lib/canvas/node-registry";
+import { clampPanoramaAgentView, getPanoramaAgentController, registerPanoramaAgentController, type PanoramaAgentView, type PanoramaAgentController } from "@/lib/canvas/panorama-agent-controller";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { CanvasNodeData } from "@/types/canvas";
 
@@ -20,11 +21,11 @@ type PanoramaViewportController = {
     captureCanvas: () => HTMLCanvasElement | null;
     /** 以方形画幅渲染一帧，返回画布与恢复函数；四宫格导出用，画完必须调用 release 还原节点尺寸。 */
     captureSquare: (size: number) => { canvas: HTMLCanvasElement; release: () => void } | null;
-    getView: () => { lon: number; lat: number };
-    setView: (lonDeg: number, latDeg: number) => void;
+    getView: () => PanoramaAgentView;
+    setView: (view: { lon: number; lat: number; fov?: number }) => void;
 };
 
-type PanoramaView = { lon: number; lat: number };
+type PanoramaView = PanoramaAgentView;
 
 const PANORAMA_KEY_STEP = 4;
 const PANORAMA_FOV_MIN = 25;
@@ -63,7 +64,100 @@ export function PanoramaNodeContent({ node, theme, reduceMediaEffects }: Panoram
     const [expanded, setExpanded] = useState(false);
     const [failed, setFailed] = useState(false);
     const controllerRef = useRef<PanoramaViewportController | null>(null);
+    const controllerUrlRef = useRef<string | null>(null);
     const lastViewRef = useRef<PanoramaView | null>(null);
+
+    useEffect(() => {
+        if (!url) {
+            return;
+        }
+        if (reduceMediaEffects) {
+            setActive(false);
+            setExpanded(false);
+            const reason = "性能模式下全景节点仅显示预览；请退出性能模式后重试视角操作或截图";
+            const handler: PanoramaAgentController = {
+                availability: "performance_preview",
+                getView: () => lastViewRef.current,
+                setView: async () => { throw new Error(reason); },
+                capturePng: async () => { throw new Error(reason); },
+                captureQuadPng: async () => { throw new Error(reason); },
+            };
+            registerPanoramaAgentController(node.id, handler);
+            return () => registerPanoramaAgentController(node.id, null, handler);
+        }
+        let disposed = false;
+        const waitForViewport = async () => {
+            setActive(true);
+            // Activation is lazy so ordinary canvas browsing does not allocate WebGL contexts.
+            // MCP calls use the same renderer after it becomes ready, rather than synthesizing a preview.
+            for (let attempt = 0; attempt < 500; attempt += 1) {
+                if (disposed) throw new Error("全景节点已卸载");
+                if (controllerRef.current && controllerUrlRef.current === url) return controllerRef.current;
+                await new Promise((resolve) => window.setTimeout(resolve, 20));
+            }
+            throw new Error("全景 WebGL 查看器未能就绪，无法执行视角操作或截图");
+        };
+        const handler: PanoramaAgentController = {
+            availability: "interactive",
+            getView: () => controllerRef.current?.getView() ?? lastViewRef.current,
+            setView: async (view) => {
+                const controller = await waitForViewport();
+                controller.setView(view);
+                return controller.getView();
+            },
+            capturePng: async () => {
+                const controller = await waitForViewport();
+                const canvas = controller.captureCanvas();
+                if (!canvas || canvas.width < 1 || canvas.height < 1) throw new Error("全景 WebGL 画布没有有效帧");
+                const dataUrl = canvas.toDataURL("image/png");
+                if (!dataUrl.startsWith("data:image/png;base64,")) throw new Error("全景截图没有生成 PNG 图像");
+                return { dataUrl, width: canvas.width, height: canvas.height };
+            },
+            captureQuadPng: async () => {
+                const controller = await waitForViewport();
+                const restore = controller.getView();
+                const off = document.createElement("canvas");
+                off.width = PANORAMA_QUAD_SIZE * 2;
+                off.height = PANORAMA_QUAD_SIZE * 2;
+                const ctx = off.getContext("2d");
+                if (!ctx) throw new Error("浏览器无法创建四向视图画布");
+                const yaws = [0, 90, 180, 270];
+                try {
+                    for (let index = 0; index < yaws.length; index += 1) {
+                        controller.setView({ lon: yaws[index], lat: 0, fov: 75 });
+                        const capture = controller.captureSquare(PANORAMA_QUAD_SIZE);
+                        if (!capture) throw new Error("全景 WebGL renderer 无法生成四向视图帧");
+                        try {
+                            ctx.drawImage(capture.canvas, (index % 2) * PANORAMA_QUAD_SIZE, Math.floor(index / 2) * PANORAMA_QUAD_SIZE, PANORAMA_QUAD_SIZE, PANORAMA_QUAD_SIZE);
+                        } finally {
+                            capture.release();
+                        }
+                    }
+                    const labels = ["前 (0°)", "右 (90°)", "后 (180°)", "左 (270°)"];
+                    ctx.font = "bold 36px sans-serif";
+                    ctx.fillStyle = "rgba(255,255,255,0.85)";
+                    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+                    ctx.lineWidth = 4;
+                    labels.forEach((label, index) => {
+                        const x = (index % 2) * PANORAMA_QUAD_SIZE + 24;
+                        const y = Math.floor(index / 2) * PANORAMA_QUAD_SIZE + 56;
+                        ctx.strokeText(label, x, y);
+                        ctx.fillText(label, x, y);
+                    });
+                    const dataUrl = off.toDataURL("image/png");
+                    if (!dataUrl.startsWith("data:image/png;base64,")) throw new Error("全景四向视图没有生成 PNG 图像");
+                    return { dataUrl, width: off.width, height: off.height };
+                } finally {
+                    controller.setView(restore);
+                }
+            },
+        };
+        registerPanoramaAgentController(node.id, handler);
+        return () => {
+            disposed = true;
+            registerPanoramaAgentController(node.id, null, handler);
+        };
+    }, [node.id, reduceMediaEffects, url]);
 
     // 上游换图后退出环视，避免旧上下文继续持有已被替换的纹理。
     useEffect(() => {
@@ -90,36 +184,9 @@ export function PanoramaNodeContent({ node, theme, reduceMediaEffects }: Panoram
         const controller = controllerRef.current;
         const exportNode = actions.addPanoramaCaptureNode;
         if (!controller || !exportNode) return;
-        const restore = controller.getView();
-        const off = document.createElement("canvas");
-        off.width = PANORAMA_QUAD_SIZE * 2;
-        off.height = PANORAMA_QUAD_SIZE * 2;
-        const ctx = off.getContext("2d");
-        if (!ctx) return;
-        const yaws = [0, 90, 180, 270];
-        for (let index = 0; index < yaws.length; index += 1) {
-            controller.setView(yaws[index], 0);
-            const capture = controller.captureSquare(PANORAMA_QUAD_SIZE);
-            if (!capture) {
-                controller.setView(restore.lon, restore.lat);
-                return;
-            }
-            ctx.drawImage(capture.canvas, (index % 2) * PANORAMA_QUAD_SIZE, Math.floor(index / 2) * PANORAMA_QUAD_SIZE, PANORAMA_QUAD_SIZE, PANORAMA_QUAD_SIZE);
-            capture.release();
-        }
-        const labels = ["前 (0°)", "右 (90°)", "后 (180°)", "左 (270°)"];
-        ctx.font = "bold 36px sans-serif";
-        ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.strokeStyle = "rgba(0,0,0,0.65)";
-        ctx.lineWidth = 4;
-        labels.forEach((label, index) => {
-            const x = (index % 2) * PANORAMA_QUAD_SIZE + 24;
-            const y = Math.floor(index / 2) * PANORAMA_QUAD_SIZE + 56;
-            ctx.strokeText(label, x, y);
-            ctx.fillText(label, x, y);
-        });
-        controller.setView(restore.lon, restore.lat);
-        await exportNode(node, off.toDataURL("image/png"), `${node.title || "全景"} · 四向视图`);
+        const captured = await getPanoramaAgentController(node.id)?.captureQuadPng();
+        if (!captured) return;
+        await exportNode(node, captured.dataUrl, `${node.title || "全景"} · 四向视图`);
     };
 
     const handleViewportError = () => {
@@ -191,12 +258,12 @@ export function PanoramaNodeContent({ node, theme, reduceMediaEffects }: Panoram
                                 </button>
                             </div>
                             <div className="relative min-h-0 flex-1">
-                                <PanoramaViewport url={url} controllerRef={controllerRef} initialView={lastViewRef.current} allowWheelZoom autoFocus onError={handleViewportError} />
+                                <PanoramaViewport url={url} controllerRef={controllerRef} controllerUrlRef={controllerUrlRef} initialView={lastViewRef.current} allowWheelZoom autoFocus onError={handleViewportError} />
                                 <PanoramaViewerToolbar
                                     canCapture={Boolean(actions.addPanoramaCaptureNode)}
                                     onScreenshot={handleScreenshot}
                                     onQuadExport={handleQuadExport}
-                                    onResetView={() => controllerRef.current?.setView(0, 0)}
+                                    onResetView={() => controllerRef.current?.setView({ lon: 0, lat: 0, fov: 75 })}
                                     onClose={() => { rememberView(); setExpanded(false); }}
                                     closeLabel="退出全屏"
                                 />
@@ -215,12 +282,12 @@ export function PanoramaNodeContent({ node, theme, reduceMediaEffects }: Panoram
 
     return (
         <div className="relative h-full w-full overflow-hidden" style={{ background: "#000" }}>
-            <PanoramaViewport url={url} controllerRef={controllerRef} initialView={lastViewRef.current} onError={handleViewportError} />
+            <PanoramaViewport url={url} controllerRef={controllerRef} controllerUrlRef={controllerUrlRef} initialView={lastViewRef.current} onError={handleViewportError} />
             <PanoramaViewerToolbar
                 canCapture={Boolean(actions.addPanoramaCaptureNode)}
                 onScreenshot={handleScreenshot}
                 onQuadExport={handleQuadExport}
-                onResetView={() => controllerRef.current?.setView(0, 0)}
+                onResetView={() => controllerRef.current?.setView({ lon: 0, lat: 0, fov: 75 })}
                 onExpand={() => { rememberView(); setExpanded(true); }}
                 onClose={() => setActive(false)}
                 closeLabel="退出环视"
@@ -264,8 +331,8 @@ function ViewerToolbarButton({ title, danger, onClick, children }: { title: stri
             type="button"
             aria-label={title}
             title={title}
-            className={`grid size-8 place-items-center rounded-[var(--r-md)] text-white outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/40 ${danger ? "bg-black/70 hover:bg-red-500/90" : "bg-black/70 hover:bg-black/90"}`}
-            style={{ boxShadow: "0 1px 4px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.22)" }}
+            className={`grid size-8 place-items-center rounded-[var(--r-md)] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/60 ${danger ? "hover:bg-red-600" : "hover:bg-slate-700"}`}
+            style={{ color: "#fff", backgroundColor: "rgba(12,16,24,.92)", boxShadow: "0 1px 4px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.45)" }}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => { event.stopPropagation(); onClick(); }}
         >
@@ -274,9 +341,10 @@ function ViewerToolbarButton({ title, danger, onClick, children }: { title: stri
     );
 }
 
-function PanoramaViewport({ url, controllerRef, initialView, allowWheelZoom, autoFocus, onError }: {
+function PanoramaViewport({ url, controllerRef, controllerUrlRef, initialView, allowWheelZoom, autoFocus, onError }: {
     url: string;
     controllerRef: { current: PanoramaViewportController | null };
+    controllerUrlRef: { current: string | null };
     initialView?: PanoramaView | null;
     allowWheelZoom?: boolean;
     autoFocus?: boolean;
@@ -303,7 +371,7 @@ function PanoramaViewport({ url, controllerRef, initialView, allowWheelZoom, aut
         const teardown: Array<() => void> = [];
         let lon = initialView?.lon ?? 0;
         let lat = initialView?.lat ?? 0;
-        let fov = 75;
+        let fov = clampFov(initialView?.fov ?? 75);
 
         void (async () => {
             const THREE = await import("three");
@@ -426,13 +494,18 @@ function PanoramaViewport({ url, controllerRef, initialView, allowWheelZoom, aut
                         release: resize,
                     };
                 },
-                getView: () => ({ lon, lat }),
-                setView: (lonDeg, latDeg) => {
-                    lon = lonDeg;
-                    lat = Math.max(-85, Math.min(85, latDeg));
+                getView: () => ({ lon, lat, fov }),
+                setView: (view) => {
+                    const next = clampPanoramaAgentView({ lon: view.lon, lat: view.lat, fov: view.fov ?? fov });
+                    lon = next.lon;
+                    lat = next.lat;
+                    fov = next.fov;
+                    camera.fov = fov;
+                    camera.updateProjectionMatrix();
                 },
             };
             controllerRef.current = controller;
+            controllerUrlRef.current = url;
 
             teardown.push(() => {
                 cancelAnimationFrame(frame);
@@ -447,7 +520,10 @@ function PanoramaViewport({ url, controllerRef, initialView, allowWheelZoom, aut
                 geometry.dispose();
                 material.dispose();
                 texture.dispose();
-                if (controllerRef.current === controller) controllerRef.current = null;
+                if (controllerRef.current === controller) {
+                    controllerRef.current = null;
+                    controllerUrlRef.current = null;
+                }
                 // forceContextLoss 才真正释放上下文；只 dispose 在部分浏览器上仍占着配额。
                 renderer.forceContextLoss();
                 renderer.dispose();

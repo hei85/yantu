@@ -25,7 +25,10 @@ describe("video request normalization", () => {
         expect(normalizeVideoSeconds("0")).toBe("6");
         expect(normalizeVideoSeconds("8.9")).toBe("8");
         expect(normalizeVideoSize("16:9")).toBe("1280x720");
+        expect(normalizeVideoSize("9:16")).toBe("720x1280");
         expect(normalizeVideoSize("auto")).toBeNull();
+        expect(normalizeVideoSize("adaptive")).toBeNull();
+        expect(() => normalizeVideoSize("portraitish")).toThrow("无法识别视频尺寸");
         expect(normalizeVideoResolution("low")).toBe("480p");
         expect(normalizeVideoResolution("2k")).toBe("1440p");
     });

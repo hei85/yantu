@@ -1,5 +1,5 @@
 import { defaultImageCapabilityConfig, modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, STANDARD_IMAGE_SIZE_VALUES, videoDurationAllowed, type ImageCapabilityConfig } from "@/lib/model-capabilities";
-import { videoResolutionComparisonKey } from "@/lib/video-generation-options";
+import { resolveVideoResolutionCapabilityValue, videoResolutionComparisonKey } from "@/lib/video-generation-options";
 import { imageSizePresets } from "@/lib/image-size-presets";
 import { modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
@@ -16,6 +16,10 @@ export type ModelRequirements = {
     input?: ModelInputSummary;
     videoOperation?: string;
     videoSeconds?: string;
+    videoRatio?: string;
+    videoResolution?: string;
+    videoGenerateAudio?: boolean;
+    videoWatermark?: boolean;
     imageSize?: string;
     options?: Record<string, unknown>;
 };
@@ -82,13 +86,33 @@ export function modelCompatibilityError(config: AiConfig, model: string, require
 
     if (capability === "video") {
         const profile = modelCapabilityConfigFor(config, model).video!;
-        if (requirements.videoSeconds && !videoDurationAllowed(profile, Number(requirements.videoSeconds))) return "不支持当前视频时长";
+        const options = requirements.options || {};
+        const videoSeconds = requirements.videoSeconds ?? options.videoSeconds;
+        const videoRatio = requirements.videoRatio ?? (typeof options.size === "string" ? options.size : "");
+        const videoResolution = requirements.videoResolution ?? (typeof options.vquality === "string" ? options.vquality : "");
+        const videoGenerateAudio = requirements.videoGenerateAudio ?? options.videoGenerateAudio === true;
+        const videoWatermark = requirements.videoWatermark ?? options.videoWatermark === true;
+        if (input && input.audioCount < (profile.references.minAudios || 0)) return `此模型至少需要 ${profile.references.minAudios} 段参考音频，请先点「+ 参考内容」添加`;
+        if (input && input.audioCount > profile.references.maxAudios) return `最多支持 ${profile.references.maxAudios} 个参考音频`;
+        if (videoSeconds !== undefined && videoSeconds !== null && videoSeconds !== "" && !videoDurationAllowed(profile, Number(videoSeconds))) return "不支持当前视频时长";
+        if (videoRatio && !profile.ratios.includes(videoRatio)) return "不支持当前视频画幅";
+        if (videoResolution && !resolveVideoResolutionCapabilityValue(videoResolution, profile.resolutions)) return "不支持当前视频分辨率";
+        if (videoGenerateAudio && !profile.generateAudio.supported) return "不支持视频原生音频";
+        if (videoWatermark && !profile.watermark.supported) return "不支持当前水印参数";
+        const operation = input ? resolveVideoOperation(input, requirements.videoOperation) : requirements.videoOperation;
+        if (operation && operation !== "concat" && !profile.operations.includes(operation)) {
+            return operation === "text_to_video" && profile.operations.includes("image_to_video")
+                ? "此模型需要参考图，请先点「+ 参考内容」添加"
+                : operation === "image_to_video" && profile.operations.includes("text_to_video")
+                    ? "此模型仅支持文生视频，请移除参考图"
+                    : `不支持${videoOperationLabel(operation)}`;
+        }
+        if ((operation === "image_to_video" || operation === "reference_to_video" || profile.references.minImages > 0) && visualInputCount < Math.max(1, profile.references.minImages)) {
+            return `图生视频至少需要 ${Math.max(1, profile.references.minImages)} 张参考图，请先点「+ 参考内容」添加`;
+        }
         if (!input) return "";
         if (visualInputCount > profile.references.maxImages) return `最多支持 ${profile.references.maxImages} 张参考图`;
         if (input.videoCount > profile.references.maxVideos) return `最多支持 ${profile.references.maxVideos} 个参考视频`;
-        if (input.audioCount > profile.references.maxAudios) return `最多支持 ${profile.references.maxAudios} 个参考音频`;
-        const operation = resolveVideoOperation(input, requirements.videoOperation);
-        if (operation !== "concat" && !profile.operations.includes(operation)) return `不支持${videoOperationLabel(operation)}`;
         return "";
     }
 
@@ -120,7 +144,7 @@ export function modelRequestOptions(config: AiConfig, capability: ModelCapabilit
         case "image":
             return { size: config.size, quality: config.quality, transparentBackground: config.transparentBackground === "true", count: Number(config.count) };
         case "video":
-            return { size: config.size, videoSeconds: Number(config.videoSeconds), vquality: config.vquality, videoGenerateAudio: config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" };
+            return { size: config.size, videoSeconds: Number(config.videoSeconds), vquality: config.vquality, videoGenerateAudio: modelCapabilityConfigFor(config, config.model).video?.generateAudio.supported === true && config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" };
         case "audio":
             return { audioVoice: config.audioVoice, audioFormat: config.audioFormat, audioSpeed: Number(config.audioSpeed) };
         default:
@@ -140,7 +164,17 @@ function logicalModelCompatibilityError(spec: NonNullable<NonNullable<AiConfig["
     for (const [kind, count] of Object.entries(counts)) {
         const constraint = spec.inputs?.[kind];
         if (!constraint && count > 0) return `不支持${kind}输入`;
-        if (constraint && (count < constraint.min || count > constraint.max)) return `${kind}输入需为 ${constraint.min}-${constraint.max} 个`;
+        if (constraint && count < constraint.min) {
+            if (kind === "image") return `此模型至少需要 ${constraint.min} 张参考图，请先点「+ 参考内容」添加`;
+            if (kind === "audio") return `此模型至少需要 ${constraint.min} 段参考音频，请先点「+ 参考内容」添加`;
+            return `${kind}输入至少需要 ${constraint.min} 个`;
+        }
+        if (constraint && count > constraint.max) {
+            if (kind === "image" && constraint.max === 0) return "此模型只支持文生视频，请移除参考图";
+            if (kind === "image") return `此模型最多支持 ${constraint.max} 张参考图`;
+            if (kind === "audio") return `此模型最多支持 ${constraint.max} 段参考音频`;
+            return `${kind}输入最多支持 ${constraint.max} 个`;
+        }
     }
     const operation = requirements.capability === "video" && input ? resolveVideoOperation(input, requirements.videoOperation) : requirements.videoOperation;
     if (operation && spec.operations?.length && !spec.operations.includes(operation)) return "不支持当前生成模式";
@@ -161,6 +195,9 @@ function logicalModelCompatibilityError(spec: NonNullable<NonNullable<AiConfig["
 
 function logicalOptionMatches(name: string, constraint: { values?: unknown[]; min?: number; max?: number; step?: number }, value: unknown) {
     if (constraint.values?.length) {
+        if ((name === "vquality" || name === "resolution") && (typeof value === "string" || typeof value === "number")) {
+            return Boolean(resolveVideoResolutionCapabilityValue(value, constraint.values.map(String)));
+        }
         const requested = normalizeLogicalOptionValue(name, value);
         return constraint.values.some((candidate) => normalizeLogicalOptionValue(name, candidate) === requested);
     }
@@ -276,14 +313,18 @@ export function resolveModelGenerationDefaults(
     }
 
     if (capability === "video" && profile.video) {
+        const requestedRatio = source("size");
         const normalized = normalizeVideoValue(profile.video, {
             seconds: source("videoSeconds"),
-            ratio: source("size"),
+            ratio: requestedRatio,
             resolution: source("vquality"),
         });
         return {
             videoSeconds: normalized.seconds,
-            size: normalized.ratio,
+            // Preserve explicit user/MCP input so compatibility routing can select a
+            // model that supports it, or reject it. Silent fallback can generate the
+            // wrong aspect ratio and then make the downstream check see the fallback.
+            size: requestedRatio && !profile.video.ratios.includes(requestedRatio) ? requestedRatio : normalized.ratio,
             vquality: normalized.resolution.replace(/p$/i, ""),
             videoGenerateAudio: source("videoGenerateAudio") ?? String(profile.video.generateAudio.default),
             videoWatermark: source("videoWatermark") ?? String(profile.video.watermark.default),
@@ -345,9 +386,9 @@ export function modelGroupReferenceLimits(config: AiConfig, selected: string, ca
 
 export function inferVideoOperation(input: ModelInputSummary) {
     const visualInputCount = input.imageCount + input.characterCount;
-    // 图片或角色决定图生视频主模式，音频只作为附加参考，不应把组合请求
-    // 提升为全模态参考；纯音频输入才使用独立的 audio_to_video 能力。
-    if (input.videoCount > 0 || visualInputCount > 2) return "reference_to_video";
+    // 参考图片的张数不决定生成模式；多图模型仍属于图生视频。
+    // 只有参考视频才进入全模态参考，音频可作为图生视频的附加素材。
+    if (input.videoCount > 0) return "reference_to_video";
     if (visualInputCount > 0) return "image_to_video";
     if (input.audioCount > 0) return "audio_to_video";
     return "text_to_video";

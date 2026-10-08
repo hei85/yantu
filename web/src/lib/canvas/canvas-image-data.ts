@@ -48,6 +48,46 @@ export async function splitDataUrl(dataUrl: string, params: ImageSplitParams): P
     const rows = Math.max(1, Math.floor(params.rows));
     const columns = Math.max(1, Math.floor(params.columns));
     const pieces: ImageSplitPiece[] = [];
+    // Generated contact sheets can contain separator pixels inside equal cells.
+    // Remove thin divider runs (including antialiased dark lines); never pad a crop.
+    const probe = document.createElement("canvas");
+    probe.width = image.width;
+    probe.height = image.height;
+    const probeContext = probe.getContext("2d", { willReadFrequently: true });
+    if (!probeContext) throw new Error("无法读取宫格图片像素");
+    probeContext.drawImage(image, 0, 0);
+    const pixels = probeContext.getImageData(0, 0, image.width, image.height).data;
+    const isSeparator = (x: number, y: number, allowBlack = false) => {
+        const i = (y * image.width + x) * 4;
+        return pixels[i + 3] < 8 || (pixels[i] >= 235 && pixels[i + 1] >= 235 && pixels[i + 2] >= 235)
+            || (allowBlack && pixels[i] <= 32 && pixels[i + 1] <= 32 && pixels[i + 2] <= 32);
+    };
+    const neutralLineCache = new Map<string, boolean>();
+    const isNeutralGridLine = (axis: "x" | "y", position: number) => {
+        const key = `${axis}:${position}`;
+        const cached = neutralLineCache.get(key);
+        if (cached !== undefined) return cached;
+        const extent = axis === "x" ? image.width : image.height;
+        const length = axis === "x" ? image.height : image.width;
+        if (position < 2 || position >= extent - 2) return false;
+        let neutral = 0, total = 0, before = 0, after = 0;
+        for (let offset = 0; offset < length; offset++) {
+            const index = (p: number) => ((axis === "x" ? offset * image.width + p : p * image.width + offset) * 4);
+            const i = index(position), a = index(position - 2), b = index(position + 2);
+            const low = Math.min(pixels[i], pixels[i + 1], pixels[i + 2]);
+            const high = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
+            if (low >= 110 && high - low <= 24) neutral++;
+            total += (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+            before += (pixels[a] + pixels[a + 1] + pixels[a + 2]) / 3;
+            after += (pixels[b] + pixels[b + 1] + pixels[b + 2]) / 3;
+        }
+        // Generated separators can be gray after antialiasing. Require a thin,
+        // bright, neutral line across the whole grid, brighter than both sides;
+        // a naturally pale wall without this local contrast is retained.
+        const result = neutral / length >= 0.98 && total / length > Math.max(before, after) / length + 25;
+        neutralLineCache.set(key, result);
+        return result;
+    };
 
     for (let row = 0; row < rows; row += 1) {
         const sy = Math.floor((row * image.height) / rows);
@@ -55,7 +95,51 @@ export async function splitDataUrl(dataUrl: string, params: ImageSplitParams): P
         for (let column = 0; column < columns; column += 1) {
             const sx = Math.floor((column * image.width) / columns);
             const sw = Math.floor(((column + 1) * image.width) / columns) - sx;
-            pieces.push({ row, column, dataUrl: drawCrop(image, sx, sy, sw, sh) });
+            let left = sx, top = sy, right = sx + sw, bottom = sy + sh;
+            const maxX = Math.max(1, Math.floor(sw * 0.03));
+            const maxY = Math.max(1, Math.floor(sh * 0.03));
+            const columnIsBorder = (x: number, allowBlack: boolean) => {
+                if (allowBlack && isNeutralGridLine("x", x)) return true;
+                let count = 0;
+                for (let y = top; y < bottom; y++) if (isSeparator(x, y, allowBlack)) count++;
+                return count / (bottom - top) >= (allowBlack ? 0.98 : 0.995);
+            };
+            const rowIsBorder = (y: number, allowBlack: boolean) => {
+                if (allowBlack && isNeutralGridLine("y", y)) return true;
+                let count = 0;
+                for (let x = left; x < right; x++) if (isSeparator(x, y, allowBlack)) count++;
+                return count / (right - left) >= (allowBlack ? 0.98 : 0.995);
+            };
+            // Separator placement is approximate, not necessarily the exact midpoint.
+            // Search a narrow boundary neighborhood before stripping the edge run.
+            // A dark core can fall one pixel outside this cell, with its antialias
+            // fringe inside; detect the adjacent pixel before searching inward.
+            if (column > 0 && columnIsBorder(sx - 1, true)) left = sx + 1;
+            if (column < columns - 1 && columnIsBorder(sx + sw, true)) right = sx + sw - 1;
+            if (row > 0 && rowIsBorder(sy - 1, true)) top = sy + 1;
+            if (row < rows - 1 && rowIsBorder(sy + sh, true)) bottom = sy + sh - 1;
+            if (column > 0) for (let x = sx; x < sx + maxX; x++) {
+                if (columnIsBorder(x, true)) left = x + 1;
+            }
+            if (column < columns - 1) for (let x = sx + sw - 1; x >= sx + sw - maxX; x--) {
+                if (columnIsBorder(x, true)) right = x;
+            }
+            if (row > 0) for (let y = sy; y < sy + maxY; y++) {
+                if (rowIsBorder(y, true)) top = y + 1;
+            }
+            if (row < rows - 1) for (let y = sy + sh - 1; y >= sy + sh - maxY; y--) {
+                if (rowIsBorder(y, true)) bottom = y;
+            }
+            while (left - sx < maxX && left < right - 1 && columnIsBorder(left, column > 0)) left++;
+            while (sx + sw - right < maxX && right > left + 1 && columnIsBorder(right - 1, column < columns - 1)) right--;
+            while (top - sy < maxY && top < bottom - 1 && rowIsBorder(top, row > 0)) top++;
+            while (sy + sh - bottom < maxY && bottom > top + 1 && rowIsBorder(bottom - 1, row < rows - 1)) bottom--;
+            // Exclude the two-pixel antialias halo around an identified separator.
+            if (left > sx) left = Math.min(right - 1, left + 2);
+            if (right < sx + sw) right = Math.max(left + 1, right - 2);
+            if (top > sy) top = Math.min(bottom - 1, top + 2);
+            if (bottom < sy + sh) bottom = Math.max(top + 1, bottom - 2);
+            pieces.push({ row, column, dataUrl: drawCrop(image, left, top, right - left, bottom - top) });
         }
     }
 

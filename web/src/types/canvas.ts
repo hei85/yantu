@@ -62,7 +62,7 @@ export type CanvasGenerationBatchStatus = "queued" | "running" | "partial_failed
 export type CanvasGenerationBatchItemStatus = "waiting" | "submitting" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type CanvasImageGenerationType = "generation" | "edit";
 export type CanvasWorkflowKind = "free" | "script" | "story_input" | "character" | "scene" | "storyboard" | "shot" | "final" | "styleboard" | "reference_set" | "reference_video" | "action_board";
-export type CanvasVideoEditOperation = "text_to_video" | "image_to_video" | "reference_to_video" | "extend" | "inpaint" | "replace_element" | "camera_motion" | "style_transfer" | "audio_to_video" | "compare_versions" | "concat";
+export type CanvasVideoEditOperation = "text_to_video" | "image_to_video" | "reference_to_video" | "extend" | "inpaint" | "replace_element" | "camera_motion" | "style_transfer" | "audio_to_video" | "compare_versions" | "concat" | "timeline_render";
 export type CanvasSkillCategory = "writing" | "storyboard" | "image" | "video" | "utility";
 export type CanvasSkillOutputMode = "text" | "json" | "image_prompt" | "workflow";
 export type StoryboardColumn =
@@ -87,6 +87,7 @@ export type StoryboardColumn =
     | "negativePrompt";
 
 export type StoryboardAssetRole = "character" | "environment" | "wardrobe" | "prop" | "weapon" | "style" | "motion" | "audio";
+export type StoryboardVideoOperation = "text_to_video" | "image_to_video" | "reference_to_video" | "audio_to_video" | "extend";
 
 export type StoryboardAssetBinding = {
     nodeId: string;
@@ -96,18 +97,22 @@ export type StoryboardAssetBinding = {
 
 export type StoryboardCharacterReference = {
     characterName: string;
+    characterId?: string;
     characterAssetId?: string;
     characterVersionId?: string;
+    voiceVersionId?: string;
     characterDescription?: string;
     characterImageNodeId?: string;
 };
 
 export type StoryboardRow = {
     id: string;
+    sceneId?: string;
     shotNumber: number;
     durationSeconds: number;
     plotDescription: string;
     dialogue: string;
+    voiceover?: string;
     characters: StoryboardCharacterReference[];
     narrativeIntent: string;
     viewerPOV: string;
@@ -128,10 +133,31 @@ export type StoryboardRow = {
     continuityOut: string;
     negativePrompt: string;
     assetBindings: StoryboardAssetBinding[];
+    requiredAssetRoles?: StoryboardAssetRole[];
+    videoOperation?: StoryboardVideoOperation;
     imageNodeId?: string;
     videoNodeId?: string;
-    status?: CanvasNodeStatus;
+    segmentBindings?: StoryboardSegmentBinding[];
+    status?: CanvasNodeStatus | "ready";
     errorDetails?: string;
+};
+
+export type StoryboardSegmentBinding = {
+    segmentId: string;
+    order: number;
+    videoNodeId?: string;
+    taskId?: string;
+    resourceId?: string;
+    stepId?: string;
+    attemptId?: string;
+    relayReferenceNodeId?: string;
+    inputFingerprint?: string;
+    model?: string;
+    capabilityRevision?: string;
+    requestedDurationSeconds?: number;
+    timelineStartMs?: number;
+    timelineDurationMs?: number;
+    status?: "planned" | "submitted" | "running" | "succeeded" | "failed" | "uncertain" | "cancelled";
 };
 
 export type StoryboardData = {
@@ -144,6 +170,12 @@ export type CanvasGenerationBatchItem = {
     id: string;
     rowId: string;
     nodeId: string;
+    /** Stable backend idempotency key for this row submission. */
+    clientOperationId?: string;
+    /** Local fingerprint that prevents reusing the key for a changed request. */
+    requestFingerprint?: string;
+    /** Submission may have reached the server, but no taskId has been read back yet. */
+    submissionUncertain?: boolean;
     taskId?: string;
     status: CanvasGenerationBatchItemStatus;
     retryCount: number;
@@ -153,6 +185,9 @@ export type CanvasGenerationBatchItem = {
 
 export type CanvasGenerationBatch = {
     id: string;
+    /** Optional stable caller key used to replay the same batch enqueue request. */
+    clientOperationId?: string;
+    requestFingerprint?: string;
     projectId: string;
     sourceNodeId: string;
     mode: CanvasGenerationBatchMode;
@@ -245,6 +280,8 @@ export type CanvasNodeMetadata = {
     errorDetails?: string;
     generationErrorCode?: string;
     resourceReloadAvailable?: boolean;
+    /** 原任务已成功，但本地结果接收/保存尚未完成；仅重试同步。 */
+    generationResultSyncPending?: boolean;
     failedPromptFingerprint?: string;
     lastGenerationRequestFingerprint?: string;
     fontSize?: number;
@@ -267,6 +304,8 @@ export type CanvasNodeMetadata = {
     watermark?: string;
     audioVoice?: string;
     audioFormat?: string;
+    audioRequestedFormat?: string;
+    audioActualFormat?: string;
     audioSpeed?: string;
     audioInstructions?: string;
     references?: string[];
@@ -289,6 +328,8 @@ export type CanvasNodeMetadata = {
     assetId?: string;
     assetTags?: string[];
     assetCategory?: AssetCategory;
+    /** A/B compare divider position as a percentage from the left edge (0–100). */
+    compareSplitPercentage?: number;
     workflowKind?: CanvasWorkflowKind;
     workflowTitle?: string;
     workflowDescription?: string;
@@ -316,6 +357,23 @@ export type CanvasNodeMetadata = {
     characterVisualStatus?: string;
     characterVoiceStatus?: string;
     characterVoiceName?: string;
+    characterVoiceVersionId?: string;
+    characterVoiceVersion?: {
+        id: string;
+        version: number;
+        voiceStrategy: "standard_tts" | "voice_design" | "voice_reference" | string;
+        voiceModel?: string;
+        voiceId?: string;
+        referenceAudioResourceId?: string;
+        referenceAudioAuthorized: boolean;
+        tone?: string;
+        emotionStyle?: string;
+        speakingRate: number;
+        language?: string;
+        accent?: string;
+        capabilityRevision?: string;
+        status: string;
+    };
     characterVoiceProfile?: {
         name: string;
         provider: string;
@@ -348,6 +406,8 @@ export type CanvasNodeMetadata = {
     taskReceiptRecorded?: boolean;
     taskCreatedAt?: string;
     taskUpdatedAt?: string;
+    productionRunId?: string;
+    productionDeliveryStatus?: "passed" | "failed" | "uncertain";
     generationEffectKeys?: string[];
     agentGenerationContinuation?: {
         id: string;
@@ -360,6 +420,8 @@ export type CanvasNodeMetadata = {
     };
     sessionId?: string;
     videoEditOperation?: CanvasVideoEditOperation;
+    timelineRenderOperationId?: string;
+    timelineRenderExpectedHash?: string;
     arkPrivateAssetUpload?: string;
     videoCameraMoveId?: string;
     videoCameraMovePrompt?: string;
@@ -425,6 +487,23 @@ export type CanvasNodeMetadata = {
     drawingPreviewUrl?: string;
     drawingShapeCount?: number;
     drawingPageCount?: number;
+    clientOperationId?: string;
+    clientOperationFingerprint?: string;
+    imageTool?: {
+        action: string;
+        sourceNodeId: string;
+        sourceStorageKey?: string;
+        sourceContent?: string;
+        maskDataUrl?: string;
+        layerGroupId?: string;
+        layerIndex?: number;
+        layerCount?: number;
+        expectedWidth?: number;
+        expectedHeight?: number;
+        requestFingerprint?: string;
+        quality: "passed" | "failed" | "uncertain";
+        checks?: Record<string, unknown>;
+    };
     emotionEdit?: {
         sourceNodeId: string;
         characterName: string;

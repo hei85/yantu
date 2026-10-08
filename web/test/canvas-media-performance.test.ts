@@ -20,6 +20,7 @@ const canvasVideoPreviewSource = readSource("services/canvas-video-preview.ts");
 const videoPlayerSource = readSource("components/video-player.tsx");
 const canvasProjectSource = readSource("pages/canvas/project.tsx");
 const globalStylesSource = readSource("styles/globals.css");
+const inactiveVideoSource = () => canvasNodeContentSource.match(/function InactiveVideoPreview[\s\S]*?\n}\n\nfunction VideoPreviewPlayButton/)?.[0] || "";
 
 function node(id: string, type: CanvasNodeType): CanvasNodeData {
     return { id, type, title: id, position: { x: 0, y: 0 }, width: 320, height: 180, metadata: {} };
@@ -73,7 +74,8 @@ describe("large canvas media rendering", () => {
 
     test("keeps inactive video nodes on a viewport-gated static first frame", () => {
         const inactivePreviewSource = canvasNodeContentSource.match(/function InactiveVideoPreview[\s\S]*?\n}\n\nfunction VideoPreviewPlayButton/)?.[0] || "";
-        expect(canvasNodeContentSource).toContain("if (previewUrl || !nearViewport || !node.metadata?.content || !updateMetadataRef.current)");
+        expect(inactivePreviewSource).toContain("previewUrl || !nearViewport || !(node.metadata?.content || node.metadata?.storageKey)");
+        expect(inactivePreviewSource).toContain("recoveryAttemptsRef.current >= CANVAS_VIDEO_PREVIEW_MAX_ATTEMPTS");
         expect(canvasNodeContentSource).not.toContain("hydrateMediaPreview");
         expect(inactivePreviewSource).not.toContain("<video");
         expect(inactivePreviewSource).toContain("<VideoPreviewPlayButton");
@@ -84,8 +86,10 @@ describe("large canvas media rendering", () => {
     });
 
     test("allows failed or empty first-frame requests to retry", () => {
-        expect(canvasVideoPreviewSource).toContain("if (!preview) previewRequests.delete(requestKey)");
-        expect(canvasVideoPreviewSource).toContain("previewRequests.delete(requestKey);");
+        expect(canvasVideoPreviewSource).toContain(".finally(() => {");
+        expect(canvasVideoPreviewSource).toContain("if (previewRequests.get(requestKey) === request) previewRequests.delete(requestKey)");
+        expect(inactiveVideoSource()).toContain("else scheduleRetry()");
+        expect(inactiveVideoSource()).toContain("if (retryTimer) clearTimeout(retryTimer)");
     });
 });
 

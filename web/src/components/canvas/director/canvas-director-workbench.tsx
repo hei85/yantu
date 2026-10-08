@@ -18,20 +18,23 @@ import { createDirectorTransaction, installDirectorTerminalListeners, type Direc
 import { recordDirectorDiagnostic } from "@/lib/canvas/director/director-diagnostics-recorder";
 import { DIRECTOR_MODES, directorModeCapabilities, type DirectorModeCapabilities } from "@/lib/canvas/director/director-modes";
 import { resolveDirectorPlacement, resolveDirectorPlacementAnchor } from "@/lib/canvas/director/director-placement";
-import { isDirectorOutputSnapshotCurrent, shouldReinitializeDirectorSession } from "@/lib/canvas/director/director-session";
+import { isDirectorOutputSnapshotCurrent, shouldAdoptExternalDirectorScene, shouldReinitializeDirectorSession } from "@/lib/canvas/director/director-session";
+import { waitForDirectorCanvasAspect } from "@/pages/canvas/canvas-agent-director-capture";
 import { blocksDirectorShortcut, releaseDirectorFocusAfterPointer, resolveDirectorShortcut, type DirectorShortcutAction } from "@/lib/canvas/director/director-shortcuts";
 import { createDirectorActor, createDirectorBillboard, createDirectorCamera, createDirectorLight, createDirectorModel, createDirectorObject, DIRECTOR_ACTOR_COLORS, directorBoneLabel, directorFocalLengthToFov, directorPoseLabel, interpolateDirectorTransform, removeDirectorSceneKeyframe, setDirectorSceneKeyframeEasing, touchDirectorScene, upsertDirectorBoneKeyframe } from "@/lib/canvas/director/director-scene";
 import { describeDirectorSaveStatus, resolveDirectorCloseOutcome, shouldBlockDirectorUnload, shouldOfferDirectorDraftRecovery } from "@/lib/canvas/director/director-save-wiring";
 import { useDirectorSaveCoordinator } from "@/components/canvas/director/use-director-save-coordinator";
-import { uploadMediaFile } from "@/services/file-storage";
-import { localSavedRemotePendingMessage, saveRemoteUserDataNow } from "@/services/user-data-sync";
-import { useAssetStore, type ModelAsset } from "@/stores/use-asset-store";
+import { setMediaBlob } from "@/services/file-storage";
+import { flushAssetStorePersistence, useAssetStore, type ModelAsset } from "@/stores/use-asset-store";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { useDirectorWorkbenchStore } from "@/stores/canvas/use-director-workbench-store";
+import { hashDirectorScene } from "@/pages/canvas/canvas-agent-director-operations";
+import { resolveDirectorViewFraming } from "@/lib/canvas/director/director-view-modes";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { DirectorCamera, DirectorCameraMove, DirectorHumanoidBone, DirectorKeyframeDeleteTarget, DirectorKeyframeEasing, DirectorLight, DirectorObject, DirectorPose, DirectorQuat, DirectorRenderMode, DirectorRig, DirectorScene, DirectorSceneOutput, DirectorShot, DirectorShotSize, DirectorTransform, DirectorVec3 } from "@/types/director";
 
-export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingScope, onClose, onChange, onApply, onDeleteImageNode, onFlush }: { open: boolean; scene: DirectorScene | null; imageNodes: CanvasNodeData[]; onboardingScope: string; onClose: () => void; onChange: (scene: DirectorScene) => void; onApply: (output: DirectorSceneOutput) => Promise<void>; onDeleteImageNode: (nodeId: string) => void; onFlush?: () => void | Promise<void> }) {
+export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingScope, onClose, onChange, onApply, onDeleteImageNode, onFlush, registerAgentCapture, registerAgentVideoCapture }: { open: boolean; scene: DirectorScene | null; imageNodes: CanvasNodeData[]; onboardingScope: string; onClose: () => void; onChange: (scene: DirectorScene) => void; onApply: (output: DirectorSceneOutput) => Promise<unknown>; onDeleteImageNode: (nodeId: string) => void; onFlush?: () => void | Promise<void>; registerAgentCapture?: (capture: ((input: { sceneId: string; shotId: string; expectedSceneHash: string }) => Promise<unknown>) | null) => void; registerAgentVideoCapture?: (capture: ((input: { sceneId: string; shotId: string; expectedSceneHash: string; durationSeconds: number }) => Promise<unknown>) | null) => void }) {
     const { message, modal } = App.useApp();
     const theme = canvasThemes[useActiveTheme()];
     const viewportRef = useRef<DirectorViewportHandle>(null);
@@ -45,6 +48,9 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
     const mode = useDirectorWorkbenchStore((state) => state.mode);
     const viewMode = useDirectorWorkbenchStore((state) => state.viewMode);
     const setViewMode = useDirectorWorkbenchStore((state) => state.setViewMode);
+    const registerAgentCaptureRef = useRef(registerAgentCapture);
+    useEffect(() => { registerAgentCaptureRef.current = registerAgentCapture; }, [registerAgentCapture]);
+    const agentVideoCaptureLockRef = useRef(false);
     const setMode = useDirectorWorkbenchStore((state) => state.setMode);
     const selectedObjectId = useDirectorWorkbenchStore((state) => state.selectedObjectId);
     const selectedLightId = useDirectorWorkbenchStore((state) => state.selectedLightId);
@@ -76,6 +82,7 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
     const renderModeOptions = useMemo(() => DIRECTOR_RENDER_MODE_LABELS.filter((option) => capabilities.renderModes.includes(option.value)), [capabilities.renderModes]);
 
     const draftRef = useRef<DirectorScene | null>(null);
+    const canonicalSceneRef = useRef<DirectorScene | null>(scene);
     const stagedRef = useRef<DirectorTransaction | null>(null);
     const initializedSceneIdRef = useRef<string | null>(null);
     const onChangeRef = useRef(onChange);
@@ -158,6 +165,29 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
         setFuture([]);
         resetWorkbench();
     }, [open, resetWorkbench, scene, writeDraft]);
+
+    // MCP/native writes can update the canonical scene while this modal stays mounted.
+    // Adopt that same-scene snapshot only when the draft still matches its previous base;
+    // a local draft edit or active slider gesture remains untouched.
+    useEffect(() => {
+        const previousCanonical = canonicalSceneRef.current;
+        canonicalSceneRef.current = scene;
+        if (!open || !scene || !previousCanonical || scene.id !== previousCanonical.id || scene.id !== initializedSceneIdRef.current) return;
+        const next = structuredClone(scene);
+        next.shots = next.shots.map((shot) => ({ ...shot, fps: shot.fps || 24 }));
+        const previous = structuredClone(previousCanonical);
+        previous.shots = previous.shots.map((shot) => ({ ...shot, fps: shot.fps || 24 }));
+        const currentDraft = draftRef.current;
+        if (!currentDraft || !shouldAdoptExternalDirectorScene({
+            sameScene: true,
+            draftMatchesPrevious: hashDirectorScene(currentDraft) === hashDirectorScene(previous),
+            incomingChanged: hashDirectorScene(next) !== hashDirectorScene(previous),
+            gestureActive: stagedRef.current?.active() ?? false,
+        })) return;
+        writeDraft(next);
+        setHistory([]);
+        setFuture([]);
+    }, [draft, open, scene, writeDraft]);
 
     // 打开会话时检查合法本地恢复候选：同一场景只提示一次，恢复/放弃都必须有明确结果。
     useEffect(() => {
@@ -418,16 +448,13 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
 
     const uploadModel = async (file?: File) => {
         if (!file || !/\.(glb|gltf)$/i.test(file.name)) return;
-        const uploaded = await uploadMediaFile(file, "model");
-        const assetId = addAsset({ kind: "model", title: file.name.replace(/\.(glb|gltf)$/i, ""), coverUrl: "", tags: ["3D模型"], source: "导演台", data: { url: uploaded.url, storageKey: uploaded.storageKey, bytes: uploaded.bytes, mimeType: uploaded.mimeType, fileName: file.name }, metadata: { source: "director" } });
+        const storageKey = `file:${getActiveUserScope()}:${nanoid()}`;
+        const url = await setMediaBlob(storageKey, file);
+        const assetId = addAsset({ kind: "model", title: file.name.replace(/\.(glb|gltf)$/i, ""), coverUrl: "", tags: ["3D模型"], source: "导演台", data: { url, storageKey, bytes: file.size, mimeType: file.type || "application/octet-stream", fileName: file.name }, metadata: { source: "director" } });
         const asset = useAssetStore.getState().assets.find((item): item is ModelAsset => item.id === assetId && item.kind === "model");
         if (asset) addModelAsset(asset);
-        try {
-            await saveRemoteUserDataNow();
-            message.success("3D 模型已加入场景和素材库");
-        } catch (error) {
-            message.warning(localSavedRemotePendingMessage("3D 模型已加入场景和本机素材库", error));
-        }
+        await flushAssetStorePersistence();
+        message.success("3D 模型已加入场景和本机素材库");
     };
 
     const addBillboard = (node: CanvasNodeData) => {
@@ -662,25 +689,104 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
         }
     };
 
+    useEffect(() => {
+        if (!open || !registerAgentCapture) return;
+        const capture = async (input: { sceneId: string; shotId: string; expectedSceneHash: string }) => {
+            const current = draftRef.current;
+            const currentShot = current?.shots.find((item) => item.id === input.shotId);
+            if (!current || current.id !== input.sceneId || !currentShot || hashDirectorScene(current) !== input.expectedSceneHash) throw new Error("导演场景或镜头已变化，请重新读取 sceneHash 后重试");
+            if (!viewportRef.current) throw new Error("viewport_unavailable：导演工作台视口尚未就绪");
+            const previousMode = useDirectorWorkbenchStore.getState().viewMode;
+            setViewMode("camera");
+            try {
+                await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                await waitForDirectorCanvasAspect(() => viewportRef.current?.getCanvasSize() ?? null);
+                const camScene = draftRef.current;
+                if (!camScene || camScene.id !== input.sceneId || hashDirectorScene(camScene) !== input.expectedSceneHash) throw new Error("切换 CAM 期间导演场景已变化，请重试");
+                if (!resolveDirectorViewFraming({ scene: camScene, mode: "camera", playhead: useDirectorWorkbenchStore.getState().playhead })) throw new Error("CAM 摄影机当前没有有效取景，拒绝使用自由视角替代");
+                const beauty = await viewportRef.current.capture("beauty");
+                const afterCapture = draftRef.current;
+                if (!afterCapture || afterCapture.id !== input.sceneId || hashDirectorScene(afterCapture) !== input.expectedSceneHash || !afterCapture.shots.some((item) => item.id === input.shotId)) throw new Error("捕获期间导演场景或镜头已变化，拒绝保存过期静帧");
+                const output = await onApply({ scene: current, shot: currentShot, prompt: compileDirectorPrompt(current, currentShot), beauty });
+                await onFlush?.();
+                return output;
+            } finally {
+                setViewMode(previousMode);
+            }
+        };
+        registerAgentCapture(capture);
+        return () => registerAgentCapture(null);
+    }, [onApply, onFlush, open, registerAgentCapture, setViewMode]);
+
+    useEffect(() => {
+        if (!open || !registerAgentVideoCapture) return;
+        const captureVideo = async (input: { sceneId: string; shotId: string; expectedSceneHash: string; durationSeconds: number }) => {
+            if (agentVideoCaptureLockRef.current) throw new Error("导演视频录制正在进行，请等待完成后重试");
+            if (!Number.isFinite(input.durationSeconds) || input.durationSeconds < 0.5 || input.durationSeconds > 30) throw new Error("durationSeconds 必须在 0.5 到 30 秒之间");
+            const current = draftRef.current;
+            const currentShot = current?.shots.find((item) => item.id === input.shotId);
+            if (!current || current.id !== input.sceneId || current.activeShotId !== input.shotId || !currentShot || hashDirectorScene(current) !== input.expectedSceneHash) throw new Error("导演场景、活动镜头或 sceneHash 已变化，请重新读取后重试");
+            if (input.durationSeconds > currentShot.duration) throw new Error("durationSeconds 不能超过当前活动镜头时长");
+            if (!viewportRef.current) throw new Error("viewport_unavailable：导演工作台视口尚未就绪");
+            agentVideoCaptureLockRef.current = true;
+            setRecording(true);
+            const store = useDirectorWorkbenchStore.getState();
+            const previousMode = store.viewMode;
+            const wasPlaying = store.playing;
+            const previousPlayhead = store.playhead;
+            setViewMode("camera");
+            setPlayhead(0);
+            setPlaying(true);
+            try {
+                await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                await waitForDirectorCanvasAspect(() => viewportRef.current?.getCanvasSize() ?? null);
+                const camScene = draftRef.current;
+                if (!camScene || camScene.id !== input.sceneId || camScene.activeShotId !== input.shotId || hashDirectorScene(camScene) !== input.expectedSceneHash) throw new Error("开始录制前导演场景或镜头已变化，拒绝录制");
+                if (!resolveDirectorViewFraming({ scene: camScene, mode: "camera", playhead: 0 })) throw new Error("CAM 摄影机当前没有有效取景，拒绝使用自由视角替代");
+                const recordedVideo = await viewportRef.current.recordVideo(input.durationSeconds, currentShot.fps);
+                if (!recordedVideo.blob.type.startsWith("video/") || recordedVideo.blob.size < 1 || !Number.isFinite(recordedVideo.durationMs) || recordedVideo.durationMs <= 0) throw new Error("MediaRecorder 没有返回有效的视频文件或实测时长");
+                const afterRecord = draftRef.current;
+                if (!afterRecord || afterRecord.id !== input.sceneId || afterRecord.activeShotId !== input.shotId || hashDirectorScene(afterRecord) !== input.expectedSceneHash) throw new Error("录制期间导演场景或镜头已变化，视频已丢弃，请重新读取后重试");
+                const next = touchDirectorScene(afterRecord);
+                writeAndPublish(next);
+                const beauty = await viewportRef.current.capture("beauty");
+                const afterPreview = draftRef.current;
+                if (!afterPreview || afterPreview.id !== input.sceneId || hashDirectorScene(afterPreview) !== hashDirectorScene(next)) throw new Error("录制后输出期间导演场景已变化，视频已丢弃，请重新读取后重试");
+                const output = await onApply({ scene: next, shot: currentShot, prompt: compileDirectorPrompt(next, currentShot), beauty, clayVideo: recordedVideo.blob, clayVideoMimeType: recordedVideo.blob.type, clayVideoDurationMs: recordedVideo.durationMs });
+                await onFlush?.();
+                return output;
+            } finally {
+                setPlaying(wasPlaying);
+                setPlayhead(previousPlayhead);
+                setViewMode(previousMode);
+                agentVideoCaptureLockRef.current = false;
+                setRecording(false);
+            }
+        };
+        registerAgentVideoCapture(captureVideo);
+        return () => registerAgentVideoCapture(null);
+    }, [onApply, onFlush, open, registerAgentVideoCapture, setPlayhead, setPlaying, setViewMode]);
+
     const exportClayVideo = async () => {
         stagedTransaction.end("commit");
         const current = draftRef.current;
-        if (!current || !activeShot || !viewportRef.current || recording) return;
+        if (!current || !activeShot || !viewportRef.current || recording || agentVideoCaptureLockRef.current) return;
         const expected = { scene: current, shotId: activeShot.id };
         setRecording(true);
+        agentVideoCaptureLockRef.current = true;
         const wasPlaying = playing;
         const previousPlayhead = playhead;
         setPlayhead(0);
         setPlaying(true);
         try {
             await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            const clayVideo = await viewportRef.current.recordVideo(activeShot.duration, activeShot.fps);
+            const recordedVideo = await viewportRef.current.recordVideo(activeShot.duration, activeShot.fps);
             if (!isDirectorOutputSnapshotCurrent(draftRef.current, expected)) throw new Error("录制期间场景或镜头已变化，请重试");
             const next = touchDirectorScene(draftRef.current || current);
             writeAndPublish(next);
             const beauty = await viewportRef.current.capture("beauty");
             if (!isDirectorOutputSnapshotCurrent(draftRef.current, { scene: next, shotId: expected.shotId })) throw new Error("输出期间场景或镜头已变化，请重试");
-            await onApply({ scene: next, shot: activeShot, prompt: compileDirectorPrompt(next, activeShot), beauty, clayVideo, clayVideoMimeType: clayVideo.type });
+            await onApply({ scene: next, shot: activeShot, prompt: compileDirectorPrompt(next, activeShot), beauty, clayVideo: recordedVideo.blob, clayVideoMimeType: recordedVideo.blob.type, clayVideoDurationMs: recordedVideo.durationMs });
             message.success("白膜视频已回写画布");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "白膜视频导出失败");
@@ -688,6 +794,7 @@ export function CanvasDirectorWorkbench({ open, scene, imageNodes, onboardingSco
             setPlaying(wasPlaying);
             setPlayhead(previousPlayhead);
             setRecording(false);
+            agentVideoCaptureLockRef.current = false;
         }
     };
 

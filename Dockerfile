@@ -13,7 +13,6 @@ RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lock
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY README.md /app/README.md
-COPY assets /app/assets
 COPY web ./
 # 生产镜像只构建云端工作台前端；Agent Runtime 在后端 Worker 中运行。
 RUN bun --bun ./node_modules/vite/bin/vite.js build

@@ -1,5 +1,7 @@
 import { nanoid } from "nanoid";
 
+import { attachNodeToStoryboardRow } from "@/lib/canvas/canvas-project-domain";
+
 import { getNodeSpec } from "@/constant/canvas";
 import { getNodeDefinition } from "./node-registry";
 import { isPluginEffectivelyEnabled } from "@/stores/use-plugin-store";
@@ -10,10 +12,10 @@ export type CanvasOperation =
     | { type: "update_node"; id: string; patch?: Partial<CanvasNodeData>; metadata?: CanvasNodeMetadata }
     | { type: "delete_node"; id?: string; ids?: string[]; nodeType?: CanvasNodeTypeId }
     | { type: "delete_connections"; id?: string; ids?: string[]; all?: boolean }
-    | { type: "connect_nodes"; id?: string; fromNodeId: string; toNodeId: string; fromHandleId?: string; toHandleId?: string }
+    | { type: "connect_nodes"; id?: string; fromNodeId: string; toNodeId: string; fromHandleId?: string; toHandleId?: string; relation?: "storyboard-output" | "storyboard-asset-reference" | "batch-output"; storyboardRowId?: string }
     | { type: "set_viewport"; viewport: ViewportTransform }
     | { type: "select_nodes"; ids: string[] }
-    | { type: "run_generation"; nodeId: string; mode?: "text" | "image" | "video" | "audio"; prompt?: string; retry?: boolean };
+    | { type: "run_generation"; nodeId: string; mode?: "text" | "image" | "video" | "audio"; prompt?: string; retry?: boolean; clientOperationId?: string };
 
 export type CanvasSnapshot = {
     projectId: string;
@@ -26,6 +28,35 @@ export type CanvasSnapshot = {
     revision?: number;
     stateHash?: string;
 };
+
+export function canvasPreconditionConflict(
+    expectedRevision: unknown,
+    expectedStateHash: unknown,
+    currentRevision: number,
+    currentStateHash: string,
+): "revision" | "state" | null {
+    const hasRevision = typeof expectedRevision === "number";
+    const hasMatchingHash = typeof expectedStateHash === "string"
+        && expectedStateHash.length > 0
+        && expectedStateHash === currentStateHash;
+    if (hasRevision && (!Number.isInteger(expectedRevision) || (expectedRevision !== currentRevision && !hasMatchingHash))) {
+        return "revision";
+    }
+    if (typeof expectedStateHash === "string" && expectedStateHash !== currentStateHash) return "state";
+    return null;
+}
+
+export type CanvasGenerationOperationTask = {
+    operationNodeId: string;
+    taskId: string;
+    status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+    stage?: string;
+    progress?: number;
+    model?: string;
+    operation?: string;
+};
+
+export type CanvasApplyOpsSnapshot = CanvasSnapshot & { generationTasks?: CanvasGenerationOperationTask[] };
 
 export type CanvasOperationImpact = {
     operationCount: number;
@@ -105,7 +136,9 @@ export function verifyCanvasOperations(before: CanvasSnapshot, after: CanvasSnap
     const connectionExists = (op: Extract<CanvasOperation, { type: "connect_nodes" }>) => after.connections.some((connection) => connection.fromNodeId === op.fromNodeId
         && connection.toNodeId === op.toNodeId
         && connection.fromHandleId === op.fromHandleId
-        && connection.toHandleId === op.toHandleId);
+        && connection.toHandleId === op.toHandleId
+        && connection.relation === op.relation
+        && connection.storyboardRowId === op.storyboardRowId);
 
     for (const op of ops) {
         if (op.type === "add_node") {
@@ -362,11 +395,24 @@ export function applyCanvasOperations(snapshot: CanvasSnapshot, ops?: CanvasOper
         }
         if (op.type === "connect_nodes") {
             if (!op.fromNodeId || !op.toNodeId) return;
-            const exists = connections.some((conn) => conn.fromNodeId === op.fromNodeId && conn.toNodeId === op.toNodeId && conn.fromHandleId === op.fromHandleId && conn.toHandleId === op.toHandleId);
+            const exists = connections.some((conn) => conn.fromNodeId === op.fromNodeId
+                && conn.toNodeId === op.toNodeId
+                && conn.fromHandleId === op.fromHandleId
+                && conn.toHandleId === op.toHandleId
+                && conn.relation === op.relation
+                && conn.storyboardRowId === op.storyboardRowId);
             const from = nodes.find((node) => node.id === op.fromNodeId);
             const to = nodes.find((node) => node.id === op.toNodeId);
             const hasNodes = Boolean(from && to && from.type !== CanvasNodeType.Frame && to.type !== CanvasNodeType.Frame);
-            if (!exists && hasNodes) connections = [...connections, { id: op.id || nanoid(), fromNodeId: op.fromNodeId, toNodeId: op.toNodeId, fromHandleId: op.fromHandleId, toHandleId: op.toHandleId }];
+            if (!exists && hasNodes) {
+                const connection = { id: op.id || nanoid(), fromNodeId: op.fromNodeId, toNodeId: op.toNodeId, fromHandleId: op.fromHandleId, toHandleId: op.toHandleId, relation: op.relation, storyboardRowId: op.storyboardRowId };
+                connections = [...connections, connection];
+                // 分镜行是整片生产主索引：MCP/ops 连出的分镜线同样要把行绑定写回，
+                // 否则 StoryboardRow.imageNodeId / videoNodeId 会一直停在空值。
+                if (op.relation === "storyboard-output" || op.fromHandleId?.startsWith("row:") || op.toHandleId?.startsWith("row:")) {
+                    nodes = attachNodeToStoryboardRow(nodes, connection, connections);
+                }
+            }
         }
         if (op.type === "set_viewport" && op.viewport) viewport = op.viewport;
         if (op.type === "select_nodes") selectedNodeIds = (op.ids || []).filter((id) => nodes.some((node) => node.id === id));

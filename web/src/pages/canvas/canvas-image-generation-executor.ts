@@ -5,7 +5,7 @@ import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGen
 import { cancelIncompleteImageBatch, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
-import { canvasImageReferenceLimitError, buildImageGenerationMetadata, getGenerationCount, isGenerationCanceled, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import { canvasImageReferenceLimitError, buildImageGenerationMetadata, generationClientOperationIdForIndex, getGenerationCount, isGenerationCanceled, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
 import { CONTENT_MODERATION_ERROR_CODE, generationFailureMetadata, type GenerationFailureMetadata } from "@/lib/generation-error";
@@ -43,6 +43,7 @@ export async function executeImageGeneration({
     skillMetadata,
     taskContext,
     retryContext,
+    clientOperationId,
     showError,
     registerPendingNodeIds,
 }: CanvasGenerationExecution) {
@@ -180,13 +181,14 @@ export async function executeImageGeneration({
     let failureCount = 0;
     let representativeFailure: GenerationFailureMetadata | undefined;
     await Promise.all(
-        targetIds.map(async (targetId) => {
+        targetIds.map(async (targetId, index) => {
             try {
                 await runCanvasGenerationTaskToConsumer(
                     {
                         projectId,
                         nodeId: targetId,
                         ...retryContext,
+                        clientOperationId: generationClientOperationIdForIndex(retryContext?.clientOperationId || clientOperationId, index, targetIds.length),
                         mode: "image",
                         prompt: effectivePrompt,
                         config: { ...generationConfig, count: "1" },

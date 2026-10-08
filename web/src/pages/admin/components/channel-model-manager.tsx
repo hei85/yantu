@@ -5,10 +5,11 @@ import { Plus, RefreshCw, Search, SlidersHorizontal, Trash2 } from "lucide-react
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { ModelIcon } from "@/components/model-picker";
-import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
+import { planChannelModelBatchUpdate } from "@/lib/channel-model-batch";
+import type { ChannelModelCatalogItem } from "@/lib/channel-model-catalog";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
-import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, updateAdminChannelModel, type ChannelModel, type ChannelModelVariant } from "@/services/api/channel-models";
+import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModelCatalog, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, updateAdminChannelModel, type ChannelModel, type ChannelModelVariant } from "@/services/api/channel-models";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { ChannelModelEditor } from "./channel-model-editor";
 import { AdminPageFrame } from "./admin-shell";
@@ -122,19 +123,14 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
 
     const importSelectedModels = async () => {
         if (!selectedFetchModels.length) return;
-        if (!selectedNewFetchModels.length) {
-            message.info("当前勾选的模型均已存在，没有需要新增的模型");
-            resetFetchPreview();
-            return;
-        }
         setImporting(true);
         try {
             const result = await importAdminChannelModels(channel.id, selectedFetchModels);
             await reload();
             await onChanged();
             resetFetchPreview();
-            if (result.added > 0) message.success(`已导入 ${result.added} 个模型，新增模型默认停用，确认配置后再启用`);
-            else message.info("所选模型均已存在，没有新增模型");
+            if (result.added > 0) message.success(`已导入 ${result.added} 个模型，并同步可识别的渠道参数`);
+            else message.success("已同步所选模型的渠道参数，保留已有手动配置");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "导入模型失败");
         } finally {
@@ -170,39 +166,62 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
             message.warning("请至少选择一项要修改的配置");
             return;
         }
+        if (protocolLoading || protocolError) {
+            message.error(protocolError || "请求协议目录尚未加载，请稍后重试");
+            return;
+        }
         setBatchSaving(true);
         let updated = 0;
         try {
+            const needsCatalog = batchProtocol === "keep" && selected.some((item) =>
+                !availableProtocols.some((entry) => entry.value === item.protocol && entry.capability === (batchCapability === "keep" ? item.capability : batchCapability) && entry.enabled !== false));
+            // A list-only catalog (or an unavailable metadata refresh) must not
+            // block the standard model defaults or a valid saved protocol.
+            const catalog = needsCatalog ? (await fetchAdminChannelModelCatalog(channel.id).catch(() => ({ models: [] }))).models : [];
+            const catalogByKey = new Map<string, ChannelModelCatalogItem>(catalog.map((entry) => [normalizeFetchModelKey(entry.id), entry]));
+            const unresolved: Array<{ name: string; reason: string }> = [];
+            let inferred = 0;
+            let corrected = 0;
             for (const item of selected) {
-                const capability = batchCapability === "keep" ? item.capability : batchCapability;
-                const protocol = batchProtocol === "keep" ? item.protocol : batchProtocol;
-                const upstreamModel = item.providerModelKey || item.modelKey;
-                const capabilityConfig = capability === "audio"
-                    ? undefined
-                    : batchProtocol === "keep"
-                        ? item.capabilityConfig
-                        : defaultModelCapabilityConfig(protocol, upstreamModel);
-                await updateAdminChannelModel(channel.id, item.id, {
-                    modelKey: item.modelKey,
-                    providerModelKey: upstreamModel,
-                    displayName: item.displayName,
-                    channelLabel: item.channelLabel,
-                    description: item.description,
-                    icon: item.icon,
-                    capability,
-                    protocol,
-                    enabled: batchStatus === "keep" ? item.enabled : batchStatus === "enable",
-                    capabilityConfig,
-                });
-                updated += 1;
+                const plan = planChannelModelBatchUpdate(
+                    item,
+                    catalogByKey.get(normalizeFetchModelKey(item.providerModelKey || item.modelKey)),
+                    availableProtocols,
+                    { capability: batchCapability, protocol: batchProtocol, status: batchStatus },
+                    channel.apiFormat,
+                );
+                if (!("mutation" in plan)) {
+                    unresolved.push({ name: item.modelKey, reason: plan.reason });
+                    continue;
+                }
+                try {
+                    await updateAdminChannelModel(channel.id, item.id, plan.mutation);
+                    updated += 1;
+                    if (plan.inferredProtocol) inferred += 1;
+                    if (plan.correctedCapability) corrected += 1;
+                } catch (error) {
+                    unresolved.push({ name: item.modelKey, reason: error instanceof Error ? error.message : "保存失败" });
+                }
             }
-            setSelectedModelIds([]);
-            await reload();
-            await onChanged();
+            if (updated > 0) {
+                setSelectedModelIds(unresolved.length ? selected.filter((item) => unresolved.some((failure) => failure.name === item.modelKey)).map((item) => item.id) : []);
+                await reload();
+                await onChanged();
+            }
             setBatchConfigOpen(false);
-            message.success(`已更新 ${updated} 个模型的配置`);
+            if (unresolved.length) {
+                modal.warning({
+                    title: `已配置 ${updated} 个，另有 ${unresolved.length} 个需要核对`,
+                    content: <div className="max-h-[40vh] space-y-2 overflow-y-auto text-sm">{unresolved.map((failure) => (
+                        <div key={failure.name}><strong className="break-all">{failure.name}</strong>：{failure.reason}</div>
+                    ))}</div>,
+                    okText: "知道了",
+                });
+            } else {
+                message.success(`已更新 ${updated} 个模型${inferred ? `，自动补齐 ${inferred} 个请求协议` : ""}${corrected ? `，纠正 ${corrected} 个能力分类` : ""}`);
+            }
         } catch (error) {
-            message.error(error instanceof Error ? `${error.message}（已成功 ${updated} 个）` : "批量配置失败");
+            message.error(error instanceof Error ? `无法读取上游模型接口：${error.message}` : "批量配置失败");
         } finally {
             setBatchSaving(false);
         }
@@ -337,9 +356,6 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                     <Button loading={fetching} icon={<RefreshCw className="size-4" />} onClick={() => void fetchModels()}>
                         拉取模型
                     </Button>
-                    <Button type="primary" icon={<Plus className="size-4" />} onClick={startCreate}>
-                        新增模型
-                    </Button>
                 </Space>
             }
         >
@@ -470,7 +486,7 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                 }
             />
             <Modal
-                title="选择要导入的模型"
+                title="选择要导入或更新的模型"
                 open={fetchPreviewOpen}
                 centered
                 width={720}
@@ -483,12 +499,12 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                         取消
                     </Button>,
                     <Button key="confirm" type="primary" loading={importing} disabled={!selectedFetchModels.length} onClick={() => void importSelectedModels()}>
-                        确认导入
+                        确认导入或更新
                     </Button>,
                 ]}
             >
                 <div className="space-y-3">
-                    <p className="m-0 text-sm text-foreground/65">上游共返回 {fetchPreviewModels.length} 个模型。默认已全选，可批量全选或取消全选；已存在的模型不会重复导入。</p>
+                    <p className="m-0 text-sm text-foreground/65">上游共返回 {fetchPreviewModels.length} 个模型。默认已全选，可批量全选或取消全选；已有模型会同步可识别的渠道参数，并保留手动配置。</p>
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/25 px-3 py-2">
                         <span className="text-sm font-medium text-foreground/70" aria-live="polite">
                             已选择 {selectedFetchModels.length} / {fetchPreviewModels.length} 个模型
@@ -512,8 +528,8 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                         />
                     </div>
                     <div className="text-xs text-foreground/50">
-                        {selectedNewFetchModels.length > 0 ? `将导入 ${selectedNewFetchModels.length} 个新模型` : "当前勾选的模型均已存在"}
-                        {selectedExistingFetchCount > 0 ? `，另有 ${selectedExistingFetchCount} 个已存在模型已勾选` : ""}
+                        {selectedNewFetchModels.length > 0 ? `将导入 ${selectedNewFetchModels.length} 个新模型` : "当前未选择新模型"}
+                        {selectedExistingFetchCount > 0 ? `，同步 ${selectedExistingFetchCount} 个已有模型的渠道参数` : ""}
                     </div>
                 </div>
             </Modal>
@@ -533,10 +549,9 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
             >
                 <div className="space-y-4">
                     <p className="m-0 text-sm text-foreground/65">
-                        已选择 <strong>{selectedModelIds.length}</strong> 个模型。只改你在这里选中的项，其余字段（描述、能力参数）保持原样；
-                        启用时会自动补齐发布所需的占位配置，这样创作端就能选到它。
+                        已选择 <strong>{selectedModelIds.length}</strong> 个模型。地址和 API Key 只需在渠道填写一次；这里保留“不修改”即可自动补齐缺失的调用方式，无法确认的模型会列出原因。
                     </p>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3">
                         <label className="grid gap-1.5 text-sm">
                             <span className="text-foreground/65">能力</span>
                             <Select
@@ -556,7 +571,6 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                             <Select
                                 showSearch
                                 optionFilterProp="label"
-                                popupMatchSelectWidth={false}
                                 value={batchProtocol}
                                 onChange={setBatchProtocol}
                                 options={batchProtocolOptions}
@@ -578,8 +592,8 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                     </div>
                     <div className="grid gap-2 rounded-md bg-muted/40 p-3 text-xs leading-relaxed text-foreground/60">
                         <p className="m-0"><strong className="text-foreground/75">能力</strong>：这个模型是干什么的 —— 文本＝对话/写作，图片＝生图，视频＝生视频，音频＝配音/音乐。</p>
-                        <p className="m-0"><strong className="text-foreground/75">请求协议</strong>：按上游接口选，要和你的中转站提供的一致（OpenAI 兼容通常是：文本 <span className="admin-monospace">/chat/completions</span>、图片 <span className="admin-monospace">/images/generations</span>、语音 <span className="admin-monospace">/v1/audio/speech</span>）。不确定就先选一个，再用该模型行的「编辑 → 测试」验证。</p>
-                        <p className="m-0"><strong className="text-foreground/75">状态</strong>：启用后模型才会出现在创作端的模型选择里。</p>
+                        <p className="m-0"><strong className="text-foreground/75">请求协议</strong>：软件向中转站提交请求的接口与格式；中转站收到请求后再按模型 ID 选择上游。通常会从中转站模型目录自动识别，只有目录信息缺失时才需要手动选择。</p>
+                        <p className="m-0"><strong className="text-foreground/75">状态</strong>：接口可识别的新模型会自动启用；停用后不会出现在创作端。</p>
                     </div>
                 </div>
             </Modal>

@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { Columns2 } from "lucide-react";
 
+import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { useUpstreamNodes } from "@/components/canvas/canvas-node-graph-context";
+import { compareSplitPercentageFromPointer, normalizeCompareSplitPercentage } from "@/lib/canvas/canvas-compare-split";
 import { getNodeResourceKind } from "@/lib/canvas/node-registry";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { CanvasNodeData } from "@/types/canvas";
@@ -11,17 +13,12 @@ type CompareNodeContentProps = {
     theme: CanvasTheme;
 };
 
-/**
- * A/B 对比节点：吃两个图片上游，中间一根滑杆左右拖动对比。
- *
- * 分割位置只存组件内 state，不落 metadata——它是「看的时候临时挪一下」，
- * 不是画布内容；CanvasNodeContentProps 也只给了 onContentChange(content)，
- * 为它另开一条写元数据的通道不值得。
- */
+/** A/B 对比节点：吃两个图片上游，滑杆位置保存到节点 metadata。 */
 export function CompareNodeContent({ node, theme }: CompareNodeContentProps) {
+    const { updateMetadata } = useCanvasNodeActions();
     const upstream = useUpstreamNodes(node.id);
     const images = upstream.filter((item) => getNodeResourceKind(item) === "image");
-    const [split, setSplit] = useState(50);
+    const split = normalizeCompareSplitPercentage(node.metadata?.compareSplitPercentage);
     const hostRef = useRef<HTMLDivElement | null>(null);
     const draggingRef = useRef(false);
 
@@ -40,7 +37,8 @@ export function CompareNodeContent({ node, theme }: CompareNodeContentProps) {
     const moveTo = (clientX: number) => {
         const rect = hostRef.current?.getBoundingClientRect();
         if (!rect?.width) return;
-        setSplit(Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)));
+        const nextSplit = compareSplitPercentageFromPointer(clientX, rect.left, rect.width);
+        if (nextSplit !== undefined && nextSplit !== split) updateMetadata?.(node.id, { compareSplitPercentage: nextSplit });
     };
 
     return (

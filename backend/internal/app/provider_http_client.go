@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/distribution"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/platform"
 )
@@ -220,6 +221,16 @@ func doBinary(req *http.Request) ([]byte, string, error) {
 // 渠道并发/熔断、SSRF、超时、响应大小、HTTP 状态和审计检查；onChunk 仅观察已读取的流片段，
 // 不会绕过完整响应的大小上限或错误判定。
 func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]byte, string, error) {
+	// API calls carry provider auth; public reference/result downloads do not.
+	modelRequest := req.Header.Get("Authorization") != "" || req.Header.Get("x-api-key") != "" || req.Header.Get("x-goog-api-key") != ""
+	if metadata, ok := req.Context().Value(providerAnalyticsKey{}).(providerAnalyticsContext); ok && (metadata.RequestKind == "create" || metadata.RequestKind == "poll") {
+		modelRequest = true
+	}
+	if modelRequest {
+		if err := distribution.ValidateModelURL(req.URL.String()); err != nil {
+			return nil, "", Forbidden(err.Error())
+		}
+	}
 	startedAt := time.Now()
 	requestTimeout := providerHTTPTimeout
 	if deadline, ok := req.Context().Deadline(); ok {
@@ -268,6 +279,9 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 	}
 	ApplyDefaultOutboundHeaders(req)
 	client := OutboundHTTPClient(requestTimeout)
+	if modelRequest {
+		client = distribution.RestrictModelClient(client)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		err = providerConnectionError(err)

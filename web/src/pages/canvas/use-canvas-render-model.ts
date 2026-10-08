@@ -6,6 +6,7 @@ import { sameNodeSemanticData } from "@/lib/canvas/canvas-project-domain";
 import { canvasNodeRenderBudget, canvasNodeRenderPadding, CANVAS_MAX_RENDERED_CONNECTIONS, shouldReduceCanvasMediaEffects } from "@/lib/canvas/canvas-performance-mode";
 import { buildCanvasNodeMentionReferenceMap, buildCanvasResourceReferences } from "@/lib/canvas/canvas-resource-references";
 import { buildSkillMentionReferences } from "@/lib/canvas/canvas-skill-mentions";
+import { collapsedStoryboardReferenceConnectionIds } from "@/lib/canvas/canvas-storyboard-connection-display";
 import { buildCanvasSpatialIndex, canvasNodeBounds, type CanvasSpatialIndex, type CanvasSpatialIndexEntry } from "@/lib/canvas/canvas-spatial-index";
 import type { Skill } from "@/services/api/skills";
 import type { Asset, ImageAsset } from "@/stores/use-asset-store";
@@ -276,7 +277,9 @@ export function useCanvasRenderModel({
     const connectionSpatialIndex = useMemo(() => {
         const entries: CanvasSpatialIndexEntry<CanvasDisplayConnection>[] = [];
         const connectionIdsByNodeId = new Map<string, Set<string>>();
+        const collapsedReferenceIds = collapsedStoryboardReferenceConnectionIds(nodes, connections);
         connections.forEach((connection) => {
+            if (collapsedReferenceIds.has(connection.id)) return;
             if (collapsedBatchChildIds.has(connection.fromNodeId) || collapsedBatchChildIds.has(connection.toNodeId)) return;
             const fromNode = nodeById.get(connection.fromNodeId);
             const toNode = nodeById.get(connection.toNodeId);
@@ -299,7 +302,7 @@ export function useCanvasRenderModel({
             }
         });
         return { index: buildCanvasSpatialIndex(entries), connectionIdsByNodeId, entriesById: new Map(entries.map((entry) => [entry.id, entry.value])) };
-    }, [collapsedBatchChildIds, connections, nodeById]);
+    }, [collapsedBatchChildIds, connections, nodeById, nodes]);
     const displayConnections = useMemo(() => {
         const candidateById = new Map<string, CanvasDisplayConnection>();
         connectionSpatialIndex.index.query(renderBounds.retain, CANVAS_MAX_RENDERED_CONNECTIONS).forEach((display) => candidateById.set(display.connection.id, display));

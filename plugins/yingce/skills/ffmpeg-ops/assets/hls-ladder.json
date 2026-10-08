@@ -1,0 +1,20 @@
+{
+  "schema": "claude-mods.ffmpeg-ops.hls-ladder/v1",
+  "updated": "2026-06-12",
+  "note": "ABR ladder reference derived from Apple's HLS authoring guidelines (H.264, 16:9). Bitrates are video-only targets in kb/s; pair with 128k AAC audio. Trim rungs you don't need - a 3-rung ladder (e.g. 1080/720/360) covers most non-broadcast uses. Segment duration 6s; keyframe interval must equal segment duration x fps.",
+  "ladder": [
+    { "name": "2160p", "resolution": "3840x2160", "video_kbps": 16800, "profile": "high", "level": "5.1", "fps": "source" },
+    { "name": "1440p", "resolution": "2560x1440", "video_kbps": 9600,  "profile": "high", "level": "5.0", "fps": "source" },
+    { "name": "1080p", "resolution": "1920x1080", "video_kbps": 6000,  "profile": "high", "level": "4.2", "fps": "source" },
+    { "name": "720p",  "resolution": "1280x720",  "video_kbps": 3000,  "profile": "main", "level": "4.0", "fps": "source" },
+    { "name": "540p",  "resolution": "960x540",   "video_kbps": 2000,  "profile": "main", "level": "3.1", "fps": "source" },
+    { "name": "360p",  "resolution": "640x360",   "video_kbps": 730,   "profile": "main", "level": "3.0", "fps": "source" },
+    { "name": "270p",  "resolution": "480x270",   "video_kbps": 365,   "profile": "baseline", "level": "3.0", "fps": "source" }
+  ],
+  "audio": { "codec": "aac", "kbps": 128, "sample_rate": 48000 },
+  "packaging": {
+    "segment_duration_s": 6,
+    "playlist_type": "vod",
+    "keyframe_rule": "force keyframes at segment boundaries: -g <fps*6> -keyint_min <fps*6> -sc_threshold 0, or -force_key_frames expr:gte(t,n_forced*6)"
+  }
+}

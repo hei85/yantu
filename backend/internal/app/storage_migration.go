@@ -12,10 +12,9 @@ import (
 const storageMigrationMarker = ".storage-v2-migrated"
 
 type StorageMigrationSummary struct {
-	Tasks    int
-	Assets   int
-	Projects int
-	Backup   string
+	Tasks  int
+	Assets int
+	Backup string
 }
 
 func (s *Service) MigrateLegacyStorage() (StorageMigrationSummary, error) {
@@ -133,33 +132,6 @@ func (s *Service) MigrateLegacyStorage() (StorageMigrationSummary, error) {
 			return summary, err
 		}
 		summary.Assets++
-	}
-
-	projects, err := s.repo.AllCanvasProjects()
-	if err != nil {
-		return summary, err
-	}
-	for index := range projects {
-		if !strings.Contains(projects[index].PayloadJSON, "data:") {
-			continue
-		}
-		var payload map[string]interface{}
-		if err := json.Unmarshal([]byte(projects[index].PayloadJSON), &payload); err != nil {
-			return summary, fmt.Errorf("解析画布项目 %s 的旧载荷失败：%w", projects[index].ID, err)
-		}
-		stored, err := s.persistLegacyGeneratedMediaResult(projects[index].UserID, payload)
-		if err != nil {
-			return summary, fmt.Errorf("迁移画布项目 %s 的旧媒体失败：%w", projects[index].ID, err)
-		}
-		encoded, err := json.Marshal(stored)
-		if err != nil {
-			return summary, fmt.Errorf("序列化画布项目 %s 的迁移载荷失败：%w", projects[index].ID, err)
-		}
-		projects[index].PayloadJSON = string(encoded)
-		if err := s.repo.Save(&projects[index]); err != nil {
-			return summary, err
-		}
-		summary.Projects++
 	}
 
 	if err := s.repo.CleanupDuplicateTaskPayloads(); err != nil {

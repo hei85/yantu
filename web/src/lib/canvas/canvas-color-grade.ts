@@ -31,16 +31,44 @@ function cacheKey(url: string, grade: CanvasColorGrade) {
     return `${url}|${grade.brightness}|${grade.contrast}|${grade.saturate}|${grade.hueRotate}`;
 }
 
-async function renderGradedBlob(url: string, grade: CanvasColorGrade) {
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
+export type CanvasColorGradeRenderRuntime = {
+    loadImage: (url: string) => Promise<HTMLImageElement>;
+    createCanvas: () => HTMLCanvasElement;
+};
+
+const browserColorGradeRenderRuntime: CanvasColorGradeRenderRuntime = {
+    loadImage: (url) => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        image.onload = () => resolve(image);
         image.onerror = () => reject(new Error("源图无法读取（可能不允许跨域）"));
         image.src = url;
-    });
+    }),
+    createCanvas: () => document.createElement("canvas"),
+};
 
-    const canvas = document.createElement("canvas");
+function validateCanvasColorGrade(grade: CanvasColorGrade) {
+    if (!grade || !Number.isFinite(grade.brightness) || grade.brightness < 0 || grade.brightness > 200
+        || !Number.isFinite(grade.contrast) || grade.contrast < 0 || grade.contrast > 200
+        || !Number.isFinite(grade.saturate) || grade.saturate < 0 || grade.saturate > 200
+        || !Number.isFinite(grade.hueRotate) || grade.hueRotate < -180 || grade.hueRotate > 180) {
+        throw new Error("调色参数超出允许范围");
+    }
+}
+
+/** Render the same PNG pixels shown by the color-grade node preview, without uploading or generating. */
+export async function renderCanvasColorGradePng(
+    url: string,
+    grade: CanvasColorGrade,
+    runtime: CanvasColorGradeRenderRuntime = browserColorGradeRenderRuntime,
+): Promise<{ dataUrl: string; width: number; height: number }> {
+    if (typeof url !== "string" || !url.trim()) throw new Error("调色节点缺少可读源图");
+    validateCanvasColorGrade(grade);
+    const image = await runtime.loadImage(url);
+    if (!Number.isFinite(image.naturalWidth) || image.naturalWidth < 1 || !Number.isFinite(image.naturalHeight) || image.naturalHeight < 1) {
+        throw new Error("源图尺寸无效，无法导出调色结果");
+    }
+    const canvas = runtime.createCanvas();
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const ctx = canvas.getContext("2d");
@@ -50,10 +78,17 @@ async function renderGradedBlob(url: string, grade: CanvasColorGrade) {
     if (!("filter" in ctx)) throw new Error("当前浏览器不支持导出调色结果，请换用 Chrome / Edge");
     ctx.filter = colorGradeCssFilter(grade);
     ctx.drawImage(image, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    if (!dataUrl.startsWith("data:image/png;base64,")) throw new Error("调色结果未能导出为 PNG");
+    return { dataUrl, width: canvas.width, height: canvas.height };
+}
 
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("调色结果导出失败");
-    return { blob, width: canvas.width, height: canvas.height };
+function blobFromPngDataUrl(dataUrl: string): Blob {
+    const encoded = dataUrl.slice("data:image/png;base64,".length);
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return new Blob([bytes], { type: "image/png" });
 }
 
 /**
@@ -70,8 +105,8 @@ export async function resolveCanvasColorGradeReference(image: ReferenceImage): P
     if (cached) return { ...image, dataUrl: "", url: cached.url, storageKey: cached.storageKey, type: cached.type };
 
     try {
-        const render = await renderGradedBlob(source.url, source.grade);
-        const resource = await uploadResourceFile(render.blob, "image", {
+        const render = await renderCanvasColorGradePng(source.url, source.grade);
+        const resource = await uploadResourceFile(blobFromPngDataUrl(render.dataUrl), "image", {
             width: render.width,
             height: render.height,
             fileName: `colorgrade-${image.id}.png`,

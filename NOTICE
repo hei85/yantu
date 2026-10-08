@@ -1,8 +1,10 @@
 Open AI Canvas
 Copyright (C) 2026 ddcat
 
-This program is licensed under the MIT License.
-The complete license text is provided in LICENSE.
+The upstream program and previously MIT-licensed contributions remain under
+MIT. Its complete text is preserved in licenses/MIT-upstream.txt.
+New copyrightable contributions owned by hei85 are governed by LICENSE;
+that policy does not narrow existing MIT or third-party grants.
 
 This project is a derivative work based on:
 
@@ -16,7 +18,7 @@ commit is authored by HouYunFei. Upstream authors and contributors retain
 their copyright and attribution for their respective contributions. The
 upstream project was relicensed to MIT in commit
 890ba95858bbb13496d23978003716656109abb2; its copyright and permission notice
-are preserved in LICENSE.
+are preserved in licenses/MIT-upstream.txt.
 
 Material changes in this repository are maintained by ddcat. They include a
 multi-user Go backend, task processing and analytics, private resource
@@ -26,3 +28,9 @@ and cloud Agent integrations.
 Third-party packages remain subject to the licenses declared by their
 respective authors. Product names and logos under web/public/icons are the
 property of their respective owners and do not imply endorsement.
+
+This iteration is maintained at https://github.com/hei85/yantu and includes
+portable local operation, native Canvas MCP, production skills, continuity
+and media validation, interface recovery and the Axon distribution policy.
+Private settings, keys, credentials, user projects, media and model weights
+are excluded. See THIRD_PARTY_NOTICES.md for skill and dependency attribution.

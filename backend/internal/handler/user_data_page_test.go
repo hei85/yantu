@@ -8,24 +8,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestUserDataIncrementalRoutesAreRegistered(t *testing.T) {
+func TestPersonalCloudAssetRoutesAreNotRegistered(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	RegisterUserDataRoutes(router.Group("/api"), &service.Service{})
-	wanted := map[string]bool{
-		"GET /api/canvas-projects":     false,
-		"GET /api/canvas-projects/:id": false,
-		"POST /api/assets/batch":       false,
+	removed := map[string]bool{
+		"POST /api/assets/batch":                false,
+		"GET /api/assets":                       false,
+		"GET /api/assets/:id":                   false,
+		"PUT /api/assets/:id":                   false,
+		"DELETE /api/assets/:id":                false,
+		"GET /api/user-data/snapshot":           false,
+		"GET /api/asset-folders":                false,
+		"POST /api/asset-folders":               false,
+		"PATCH /api/assets/folder":              false,
 	}
 	for _, route := range router.Routes() {
 		key := route.Method + " " + route.Path
-		if _, exists := wanted[key]; exists {
-			wanted[key] = true
+		if _, exists := removed[key]; exists {
+			removed[key] = true
 		}
 	}
-	for route, found := range wanted {
-		if !found {
-			t.Errorf("missing route: %s", route)
+	for route, found := range removed {
+		if found {
+			t.Errorf("personal cloud asset route is still registered: %s", route)
 		}
 	}
 }

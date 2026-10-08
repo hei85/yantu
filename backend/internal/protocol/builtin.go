@@ -397,7 +397,9 @@ func miniMaxVideosAdapter() Adapter {
 			content = append(content, map[string]any{"type": "audio_url", "audio_url": map[string]any{"url": mediaValue(audio)}, "role": "reference_audio"})
 		}
 		body := map[string]any{"model": r.Model, "prompt": r.Prompt, "duration": defaultInt(r.Duration, 6), "content": content}
-		mergeExtra(body, r.Extra, "model", "prompt", "duration", "content", "resolution", "aspect_ratio")
+		copyIf(body, "ratio", r.AspectRatio)
+		copyIf(body, "resolution", r.Resolution)
+		mergeExtra(body, r.Extra, "model", "prompt", "duration", "content", "resolution", "ratio")
 		return jsonSpec(http.MethodPost, "/v2/video_generation", body), nil
 	})
 }

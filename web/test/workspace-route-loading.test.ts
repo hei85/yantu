@@ -13,8 +13,10 @@ describe("workspace route loading", () => {
 
         expect(deferred).toContain("<WorkspaceRouteLoader />");
         expect(deferred).not.toContain("FullScreenLoader");
-        expect(router).toContain("fullScreenDeferred(<LoginPage />)");
-        expect(router).toContain("fullScreenDeferred(<SharedCanvasPage />)");
+        expect(router).toContain('path: "/login"');
+        expect(router).toContain('element: <Navigate to="/" replace />');
+        expect(router).not.toContain("LoginPage");
+        expect(router).not.toContain("SharedCanvasPage");
     });
 
     test("preloads the reported workspace routes before navigation", () => {
@@ -35,8 +37,8 @@ describe("workspace route loading", () => {
         const router = source("../src/router.tsx");
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");
 
-        expect(router).toContain('{ path: "/", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> }');
-        expect(router).toContain('{ path: "/create", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> }');
+        expect(router).toContain('{ path: "/", element: deferred(<CreatePage />) }');
+        expect(router).toContain('{ path: "/create", element: deferred(<CreatePage />) }');
         expect(router).not.toContain('path: "/home"');
         expect(router).not.toContain("HomePage");
         expect(navigation).toContain('{ ...toolItem("create", "/"), id: "home", title: "创作" }');
@@ -85,7 +87,7 @@ describe("workspace route loading", () => {
         expect(editor).toContain("syncedAssetOwnerKeyRef.current = assetOwnerKey");
         expect(editor.match(/listProjectAssets\(projectId\)/g)).toHaveLength(1);
     });
-    test("defers modal-only markdown and canvas creation runtimes until interaction", () => {
+    test("defers modal-only markdown and stores project canvases locally", () => {
         const changelogButton = source("../src/components/layout/app-changelog-modal.tsx");
         const announcements = source("../src/components/layout/system-announcement-center.tsx");
         const projectDetail = source("../src/pages/projects/detail.tsx");
@@ -94,8 +96,8 @@ describe("workspace route loading", () => {
         expect(changelogButton).toContain('lazy(() => import("@/components/layout/app-changelog-dialog")');
         expect(changelogButton).not.toContain('from "react-markdown"');
         expect(announcements).toContain('lazy(() => import("@/components/ui/aceternity/announcement-timeline-modal")');
-        expect(projectDetail).toContain('import("@/services/user-data-sync")');
-        expect(projectDetail).not.toContain('import { createCanvasProjectWithRemoteSync } from "@/services/user-data-sync"');
+        expect(projectDetail).toContain("createLocalCanvasProject");
+        expect(projectDetail).not.toContain("user-data-sync");
         expect(workflow).not.toContain('from "@/lib/video-poster"');
         expect(workflow).toContain('if (playing) return <video');
     });

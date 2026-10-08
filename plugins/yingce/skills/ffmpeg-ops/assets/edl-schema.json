@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "claude-mods.ffmpeg-ops.edl-schema/v1",
+  "title": "Edit Decision List",
+  "description": "The contract between shot selection and cut-from-edl.py. The edit is this file: reviewable (rationale written down), rerunnable (regenerate output any time), diffable (versions are git history). Times are seconds from the start of each source file.",
+  "type": "object",
+  "required": ["scenes"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Human title for the edit"
+    },
+    "output": {
+      "type": "string",
+      "description": "Default output path, relative to this file (cut-from-edl.py -o overrides)"
+    },
+    "source_notes": {
+      "type": "string",
+      "description": "Anything the next reader needs about the footage (takes layout, which re-shoots exist, transcript locations)"
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["clips"],
+        "properties": {
+          "scene": {
+            "type": ["integer", "string"],
+            "description": "Scene number or id"
+          },
+          "title": {
+            "type": "string"
+          },
+          "candidate_takes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Takes that were considered — documentation of the search space"
+          },
+          "selection_rationale": {
+            "type": "string",
+            "description": "WHY these clips won. Write it down; this is what makes the EDL reviewable. E.g. 'C003 is the cleanest complete take: zero ums, clean ending; C017 disqualified - 5.8s dead pause mid-sentence.'"
+          },
+          "clips": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["file", "start", "end"],
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "description": "Source path, relative to this EDL file (or absolute)"
+                },
+                "start": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "In-point, seconds. Should sit in silence — verify with detect-segments.py --silence"
+                },
+                "end": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Out-point, seconds (absolute in the source, not a duration). Must be > start"
+                },
+                "first_words": {
+                  "type": "string",
+                  "description": "First words spoken in this range — a human-checkable anchor against the transcript"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

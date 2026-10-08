@@ -70,6 +70,6 @@ export function testAdminLibTV(uuid: string) {
     return http.post<{ ok: boolean }>("/admin/settings/libtv/test", { uuid });
 }
 
-export function importLibTVCanvas(projectId: string, uuid: string) {
-    return http.post<LibTVImportResult>(`/canvas-projects/${encodeURIComponent(projectId)}/import/libtv`, { uuid });
+export function importLibTVCanvas(uuid: string) {
+    return http.post<LibTVImportResult>("/libtv/import", { uuid });
 }

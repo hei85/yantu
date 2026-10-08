@@ -51,8 +51,10 @@ const NODE_STATUS_ERROR = "error" as const;
 export type CanvasNodeGenerationOptions = {
     controller?: AbortController;
     waitForTaskCapacity?: boolean;
-    context?: { conversationId?: string; messageId?: string };
+    // source = "local" 表示由本机 MCP/画布 Agent 驱动，此类调用不能静默返回。
+    context?: { conversationId?: string; messageId?: string; source?: string };
     retryContext?: { retryOf: string; attemptGroupId: string; clientOperationId: string };
+    clientOperationId?: string;
     onTaskUpdate?: (task: GenerationTask) => void;
     skipDuplicateConfirmation?: boolean;
 };
@@ -102,12 +104,19 @@ export function useCanvasGenerationExecutor({
                 nodeId,
                 async () => {
                     const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
+                    // 本地/MCP 驱动时禁止静默返回：否则调用方只看到“生成流程结束，但没有创建可追踪的任务”，拿不到真实原因。
+                    const localAgentDriven = options?.context?.source === "local";
+                    const abortSubmission = (reason: string, level: "info" | "error" = "error") => {
+                        if (localAgentDriven) throw new Error(reason);
+                        if (level === "info") message.info(reason); else message.error(reason);
+                        return;
+                    };
                     if (isCanvasNodeGenerating(sourceNode)) {
-                        message.info("该节点的生成任务仍在进行中，请等待完成后次生成");
+                        abortSubmission("该节点的生成任务仍在进行中，请等待完成后次生成", "info");
                         return;
                     }
                     if (sourceNode?.type === CanvasNodeType.Video && sourceNode.metadata?.videoEditOperation === "concat") {
-                        message.info("合并成片节点不直接重新生成，请重新选择源视频合并");
+                        abortSubmission("合并成片节点不直接重新生成，请重新选择源视频合并", "info");
                         return;
                     }
                     let generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
@@ -130,7 +139,8 @@ export function useCanvasGenerationExecutor({
                         );
                     }
                     if (!isAiConfigReady(generationConfig, generationConfig.model)) {
-                        navigateToSettings({ continueCreation: true });
+                        if (!localAgentDriven) navigateToSettings({ continueCreation: true });
+                        abortSubmission(`模型「${generationConfig.model || "未选择"}」在当前浏览器没有可用配置或密钥，请先在设置里配置渠道与密钥后再生成`);
                         return;
                     }
 
@@ -171,7 +181,7 @@ export function useCanvasGenerationExecutor({
                         if (hydratedCompatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${hydratedCompatibilityError}`);
                     } catch (error) {
                         const errorDetails = generationErrorMessage(error);
-                        message.error(errorDetails);
+                        abortSubmission(errorDetails);
                         return;
                     }
 
@@ -179,7 +189,7 @@ export function useCanvasGenerationExecutor({
                     try {
                         skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: rawGenerationContext.prompt, skills: addedSkills });
                     } catch (error) {
-                        message.error(error instanceof Error ? error.message : "技能上下文加载失败");
+                        abortSubmission(error instanceof Error ? error.message : "技能上下文加载失败");
                         return;
                     }
                     let effectivePrompt = skillExecution.prompt.trim();
@@ -193,29 +203,30 @@ export function useCanvasGenerationExecutor({
                             }
                         } catch (error) {
                             const errorDetails = generationErrorMessage(error);
-                            message.error(errorDetails);
+                            abortSubmission(errorDetails);
                             return;
                         }
                     }
                     const promptLengthError = mode === "video" ? modelPromptLengthError(generationConfig, generationConfig.model, mode, effectivePrompt) : "";
                     if (promptLengthError) {
-                        message.error(promptLengthError);
+                        abortSubmission(promptLengthError);
                         return;
                     }
                     const generationContext = { ...rawGenerationContext, prompt: effectivePrompt };
                     if (mode === "audio" && generationContext.characterReferences.length) {
                         if (generationContext.characterReferences.length !== 1) {
-                            message.error("角色配音一次只能引用一个角色卡");
+                            abortSubmission("角色配音一次只能引用一个角色卡");
                             return;
                         }
                         const voice = generationContext.resolvedCharacterVoices[0];
                         if (!voice) {
-                            message.error("角色尚未绑定可用声音，无法创建角色配音任务");
+                            abortSubmission("角色尚未绑定可用声音，无法创建角色配音任务");
                             return;
                         }
                         generationConfig = { ...generationConfig, audioVoice: voice.voiceKey, audioInstructions: [voice.instructions, generationConfig.audioInstructions].filter(Boolean).join("；") };
                     }
                     if (!effectivePrompt && (mode === "text" || mode === "audio")) {
+                        abortSubmission("提示词为空，未提交生成");
                         return;
                     }
 
@@ -307,6 +318,7 @@ export function useCanvasGenerationExecutor({
                         skillMetadata: skillExecution.metadata,
                         taskContext: options?.context,
                         retryContext: options?.retryContext,
+                        clientOperationId: options?.clientOperationId,
                         setNodes,
                         setConnections,
                         setSelectedNodeIds,
@@ -361,6 +373,10 @@ export function useCanvasGenerationExecutor({
                         setNodes((current) =>
                             current.map((node) => (node.id === nodeId || pendingNodeIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } }) : node)),
                         );
+                        // 本地/MCP 驱动时把统一格式化后的安全失败原因抛回调用方。
+                        if (localAgentDriven) {
+                            throw new Error(failure.errorDetails);
+                        }
                     } finally {
                         finishGenerationRequest(nodeId, controller);
                         setRunningNodeId(null);

@@ -7,7 +7,6 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { Kbd } from "@/components/ui/base/kbd";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
-import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
 import { SystemAnnouncementCenter } from "@/components/layout/system-announcement-center";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { cn } from "@/lib/utils";
@@ -23,7 +22,7 @@ export type WorkspaceNavItem = {
     to?: string;
     shortcut?: string;
     badge?: string | number;
-    action?: "search" | "logout";
+    action?: "search";
     children?: WorkspaceNavItem[];
 };
 
@@ -66,9 +65,7 @@ function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user
 
     useEffect(() => setFailed(false), [avatarUrl]);
 
-    if (!user) {
-        return <Link to="/login" className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label="登录" title="登录"><CircleUserRound className="size-5" /><span>登录</span></Link>;
-    }
+    if (!user) return <div className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label="本地工作区"><CircleUserRound className="size-5" /><span>本地工作区</span></div>;
 
     const avatar = avatarUrl && !failed ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : <CircleUserRound aria-hidden />;
     const content = <WorkspaceAccountCard onNavigate={() => setMenuOpen(false)} />;
@@ -124,7 +121,6 @@ function NavItem({
     activeId,
     onSelect,
     onOpenSearch,
-    onLogout,
     level = 0,
     collapsed = false,
 }: {
@@ -132,7 +128,6 @@ function NavItem({
     activeId: string;
     onSelect: (id: string) => void;
     onOpenSearch: () => void;
-    onLogout: () => void;
     level?: number;
     collapsed?: boolean;
 }) {
@@ -191,10 +186,6 @@ function NavItem({
             onOpenSearch();
             return;
         }
-        if (item.action === "logout") {
-            onLogout();
-            return;
-        }
         if (hasChildren) {
             setIsOpen((open) => !open);
             return;
@@ -235,7 +226,7 @@ function NavItem({
                     <div className="relative flex min-h-0 flex-col gap-0.5 overflow-hidden pt-0.5">
                         <span className="app-workspace-nav-guide-line" style={{ left: `${(level + 1) * 12 + 12.5}px` }} />
                         {item.children!.map((child) => (
-                            <NavItem key={child.id} item={child} activeId={activeId} onSelect={onSelect} onOpenSearch={onOpenSearch} onLogout={onLogout} level={level + 1} collapsed={false} />
+                            <NavItem key={child.id} item={child} activeId={activeId} onSelect={onSelect} onOpenSearch={onOpenSearch} level={level + 1} collapsed={false} />
                         ))}
                     </div>
                 </div>
@@ -244,7 +235,7 @@ function NavItem({
     );
 }
 
-function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collapsed }: { group: WorkspaceNavGroup; activeId: string; onNavigate: () => void; onOpenSearch: () => void; onLogout: () => void; collapsed: boolean }) {
+function NavGroup({ group, activeId, onNavigate, onOpenSearch, collapsed }: { group: WorkspaceNavGroup; activeId: string; onNavigate: () => void; onOpenSearch: () => void; collapsed: boolean }) {
     const [isOpen, setIsOpen] = useState(true);
     const hasActive = group.items.some((item) => item.id === activeId || (item.id === "settings" && activeId.startsWith("settings:")));
 
@@ -256,7 +247,7 @@ function NavGroup({ group, activeId, onNavigate, onOpenSearch, onLogout, collaps
     const content = (
         <div className="flex flex-col gap-2">
             {group.items.map((item) => (
-                <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} onLogout={onLogout} collapsed={collapsed} />
+                <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} collapsed={collapsed} />
             ))}
         </div>
     );
@@ -284,7 +275,6 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
     const [searchParams] = useSearchParams();
     const features = useUserStore((state) => state.features);
     const user = useUserStore((state) => state.user);
-    const { handleLogout } = useWorkspaceLogout();
     const { groups, footer } = useMemo(() => buildNav(features, user?.role === "admin"), [features, user?.role]);
 
     const slug = pathname.split("/").filter(Boolean)[0] || "home";
@@ -317,7 +307,7 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
                 className={cn("app-workspace-sidebar-scroll-area flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 pb-3 pt-7", collapsed && "is-collapsed", scrollState.hasTopFade && "has-top-fade", scrollState.hasBottomFade && "has-bottom-fade")}
             >
                 {groups.map((group, index) => (
-                    <NavGroup key={index} group={group} activeId={activeId} onNavigate={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
+                    <NavGroup key={index} group={group} activeId={activeId} onNavigate={onNavigate} onOpenSearch={onOpenSearch} collapsed={collapsed} />
                 ))}
             </div>
             </LayoutGroup>
@@ -326,7 +316,7 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
                 <WorkspaceSidebarProfile collapsed={collapsed} user={user} />
                 {footer.length ? <div className="mt-2 flex flex-col gap-0.5">
                     {footer.map((item) => (
-                        <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
+                        <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} collapsed={collapsed} />
                     ))}
                 </div> : null}
             </div>

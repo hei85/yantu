@@ -1,4 +1,14 @@
+import { useEffect, useState } from "react";
 import type { CanvasTheme } from "@/lib/canvas-theme";
+
+export const SANDBOX_DOM_DIAGNOSTIC_SCRIPT = `<script>(function(){window.addEventListener('message',function(event){var data=event.data;if(event.source!==parent||!data||data.type!=='yingtu-dom-diagnostic-request'||typeof data.nonce!=='string')return;var body=document.body,root=document.documentElement,rect=(el)=>{var r=el.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}},svgs=Array.from(document.querySelectorAll('svg'));var payload={title:document.title,textCharacters:(body.innerText||body.textContent||'').trim().length,svgCount:svgs.length,pathCount:document.querySelectorAll('svg path').length,rectCount:document.querySelectorAll('svg rect').length,textElementCount:document.querySelectorAll('svg text').length,contentBounds:body?rect(body):null,documentBounds:rect(root),scrollWidth:Math.max(root.scrollWidth,body?body.scrollWidth:0),scrollHeight:Math.max(root.scrollHeight,body?body.scrollHeight:0),clientWidth:root.clientWidth,clientHeight:root.clientHeight,scrollOverflowX:root.scrollWidth>root.clientWidth,scrollOverflowY:root.scrollHeight>root.clientHeight};parent.postMessage({type:'yingtu-dom-diagnostic-response',nonce:data.nonce,payload:payload},'*')})})()</script>`;
+
+export function withSandboxDomDiagnostics(srcDoc: string, enabled: boolean): string {
+    if (!enabled || srcDoc.includes("yingtu-dom-diagnostic-request")) return srcDoc;
+    const closingBody = srcDoc.match(/<\/body\s*>/i);
+    if (closingBody?.index !== undefined) return `${srcDoc.slice(0, closingBody.index)}${SANDBOX_DOM_DIAGNOSTIC_SCRIPT}${srcDoc.slice(closingBody.index)}`;
+    return `${srcDoc}${SANDBOX_DOM_DIAGNOSTIC_SCRIPT}`;
+}
 
 type SandboxedFrameProps = {
     /** 完整的 HTML 文档字符串，作为 iframe 的 srcDoc */
@@ -21,12 +31,16 @@ type SandboxedFrameProps = {
  * 所以两种节点都不走 innerHTML，统一塞进沙箱 iframe 渲染。
  */
 export function SandboxedFrame({ srcDoc, theme, allowScripts = false }: SandboxedFrameProps) {
+    const [previewReady, setPreviewReady] = useState(false);
+    useEffect(() => setPreviewReady(false), [srcDoc]);
     return (
         <iframe
             title="节点预览"
             className="h-full w-full border-0"
             sandbox={allowScripts ? "allow-scripts" : ""}
-            srcDoc={srcDoc}
+            srcDoc={withSandboxDomDiagnostics(srcDoc, allowScripts)}
+            data-preview-ready={previewReady ? "true" : "false"}
+            onLoad={() => setPreviewReady(true)}
             data-canvas-no-zoom
             style={{ background: theme.node.fill }}
             // 指针交给文档自己处理，但按下时别让画布把它当成拖拽节点。

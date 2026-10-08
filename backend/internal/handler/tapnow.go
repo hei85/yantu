@@ -10,7 +10,7 @@ import (
 )
 
 func RegisterTapNowRoutes(r *gin.RouterGroup, svc *service.Service) {
-	r.POST("/canvas-projects/:id/import/tapnow", func(c *gin.Context) {
+	r.POST("/tapnow/import", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -26,7 +26,7 @@ func RegisterTapNowRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		result, err := svc.ImportTapNow(user.ID, c.Param("id"), strings.TrimSpace(req.ShareID))
+		result, err := svc.ImportTapNow(user.ID, strings.TrimSpace(req.ShareID))
 		if err != nil {
 			failService(c, err)
 			return

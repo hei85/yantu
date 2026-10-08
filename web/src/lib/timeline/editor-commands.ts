@@ -27,7 +27,7 @@ export type SplitClipPayload = { id: string; splitAtMs: number };
 export type RemoveClipPayload = { id: string };
 export type SetClipPropertyPayload = {
     id: string;
-    patch: Partial<Pick<TimelineClip, "title" | "text" | "volume" | "fadeInMs" | "fadeOutMs" | "subtitleEntryIndex">>;
+    patch: Partial<Pick<TimelineClip, "title" | "text" | "volume" | "fadeInMs" | "fadeOutMs" | "subtitleEntryIndex" | "overlay">>;
 };
 export type AddSubtitlePayload = { clip: TimelineClip };
 export type RemoveSubtitlePayload = { id: string };
@@ -81,6 +81,12 @@ function assertClipShape(op: string, clip: unknown): asserts clip is TimelineCli
     if (typeof c.nodeId !== "string" || c.nodeId.length === 0) fail(op, "clip.nodeId must be a non-empty string");
     if (typeof c.startMs !== "number" || !Number.isFinite(c.startMs) || c.startMs < 0) fail(op, "clip.startMs must be a non-negative finite number");
     if (typeof c.durationMs !== "number" || !Number.isFinite(c.durationMs) || c.durationMs <= 0) fail(op, "clip.durationMs must be a positive finite number");
+    if (c.overlay !== undefined) {
+        const rect = c.overlay;
+        if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.x < 0 || rect.y < 0 || rect.width <= 0 || rect.height <= 0 || rect.x + rect.width > 1 || rect.y + rect.height > 1) {
+            fail(op, "clip.overlay must be a normalized rectangle fully inside 0..1");
+        }
+    }
 }
 
 function findTrackOrThrow(op: string, state: TimelineProject, trackId: string) {
@@ -187,7 +193,7 @@ function handleRemoveClip(state: TimelineProject, payload: unknown): TimelinePro
 }
 
 /** setClipProperty 允许修改的属性白名单；结构字段（id/kind/nodeId/trackId/startMs/durationMs/...）由专门命令负责。 */
-const CLIP_PROPERTY_WHITELIST = new Set(["title", "text", "volume", "fadeInMs", "fadeOutMs", "subtitleEntryIndex"]);
+const CLIP_PROPERTY_WHITELIST = new Set(["title", "text", "volume", "fadeInMs", "fadeOutMs", "subtitleEntryIndex", "overlay"]);
 
 function handleSetClipProperty(state: TimelineProject, payload: unknown): TimelineProject {
     const { id, patch } = payload as SetClipPropertyPayload;
@@ -200,6 +206,7 @@ function handleSetClipProperty(state: TimelineProject, payload: unknown): Timeli
     findClipOrThrow("setClipProperty", state, id);
 
     const updated = { ...findClipOrThrow("setClipProperty", state, id), ...patch };
+    assertClipShape("setClipProperty", updated);
     return withClips(state, state.clips.map((c) => (c.id === id ? updated : c)));
 }
 

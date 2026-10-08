@@ -246,6 +246,26 @@ func RegisterSkillRoutes(r *gin.RouterGroup, svc *service.Service) {
 		ok(c, gin.H{"skill": skill})
 	})
 
+	r.PUT("/skills/:id/package", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.SkillPackageUploadMaxBytes)
+		file, err := c.FormFile("file")
+		if err != nil {
+			failService(c, service.BadAuthRequest("请选择 ZIP 技能文件"))
+			return
+		}
+		skill, err := svc.UpdateSkillPackageUpload(user.ID, c.Param("id"), file)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"skill": skill})
+	})
+
 	r.DELETE("/skills/:id", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

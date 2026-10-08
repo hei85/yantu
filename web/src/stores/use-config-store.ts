@@ -1,12 +1,13 @@
 import { useMemo } from "react";
+import { isPublishedSystemChannel } from "@/lib/distribution-policy";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import { scopedLocalStorage } from "@/lib/user-scope";
-import { modelProtocolCapability, normalizeModelProtocol, type ModelProtocol } from "@/lib/model-protocols";
+import { isHeihanAxonH3Video, modelProtocolCapability, normalizeModelProtocol, type ModelProtocol } from "@/lib/model-protocols";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
-import { workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultModelCapabilityConfig, migrateObservedAxonGptImageCapabilityConfig, normalizeModelCapabilityConfig, workflowFieldRole, workflowFieldSafeToOverride, workflowVideoFieldsFromJson, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { useUserStore } from "@/stores/use-user-store";
 import type { CapabilitySpec, PublicLogicalModelVariant } from "@/services/api/logical-models";
 
@@ -369,6 +370,8 @@ export type ModelChannel = {
         protocol?: ModelProtocol;
         pricePolicy?: "channel" | "unified";
         capabilityConfig?: ModelCapabilityConfig;
+        capabilityVersion?: number;
+        channelModelId?: string;
         logicalModelId?: string;
         logicalCapabilitySpec?: CapabilitySpec;
         logicalCapabilityProfiles?: CapabilitySpec[];
@@ -497,6 +500,12 @@ function isVideoModelName(model: string) {
     );
 }
 
+function isAudioToVideoModelName(model: string) {
+    // H3 的模型名同时含 image、audio 和 video；audio_to_video 表示视频生成任务，
+    // 即使旧浏览器快照把 capability/protocol 记成 audio，也必须归到 video。
+    return /(?:^|[_-])audio[_-]to[_-]video(?:$|[_-])/i.test(modelOptionName(model));
+}
+
 function isImageModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
     return (
@@ -523,7 +532,7 @@ function isImageModelName(model: string) {
 
 function isAudioModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
-    return value.includes("audio") || value.includes("tts") || value.includes("speech") || value.includes("voice") || value.includes("music") || value.includes("sound");
+    return !isVideoModelName(model) && (value.includes("audio") || value.includes("tts") || value.includes("speech") || value.includes("voice") || value.includes("music") || value.includes("sound"));
 }
 
 function isTextModelName(model: string) {
@@ -532,6 +541,7 @@ function isTextModelName(model: string) {
 
 export function modelMatchesCapability(model: string, capability?: ModelCapability) {
     if (!capability) return true;
+    if (isAudioToVideoModelName(model)) return capability === "video";
     if (capability === "image") return isImageModelName(model);
     if (capability === "video") return isVideoModelName(model);
     if (capability === "audio") return isAudioModelName(model);
@@ -544,6 +554,8 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
         const decoded = decodeChannelModel(model);
         const channel = decoded ? channels?.find((item) => item.id === decoded.channelId) : undefined;
         const modelName = decoded?.model || modelOptionName(model);
+        // 明确的 audio_to_video 命名比可能过期的本地逐模型元数据更具体。
+        if (isAudioToVideoModelName(modelName)) return capability === "video";
         const costEntry = channel?.modelCosts?.find((item) => item.model === modelName);
         // 协议层优先级最高：协议决定 API 端点，明确属于其他能力时直接排除，
         // 防止用户将 video/image/audio 协议的模型误标为 text 后混入文本下拉。
@@ -662,7 +674,7 @@ export function normalizeConfigSnapshot(snapshot: ConfigStoreSnapshot | undefine
     };
     const hasPersistedChannels = Array.isArray(persistedConfig.channels);
     if (!hasPersistedChannels) config.channels = [];
-    const channels = normalizeChannels(config, !hasPersistedChannels);
+    const channels = normalizeChannels(config, !hasPersistedChannels).filter(isPublishedSystemChannel);
     const models = modelOptionsFromChannels(channels);
     const imageModels = filterModelsByCapability(models, "image", channels);
     const videoModels = filterModelsByCapability(models, "video", channels);
@@ -738,7 +750,18 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         enabled: channel?.enabled !== false,
         hasApiKey: channel?.hasApiKey,
         hasSecretKey: channel?.hasSecretKey,
-        modelCosts: channel?.modelCosts?.map((item) => ({ ...item, protocol: normalizeModelProtocol(item.protocol) })),
+        // JSON catalogs can contain null option lists. Normalize at ingestion so
+        // consumers of stored profiles (not just modelCapabilityConfigFor) are safe.
+        modelCosts: Array.isArray(channel?.modelCosts) ? channel.modelCosts.filter(Boolean).map((item) => {
+            const protocol = normalizeModelProtocol(item.protocol);
+            return {
+                ...item,
+                protocol,
+                capabilityConfig: item.capabilityConfig
+                    ? normalizeModelCapabilityConfig(item.capabilityConfig, defaultModelCapabilityConfig(protocol, item.model))
+                    : undefined,
+            };
+        }) : undefined,
     };
 }
 
@@ -832,11 +855,21 @@ export function channelConnectionSignature(channel: ModelChannel) {
     return [channel.baseUrl.trim(), channel.apiKey.trim(), channel.secretKey?.trim() || "", channel.apiFormat, channel.interfaceType || "auto", JSON.stringify(channel.headers || [])].join("\n");
 }
 
-export function resolveModelRequestConfig(config: AiConfig, value: string) {
+export function resolveModelRequestConfig(config: AiConfig, value: string, capability?: ModelCapability) {
     const channel = resolveModelChannel(config, value);
     const model = modelOptionName(value || config.model);
     const modelProtocol = channel.modelCosts?.find((item) => item.model === model)?.protocol;
-    const interfaceType = modelProtocol || channel.interfaceType;
+    // The current Heihan Axon catalog exposes H3 through openai-video
+    // (/v1/videos). Older quick-connect entries may still have the generic
+    // /v1/video/generations protocol saved locally.
+    // 手动填写模型名的自有渠道没有逐模型协议；按接入格式使用标准接口。
+    // 视频接口存在多种不兼容路径，仍需用户明确选择。
+    const defaultProtocol = channel.scope === "user" && !modelProtocol && !channel.interfaceType
+        ? capability === "text" ? { openai: "chat-completion", gemini: "gemini-generate-content", claude: "claude-api" }[channel.apiFormat]
+        : capability === "image" ? { openai: "openai-image", gemini: "gemini-image", claude: "" }[channel.apiFormat]
+        : capability === "audio" && channel.apiFormat === "openai" ? "openai-audio" : undefined
+        : undefined;
+    const interfaceType = isHeihanAxonH3Video(channel.baseUrl, model) ? "newapi" : modelProtocol || channel.interfaceType || defaultProtocol;
     return {
         ...config,
         model,
@@ -844,7 +877,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         apiKey: channel.apiKey,
         secretKey: channel.secretKey,
         headers: channel.headers,
-        apiFormat: interfaceType ? (interfaceType === "gemini-veo" || interfaceType === "gemini-image" ? ("gemini" as const) : interfaceType === "claude-api" ? ("claude" as const) : ("openai" as const)) : channel.apiFormat,
+        apiFormat: interfaceType ? (interfaceType.startsWith("gemini-") ? ("gemini" as const) : interfaceType === "claude-api" ? ("claude" as const) : ("openai" as const)) : channel.apiFormat,
         interfaceType,
         channelId: channel.scope === "system" ? channel.id : "",
     };
@@ -874,7 +907,14 @@ function normalizeChannels(config: AiConfig, ensureDefault = true) {
             }),
         );
     }
-    return channels.map((channel) => ({ ...channel, models: uniqueRawModels(channel.models) }));
+    return channels.map((channel) => ({
+        ...channel,
+        models: uniqueRawModels(channel.models),
+        modelCosts: channel.modelCosts?.map((cost) => {
+            const capabilityConfig = migrateObservedAxonGptImageCapabilityConfig(channel.baseUrl, cost.model, cost.capabilityConfig);
+            return capabilityConfig === cost.capabilityConfig ? cost : { ...cost, capabilityConfig };
+        }),
+    }));
 }
 
 function isEmptyDefaultChannel(channel: ModelChannel) {

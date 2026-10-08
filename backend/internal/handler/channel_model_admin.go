@@ -43,6 +43,22 @@ func RegisterChannelModelAdminRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"models": models})
 	})
+	r.GET("/admin/channels/:id/models/catalog", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if !enforceRateLimit(c, "admin-channel-models-catalog:"+user.ID+":"+c.Param("id"), 10, time.Minute) {
+			return
+		}
+		catalog, err := svc.PreviewAdminChannelModelCatalog(c.Request.Context(), user, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"models": catalog})
+	})
 	r.POST("/admin/channels/:id/models/import", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

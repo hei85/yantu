@@ -1,7 +1,7 @@
 import type { CanvasAssistantMessage, CanvasAssistantSession } from "@/types/canvas";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { createCanvasProjectWithRemoteSync, hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { createLocalCanvasProject, loadLocalCanvasProject } from "@/services/local-canvas-projects";
 
 type SourceMessage = {
     id: string; role: "user" | "assistant"; content: string; createdAt: string;
@@ -33,9 +33,8 @@ export async function continueCreationConversationOnCanvas(source: SourceConvers
     const local = useCanvasStore.getState().projects.find((item) => item.chatSessions?.some((session) => session.id === sessionId));
     const existingId = source.canvasId || local?.id;
     let id: string;
-    let syncError: unknown;
     if (existingId) {
-        const project = await loadCanvasProjectForEditing(existingId);
+        const project = loadLocalCanvasProject(existingId);
         assertScope();
         if (!project) throw new Error("关联画布已不存在，请先恢复画布后继续。");
         const sessions = project.chatSessions || [];
@@ -51,17 +50,12 @@ export async function continueCreationConversationOnCanvas(source: SourceConvers
         id = project.id;
         await flushCanvasStorePersistence();
         assertScope();
-        try {
-            if (!hasRemoteUserDataSyncSession()) throw new Error("尚未建立云端同步会话");
-            await saveRemoteUserDataNow();
-        } catch (cause) { syncError = cause; }
     } else {
         const session: CanvasAssistantSession = { id: sessionId, title: source.title, createdAt: source.messages[0].createdAt, updatedAt: source.updatedAt, messages };
-        const created = await createCanvasProjectWithRemoteSync(source.title || "创作画布", undefined, { chatSessions: [session], activeChatId: sessionId });
+        const created = createLocalCanvasProject(source.title || "创作画布", undefined, { chatSessions: [session], activeChatId: sessionId });
         id = created.id;
-        syncError = created.syncError;
         await flushCanvasStorePersistence();
     }
     assertScope();
-    return { id, sessionId, syncError };
+    return { id, sessionId };
 }

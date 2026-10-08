@@ -18,6 +18,8 @@ type AudioSettingsPanelProps = {
 };
 
 export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[var(--panel-width-compact)] space-y-4 rounded-2xl px-1 py-0.5" }: AudioSettingsPanelProps) {
+    const model = (config.model || config.audioModel).split("::").at(-1)?.trim().toLowerCase();
+    const isIndexTts2 = model === "indextts2-v1";
     const voice = normalizeAudioVoiceValue(config.audioVoice);
     const format = normalizeAudioFormatValue(config.audioFormat);
     const speed = normalizeAudioSpeedValue(config.audioSpeed);
@@ -26,55 +28,79 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">音频设置</div> : null}
-                <SettingGroup title="声音" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {audioVoiceOptions.map((item) => (
-                            <OptionPill key={item.value} selected={voice === item.value} theme={theme} onClick={() => onConfigChange("audioVoice", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
+                {isIndexTts2 ? (
+                    <SettingGroup title="声音" color={theme.node.muted}>
+                        <div className="rounded-xl border px-3 py-2 text-sm" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+                            官方示例音色
+                            <div className="mt-1 text-xs" style={{ color: theme.node.muted }}>
+                                当前使用模型内置示例音色；暂不支持选择 Alloy 等音色或上传参考音频。
+                            </div>
+                        </div>
+                    </SettingGroup>
+                ) : (
+                    <SettingGroup title="声音" color={theme.node.muted}>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {audioVoiceOptions.map((item) => (
+                                <OptionPill key={item.value} selected={voice === item.value} theme={theme} onClick={() => onConfigChange("audioVoice", item.value)}>
+                                    {item.label}
+                                </OptionPill>
+                            ))}
+                        </div>
+                    </SettingGroup>
+                )}
+                {isIndexTts2 ? (
+                    <div className="flex items-center justify-between text-xs" style={{ color: theme.node.muted }}>
+                        <span>输出格式</span>
+                        <span style={{ color: theme.node.text }}>WAV（固定）</span>
+                        <span>语速</span>
+                        <span style={{ color: theme.node.text }}>1x（固定）</span>
                     </div>
-                </SettingGroup>
-                <SettingGroup title="格式" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {audioFormatOptions.map((item) => (
-                            <OptionPill key={item.value} selected={format === item.value} theme={theme} onClick={() => onConfigChange("audioFormat", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                    </div>
-                </SettingGroup>
-                <SettingGroup title="语速" color={theme.node.muted}>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {speedOptions.map((value) => (
-                            <OptionPill key={value} selected={speed === value} theme={theme} onClick={() => onConfigChange("audioSpeed", value)}>
-                                {audioSpeedLabel(value)}
-                            </OptionPill>
-                        ))}
-                    </div>
-                    <input
-                        type="number"
-                        min={0.25}
-                        max={4}
-                        step={0.05}
-                        className="h-9 w-full rounded-full border bg-transparent px-3 text-center text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                        style={{ borderColor: theme.node.stroke, color: theme.node.text, WebkitTextFillColor: theme.node.text }}
-                        value={config.audioSpeed || "1"}
-                        onChange={(event) => onConfigChange("audioSpeed", event.target.value)}
-                        onBlur={(event) => onConfigChange("audioSpeed", normalizeAudioSpeedValue(event.target.value))}
-                        onMouseDown={(event) => event.stopPropagation()}
-                    />
-                </SettingGroup>
-                <SettingGroup title="声音指令" color={theme.node.muted}>
-                    <textarea
-                        value={config.audioInstructions || ""}
-                        placeholder="例如：自然、温暖、适合旁白。"
-                        className="thin-scrollbar h-20 w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm leading-5 outline-none"
-                        style={{ borderColor: theme.node.stroke, color: theme.node.text }}
-                        onChange={(event) => onConfigChange("audioInstructions", event.target.value)}
-                        onMouseDown={(event) => event.stopPropagation()}
-                    />
-                </SettingGroup>
+                ) : (
+                    <>
+                        <SettingGroup title="格式" color={theme.node.muted}>
+                            <div className="grid grid-cols-3 gap-2.5">
+                                {audioFormatOptions.map((item) => (
+                                    <OptionPill key={item.value} selected={format === item.value} theme={theme} onClick={() => onConfigChange("audioFormat", item.value)}>
+                                        {item.label}
+                                    </OptionPill>
+                                ))}
+                            </div>
+                        </SettingGroup>
+                        <SettingGroup title="语速" color={theme.node.muted}>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {speedOptions.map((value) => (
+                                    <OptionPill key={value} selected={speed === value} theme={theme} onClick={() => onConfigChange("audioSpeed", value)}>
+                                        {audioSpeedLabel(value)}
+                                    </OptionPill>
+                                ))}
+                            </div>
+                            <input
+                                type="number"
+                                min={0.25}
+                                max={4}
+                                step={0.05}
+                                className="h-9 w-full rounded-full border bg-transparent px-3 text-center text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                style={{ borderColor: theme.node.stroke, color: theme.node.text, WebkitTextFillColor: theme.node.text }}
+                                value={config.audioSpeed || "1"}
+                                onChange={(event) => onConfigChange("audioSpeed", event.target.value)}
+                                onBlur={(event) => onConfigChange("audioSpeed", normalizeAudioSpeedValue(event.target.value))}
+                                onMouseDown={(event) => event.stopPropagation()}
+                            />
+                        </SettingGroup>
+                    </>
+                )}
+                {!isIndexTts2 ? (
+                    <SettingGroup title="声音指令" color={theme.node.muted}>
+                        <textarea
+                            value={config.audioInstructions || ""}
+                            placeholder="例如：自然、温暖、适合旁白。"
+                            className="thin-scrollbar h-20 w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm leading-5 outline-none"
+                            style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                            onChange={(event) => onConfigChange("audioInstructions", event.target.value)}
+                            onMouseDown={(event) => event.stopPropagation()}
+                        />
+                    </SettingGroup>
+                ) : null}
             </div>
         </ImageSettingsTheme>
     );

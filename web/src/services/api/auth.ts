@@ -1,18 +1,12 @@
 import type { ModelChannel } from "@/stores/use-config-store";
-import type { GenerationTask, TaskStatus } from "@/services/api/task-center";
 import type { CanvasDrawingEngineSetting } from "@/lib/canvas/canvas-drawing-engine";
 import type { FeatureAvailability } from "@/stores/use-user-store";
 import { http, apiBaseURL } from "@/services/api/request";
 import type { PublicLogicalModel } from "@/services/api/logical-models";
-import type { OSSConnectionTestInput, OSSConnectionTestResult, OSSProvider, S3Preset } from "@/lib/oss-settings";
 
 
 let authSessionRequest: Promise<AuthSessionPayload> | null = null;
 let authSessionCache: { payload: AuthSessionPayload; expiresAt: number } | null = null;
-
-function invalidateAuthSessionCache() {
-    authSessionCache = null;
-}
 
 export type LocalUser = {
     id: string;
@@ -42,55 +36,6 @@ export type RuntimeLimits = {
     recycleBinRetentionDays?: number;
 };
 
-export type ApiCallLog = {
-    id: string;
-    userId: string;
-    userDisplayName?: string;
-    userAccount?: string;
-    channelId: string;
-    channelName: string;
-    taskId?: string;
-    taskStatus?: TaskStatus;
-    source: string;
-    capability: "text" | "image" | "video" | "audio" | "";
-    operation?: string;
-    requestKind: "create" | "poll" | "download" | "repair" | "";
-    billable: boolean;
-    apiFormat: string;
-    method: string;
-    path: string;
-    model: string;
-    status: "succeeded" | "failed";
-    statusCode: number;
-    durationMs: number;
-    pollCount: number;
-    providerStatus?: string;
-    inputTokens: number;
-    outputTokens: number;
-    cachedTokens: number;
-    usageAvailable: boolean;
-    mediaCount: number;
-    mediaPreviewUrl?: string;
-    mediaPreviewKind?: "image" | "video";
-    videoSeconds: number;
-    providerRequestId?: string;
-    errorCode?: string;
-    error?: string;
-    concurrencyLimit: number;
-    upstreamUrl: string;
-    requestContentType?: string;
-    requestBody?: string;
-    responseBody?: string;
-    startedAt?: string;
-    createdAt: string;
-};
-
-export type AdminProviderTaskQueryResult = {
-    task: GenerationTask;
-    providerStatus: string;
-    recovered: boolean;
-};
-
 export type AdminAuditEvent = {
     id: string;
     actorUserId: string;
@@ -108,8 +53,6 @@ export type AdminUserDetail = {
     storageUsage: {
         assetCount: number;
         assetBytes: number;
-        canvasCount: number;
-        canvasBytes: number;
         taskCount: number;
         taskBytes: number;
         apiCallCount: number;
@@ -130,56 +73,10 @@ export type AdminUserTask = {
     createdAt: string;
 };
 
-export type AnalyticsFilters = {
-    from?: string;
-    to?: string;
-    userId?: string;
-    model?: string;
-    channelId?: string;
-    capability?: string;
-};
-
 export type AdminReferenceData = {
     users: Array<{ id: string; username: string; displayName: string }>;
     channels: Array<{ id: string; name: string; enabled: boolean; models: string[] }>;
 };
-
-export type AdminAnalytics = {
-    from: string;
-    to: string;
-    kpi: {
-        activeUsers: number;
-        dau: number;
-        wau: number;
-        mau: number;
-        generationTasks: number;
-        upstreamRequests: number;
-        successRate: number;
-        p95DurationMs: number;
-        currentQueuedTasks: number;
-    };
-    trend: Array<{ day: string; tasks: number; requests: number; activeUsers: number; requestSuccessRate: number }>;
-    models: Array<{
-        model: string;
-        capability: string;
-        tasks: number;
-        requests: number;
-        uniqueUsers: number;
-        taskSuccessRate: number;
-        requestSuccessRate: number;
-        p50DurationMs: number;
-        p95DurationMs: number;
-        inputTokens: number;
-        outputTokens: number;
-        cachedTokens: number;
-        usageAvailable: boolean;
-        mediaCount: number;
-        videoSeconds: number;
-    }>;
-    users: Array<{ userId: string; name: string; activeDays: number; tasks: number; agentMessages: number; canvasDays: number; assets: number; resources: number; commonModel?: string }>;
-    failures: Array<{ type: string; model: string; count: number; lastError?: string; lastSeenAt: string }>;
-};
-
 
 export type PromptTemplate = {
     id: string;
@@ -226,44 +123,6 @@ export type UserPromptPreference = {
     outdated: boolean;
 };
 
-export type AdminOSSSetting = {
-    enabled: boolean;
-    provider: OSSProvider;
-    s3Preset: S3Preset;
-    region: string;
-    endpoint: string;
-    cdnBaseUrl: string;
-    bucket: string;
-    accessKeyId: string;
-    accessKeySecret?: string;
-    hasAccessKeySecret: boolean;
-    sessionToken?: string;
-    hasSessionToken: boolean;
-    pathStyle: boolean;
-    allowUserS3: boolean;
-    publicBaseUrl: string;
-    pathPrefix: string;
-    testedAt?: string;
-    testedDigest?: string;
-    historyCount?: number;
-    referencedResourceCount?: number;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
-};
-
-export type AdminArkPrivateAssetSetting = {
-    enabled: boolean;
-    region: string;
-    projectName: string;
-    accessKeyId: string;
-    accessKeySecret?: string;
-    hasAccessKeySecret: boolean;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
-};
-
 export type RuntimeResourcePolicy = {
     resourceUploadMB: number;
     generatedFileMB: number;
@@ -272,59 +131,10 @@ export type RuntimeResourcePolicy = {
     structuredDataMB: number;
     taskDataGB: number;
     assetCount: number;
-    canvasCount: number;
     taskCount: number;
     apiCallLogCount: number;
     recycleBinRetentionDays?: number;
 };
-
-export type RuntimeTaskPolicy = {
-    workerConcurrency: number;
-    channelConcurrency: number;
-    activeTaskLimit: number;
-    imageTimeoutMinutes: number;
-    textTimeoutMinutes: number;
-    audioTimeoutMinutes: number;
-    videoTimeoutMinutes: number;
-    storyboardTimeoutMinutes: number;
-    defaultTimeoutMinutes: number;
-};
-
-export type RuntimeRequestPolicy = {
-    taskCreatePerMinute: number;
-    resourceUploadPerMinute: number;
-    resourceImportPerMinute: number;
-    assetWritePerMinute: number;
-    canvasWritePerMinute: number;
-    registerPerHour: number;
-    loginIPPerTenMinutes: number;
-    loginAccountPerTenMinutes: number;
-    systemRelayPerMinute: number;
-    customRelayPerMinute: number;
-    customRelayConcurrency: number;
-    customRelayRequestMB: number;
-    customRelayResponseMB: number;
-    customRelayTimeoutMinutes: number;
-    systemRelayRequestMB: number;
-    systemRelayResponseMB: number;
-    channelCircuitFailureCount: number;
-    channelCircuitOpenSeconds: number;
-};
-
-export type RuntimePolicySetting = {
-    resource: RuntimeResourcePolicy;
-    task: RuntimeTaskPolicy;
-    request: RuntimeRequestPolicy;
-    configured?: boolean;
-    updatedBy?: string;
-    createdAt?: string;
-    updatedAt?: string;
-};
-
-export function getAuthSettings() {
-    return http.get<{ firstUser: boolean; registrationEnabled: boolean }>("/auth/settings");
-}
-
 
 export function getAuthSession() {
     const now = Date.now();
@@ -347,32 +157,6 @@ export function getSystemChannels() {
 
 export function getFeatureAvailability() {
     return http.get<{ features: FeatureAvailability }>("/features");
-}
-
-export function getAdminFeatureAvailability() {
-    return http.get<{ features: FeatureAvailability }>("/admin/settings/features");
-}
-
-export function updateAdminFeatureAvailability(features: Partial<Pick<FeatureAvailability, "welcomeEnabled" | "shortDramaEnabled" | "taskCenterEnabled" | "customChannelsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers">>) {
-    return http.patch<{ features: FeatureAvailability }>("/admin/settings/features", features);
-}
-
-export async function login(input: { username: string; password: string }) {
-    const result = await http.post<{ user: LocalUser }>("/auth/login", input);
-    // 登录会改变服务端会话身份，不能让登录前缓存的游客 session 污染后续恢复。
-    invalidateAuthSessionCache();
-    return result;
-}
-
-
-export function register(input: { username: string; displayName?: string; password: string }) {
-    return http.post<{ user: LocalUser }>("/auth/register", input);
-}
-
-export async function logout() {
-    const result = await http.post<{ ok: boolean }>("/auth/logout");
-    invalidateAuthSessionCache();
-    return result;
 }
 
 export type AdminListParams = { keyword?: string; status?: string; role?: string; page?: number; pageSize?: number };
@@ -461,75 +245,11 @@ export function resetUserPromptCustomization(operation: string) {
     return http.delete<{ ok: boolean }>(`/settings/prompt-templates/${encodeURIComponent(operation)}`);
 }
 
-export function getAdminOSSSetting() {
-    return http.get<{ setting: AdminOSSSetting }>("/admin/settings/oss");
-}
-
-export function updateAdminOSSSetting(input: Partial<AdminOSSSetting>) {
-    return http.patch<{ setting: AdminOSSSetting }>("/admin/settings/oss", input);
-}
-
-export function testAdminOSSConnection(input: OSSConnectionTestInput) {
-    return http.post<OSSConnectionTestResult>("/admin/settings/oss/test", input);
-}
-
-export function getAdminArkPrivateAssetSetting() {
-    return http.get<{ setting: AdminArkPrivateAssetSetting }>("/admin/settings/ark-private-assets");
-}
-
-export function updateAdminArkPrivateAssetSetting(input: Partial<AdminArkPrivateAssetSetting>) {
-    return http.patch<{ setting: AdminArkPrivateAssetSetting }>("/admin/settings/ark-private-assets", input);
-}
-
-export function getAdminRuntimePolicySetting() {
-    return http.get<{ setting: RuntimePolicySetting }>("/admin/settings/runtime-policy");
-}
-
-export function getAdminSelfUseRuntimePolicy() {
-    return http.get<{ setting: RuntimePolicySetting }>("/admin/settings/runtime-policy/self-use");
-}
-
-export function updateAdminRuntimePolicySetting(input: Pick<RuntimePolicySetting, "resource" | "task" | "request">) {
-    return http.put<{ setting: RuntimePolicySetting }>("/admin/settings/runtime-policy", input);
-}
-
-export function resetAdminRuntimePolicySetting() {
-    return http.delete<{ setting: RuntimePolicySetting }>("/admin/settings/runtime-policy");
-}
-
 export function getAdminDrawingEngineSetting() {
     return http.get<{ setting: CanvasDrawingEngineSetting }>("/admin/settings/drawing-engine");
 }
 
 export function updateAdminDrawingEngineSetting(input: Pick<CanvasDrawingEngineSetting, "defaultEngine" | "tldrawLicenseKey">) {
     return http.patch<{ setting: CanvasDrawingEngineSetting }>("/admin/settings/drawing-engine", input);
-}
-
-export type AdminApiLogParams = AdminListParams & { recordType?: "request" | "download" | "all" };
-
-export function listAdminApiLogs(params: AdminApiLogParams = {}) {
-    return http.get<{ logs: ApiCallLog[]; total: number; page: number; pageSize: number }>("/admin/api-logs", { params });
-}
-
-export function getAdminApiLog(id: string) {
-    return http.get<{ log: ApiCallLog }>(`/admin/api-logs/${encodeURIComponent(id)}`);
-}
-
-export function queryAdminApiLogTask(id: string) {
-    return http.post<AdminProviderTaskQueryResult>(`/admin/api-logs/${encodeURIComponent(id)}/query-task`);
-}
-
-export async function exportAdminApiLogs(params: AdminApiLogParams & { ids?: string[] } = {}) {
-    const response = await http.raw<Blob>({ method: "get", url: "/admin/api-logs-export.csv", params: { ...params, ids: params.ids?.join(",") }, responseType: "blob" });
-    return response.data;
-}
-
-export function getAdminAnalytics(params: AnalyticsFilters) {
-    return http.get<AdminAnalytics>("/admin/analytics/overview", { params });
-}
-
-export async function exportAdminAnalytics(params: AnalyticsFilters) {
-    const response = await http.raw<Blob>({ method: "get", url: "/admin/analytics/export.csv", params, responseType: "blob" });
-    return response.data;
 }
 

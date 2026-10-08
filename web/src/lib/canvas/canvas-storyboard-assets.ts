@@ -8,7 +8,9 @@ export type StoryboardAssetCatalogItem = {
     tags: string[];
     prompt: string;
     characterAssetId?: string;
+    characterId?: string;
     characterVersionId?: string;
+    voiceVersionId?: string;
 };
 
 const OUTPUT_WORKFLOW_KINDS = new Set(["shot", "action_board", "final"]);
@@ -28,7 +30,9 @@ export function buildStoryboardAssetCatalog(nodes: CanvasNodeData[]): Storyboard
             tags: Array.from(new Set((node.metadata?.assetTags || []).map((tag) => compactStoryboardAssetText(tag, 64)).filter(Boolean))).slice(0, 12),
             prompt,
             characterAssetId: node.metadata?.characterAssetId,
+            characterId: node.metadata?.characterAssetId,
             characterVersionId: node.metadata?.characterVersionId,
+            voiceVersionId: node.metadata?.characterVoiceVersionId,
         }];
     }).slice(0, 60);
 }
@@ -45,13 +49,15 @@ export function storyboardAssetRoleForNode(node: CanvasNodeData): StoryboardAsse
 
 export function normalizeStoryboardAssetBindings(bindings: StoryboardAssetBinding[] | undefined, nodes?: CanvasNodeData[]) {
     const nodeIds = nodes ? new Set(nodes.map((node) => node.id)) : null;
-    const seen = new Set<string>();
-    return (bindings || []).flatMap((binding): StoryboardAssetBinding[] => {
+    const normalized = new Map<string, StoryboardAssetBinding>();
+    for (const binding of bindings || []) {
         const nodeId = String(binding?.nodeId || "").trim();
-        if (!nodeId || seen.has(nodeId) || !STORYBOARD_ASSET_ROLES.has(binding.role) || (nodeIds && !nodeIds.has(nodeId))) return [];
-        seen.add(nodeId);
-        return [{ nodeId, role: binding.role, priority: Math.max(0, Math.min(100, Math.round(Number(binding.priority) || 0))) }];
-    }).sort((left, right) => right.priority - left.priority);
+        if (!nodeId || !STORYBOARD_ASSET_ROLES.has(binding.role) || (nodeIds && !nodeIds.has(nodeId))) continue;
+        const identity = `${nodeId}\0${binding.role}`;
+        const candidate = { nodeId, role: binding.role, priority: Math.max(0, Math.min(100, Math.round(Number(binding.priority) || 0))) };
+        if (candidate.priority > (normalized.get(identity)?.priority ?? -1)) normalized.set(identity, candidate);
+    }
+    return Array.from(normalized.values()).sort((left, right) => right.priority - left.priority);
 }
 
 function storyboardAssetType(node: CanvasNodeData): StoryboardAssetCatalogItem["type"] | null {

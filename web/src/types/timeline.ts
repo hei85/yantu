@@ -68,6 +68,9 @@ export type TimelineTrack = {
 
 export type TimelineClipKind = "video" | "audio" | "subtitle" | "text" | "image";
 
+/** Normalized on-canvas rectangle for timeline text/image overlays. */
+export type TimelineOverlayRect = { x: number; y: number; width: number; height: number };
+
 /** 仅时间线作用域的直连媒体（不落画布）：素材库/项目资产/本地上传在时间线内直接入轨时使用。 */
 export type TimelineDirectMedia = {
     /** 源素材 id（本地资产 id / 上传文件 id），用于生成时间线内唯一 nodeId 前缀 */
@@ -92,6 +95,10 @@ export type TimelineClip = {
     kind: TimelineClipKind;
     nodeId: string;
     trackId: string;
+    /** 制片时间线必须把片段绑定回分镜主索引；普通画布时间线可不填写。 */
+    storyboardRowId?: string;
+    /** 视频片段绑定的稳定 SegmentBinding ID。 */
+    segmentId?: string;
     startMs: number;
     durationMs: number;
     title?: string;
@@ -106,6 +113,8 @@ export type TimelineClip = {
     subtitleEntryIndex?: number;
     /** 字幕片段文本快照，时间线内直接展示，不与节点双向同步 */
     text?: string;
+    /** Optional normalized (0..1) overlay rectangle. Omitted values use kind-specific defaults. */
+    overlay?: TimelineOverlayRect;
     /** 仅时间线作用域的直连媒体；存在时预览/导出优先从该字段解析，不再回画布查节点 */
     directMedia?: TimelineDirectMedia;
 };

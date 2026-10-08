@@ -1,17 +1,20 @@
 import { dataUrlToFile } from "@/lib/image-utils";
 import { modelCapabilityConfigFor, videoResolutionRequest } from "@/lib/model-capabilities";
+import { isHeihanAxonH3Video } from "@/lib/model-protocols";
 import { imageToDataUrl } from "@/services/image-storage";
 import { modelOptionName } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 
-import { normalizeVideoSeconds, normalizeVideoSize } from "./video-validation";
+import { normalizeVideoAspectRatio, normalizeVideoSeconds, normalizeVideoSize } from "./video-validation";
 import type { RequestOptions, ResolvedAiConfig, ApiVideoResponse, VideoGenerationTask, VideoGenerationTaskState } from "./video-contracts";
 import type { VideoProviderDeps } from "./video-provider-deps";
+import { orderVideoImageReferences } from "./video-reference-roles";
 
 export async function createOpenAIVideoTask(deps: VideoProviderDeps, config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     const modelName = modelOptionName(model);
+    const orderedReferences = orderVideoImageReferences(references, options);
     if (config.interfaceType === "xai-video" || modelName.toLowerCase().includes("grok")) {
-        const images = await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)));
+        const images = await Promise.all(orderedReferences.slice(0, 7).map((image) => imageToDataUrl(image)));
         const seconds = normalizeVideoSeconds(config.videoSeconds);
         const referenceMode = options?.videoEditOperation === "reference_to_video";
         const explicitFrameMode = !referenceMode && Boolean(options?.videoStartFrameNodeId || options?.videoEndFrameNodeId);
@@ -21,12 +24,15 @@ export async function createOpenAIVideoTask(deps: VideoProviderDeps, config: Res
                 ? { reference_images: images.map((url) => ({ url })) }
                 : images.length ? { image: { url: images[0] } } : {}
             : images.length ? { image: images[0], images } : {};
+        // OpenAI-compatible JSON video endpoints use `size` for pixel
+        // dimensions; only the NewAPI video-generations protocol uses a ratio.
+        const videoSize = normalizeVideoSize(config.size);
         const payload = {
             model: modelName,
             prompt,
             duration: Number.parseInt(seconds, 10) || 6,
             seconds,
-            ...(normalizeVideoSize(config.size) ? { size: normalizeVideoSize(config.size) } : {}),
+            ...(videoSize ? { size: videoSize } : {}),
             ...imagePayload,
         };
         try {
@@ -43,11 +49,18 @@ export async function createOpenAIVideoTask(deps: VideoProviderDeps, config: Res
     body.append("model", modelName);
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
+    const videoSize = normalizeVideoSize(config.size);
+    if (videoSize) body.append("size", videoSize);
+    // Axon H3 reads aspect_ratio; keep this translation restricted to the
+    // verified H3 relay and leave other /videos providers with size only.
+    if (isHeihanAxonH3Video(config.baseUrl, modelName)) {
+        const aspectRatio = normalizeVideoAspectRatio(config.size);
+        if (aspectRatio) body.append("aspect_ratio", aspectRatio);
+    }
     const resolution = videoResolutionRequest(modelCapabilityConfigFor(config, model).video!, config.vquality);
     if (resolution) body.append("resolution_name", resolution);
     body.append("preset", "normal");
-    const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    const files = await Promise.all(orderedReferences.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => body.append("input_reference[]", file));
     try {
         const created = deps.response.unwrapVideoResponse(await deps.transport.postForm<ApiVideoResponse>(deps.transport.apiUrl("/videos"), body, options));

@@ -14,14 +14,13 @@
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "test": "tsx --test --test-concurrency=1 test/*.test.ts",
-    "build": "tsc -p tsconfig.json",
+    "test": "bun test",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prepack": "bun run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@openai/codex": "^0.149.1",
     "docx": "^9.5.1",
     "express": "^5.2.1",
     "json-canonicalize": "2.0.0",
@@ -46,10 +45,10 @@
   "author": "ddcat <ddcat666@126.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ddcat-ai/open-ai-canvas.git",
+    "url": "https://github.com/hei85/yantu.git",
     "directory": "canvas-agent"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN ../LICENSE",
   "publishConfig": {
     "access": "public"
   },

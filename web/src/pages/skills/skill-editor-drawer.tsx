@@ -78,7 +78,7 @@ export function SkillEditorDrawer({ open, skill, onClose, onSaved }: { open: boo
         }
         if (!useConfigStore.getState().isAiConfigReady(effectiveConfig, effectiveConfig.model)) {
             message.info("尚未配置可用的文本模型，请先到设置页配置");
-            navigateToSettings({ section: "models", continueCreation: true });
+            navigateToSettings({ section: "quick", continueCreation: true });
             return;
         }
         setDrafting(true);

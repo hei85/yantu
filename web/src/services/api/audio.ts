@@ -1,5 +1,6 @@
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { createChannelTransport } from "@/services/api/channel-transport";
+import { apiClient } from "@/services/api/request";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
@@ -17,14 +18,15 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     assertAudioConfig(requestConfig, model);
-    const format = normalizeAudioFormatValue(config.audioFormat);
+    const isIndexTts2 = model.toLowerCase() === "indextts2-v1";
+    const format = isIndexTts2 ? "wav" : normalizeAudioFormatValue(config.audioFormat);
     const instructions = config.audioInstructions.trim();
     const payload = {
         model,
         input: prompt,
-        voice: normalizeAudioVoiceValue(config.audioVoice),
+        voice: isIndexTts2 ? "sample" : normalizeAudioVoiceValue(config.audioVoice),
         response_format: format,
-        speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
+        speed: isIndexTts2 ? 1 : Number(normalizeAudioSpeedValue(config.audioSpeed)),
         ...(instructions ? { instructions } : {}),
     };
 
@@ -99,7 +101,9 @@ async function downloadAsyncAudio(config: AiConfig, taskId: string, state: Recor
     if (resultUrl.startsWith("data:audio/")) {
         blob = await (await fetch(resultUrl, { signal: options?.signal })).blob();
     } else if (/^https?:\/\//i.test(resultUrl)) {
-        blob = await audioTransport(config).getExternalBlob(resultUrl, undefined, options);
+        // Signed storage URLs may omit CORS headers. Download through the
+        // local backend's bounded audio fetch so the browser can read the WAV.
+        blob = (await apiClient.post<Blob>("/ai/audio-result", { url: resultUrl }, { responseType: "blob", signal: options?.signal })).data;
     } else {
         blob = await audioTransport(config).getBlob(aiApiUrl(config, `/audio/tasks/${encodeURIComponent(taskId)}/content`), options);
     }

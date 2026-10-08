@@ -4,8 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { systemChannelModelChannels } from "../src/lib/user-session";
 import { ChannelOrderDialog, moveOrderItem } from "../src/pages/admin/components/channel-order-dialog";
+import { ModelDefaultGrid } from "../src/pages/settings/model-default-grid";
 import type { PublicChannelCatalog, PublicChannelModel } from "../src/services/api/logical-models";
-import { defaultConfig, normalizeConfigSnapshot, selectableModelsByCapability } from "../src/stores/use-config-store";
+import { createModelChannel, defaultConfig, normalizeConfigSnapshot, selectableModelsByCapability } from "../src/stores/use-config-store";
 
 test("public channel order, alias and model order survive session normalization and capability filtering", () => {
     const model = (key: string, available = true): PublicChannelModel => ({
@@ -33,6 +34,33 @@ test("public channel order, alias and model order survive session normalization 
     expect(config.channels[0]!.models).toEqual(["z-model", "a-model"]);
     expect(selectableModelsByCapability(config, "image")).toEqual(["z-channel::z-model", "z-channel::a-model", "a-channel::b-model"]);
     expect(config.model).toBe("z-channel::a-model");
+});
+
+test("settings capability lists rebuild from channels and keep stale H3 audio metadata out of audio/text", () => {
+    const channel = createModelChannel({
+        id: "system",
+        name: "系统",
+        scope: "system",
+        apiKey: "system",
+        models: ["minimax_h3_image_audio_to_video", "go-deepseek-v4.1-flash", "indextts2-v1"],
+        modelCosts: [
+            { model: "minimax_h3_image_audio_to_video", displayName: "H3", channelLabel: "系统", description: "", icon: "", capability: "audio", protocol: "openai-audio" },
+            { model: "go-deepseek-v4.1-flash", displayName: "DeepSeek", channelLabel: "系统", description: "", icon: "", capability: "text", protocol: "chat-completion" },
+            { model: "indextts2-v1", displayName: "IndexTTS", channelLabel: "系统", description: "", icon: "", capability: "audio", protocol: "openai-audio" },
+        ],
+    });
+    const config = normalizeConfigSnapshot({ config: { ...defaultConfig, channels: [channel], models: [] } }).config;
+
+    expect(selectableModelsByCapability(config, "video")).toEqual(["system::minimax_h3_image_audio_to_video"]);
+    expect(selectableModelsByCapability(config, "text")).toEqual(["system::go-deepseek-v4.1-flash"]);
+    expect(selectableModelsByCapability(config, "audio")).toEqual(["system::indextts2-v1"]);
+    expect(config.audioModel).toBe("system::indextts2-v1");
+
+    const staleModelSnapshot = { ...config, models: [] };
+    const settingsHtml = renderToStaticMarkup(<ModelDefaultGrid config={staleModelSnapshot} onChange={() => {}} />);
+    expect(settingsHtml).toContain("DeepSeek");
+    expect(settingsHtml).toContain("H3");
+    expect(settingsHtml).not.toContain("当前没有可选的文本模型");
 });
 
 test("sorting exposes a simple settings entry and moves items without changing their data", () => {

@@ -13,7 +13,7 @@ const standardSizes: Record<string, string[]> = {
     "2:3": ["1024x1536", "1664x2496", "2336x3504"],
     "4:5": ["1024x1280", "1792x2240", "2560x3200"],
     "5:4": ["1280x1024", "2240x1792", "3200x2560"],
-    "21:9": ["2048x878", "3136x1344", "3808x1632"],
+    "21:9": ["2016x864", "3136x1344", "3808x1632"],
 };
 
 export function imagePresetForRatio(tier: ImageResolutionTier, input: string): ImageResolutionOption {
@@ -80,14 +80,34 @@ export function imageQualityForSelection(profile: ImageCapabilityConfig, tier: I
 
 export function imageSizePresets(profile: ImageCapabilityConfig): ImageResolutionOption[] {
     if (profile.size.parameter === "none") return [];
-    if (profile.size.presets) return profile.size.presets;
+    if (profile.size.presets) {
+        // Old saved profiles can contain one stale preset (often 1:1) while
+        // explicitly allowing custom values. Keep exact options and add ratio
+        // shortcuts only within the tiers already present in those presets.
+        if (!profile.size.allowCustom) return profile.size.presets;
+        const configuredTiers = Array.from(new Set(profile.size.presets.map((preset) => preset.tier)));
+        const generated = IMAGE_RATIOS.flatMap((ratio) => {
+            try {
+                return configuredTiers.map((tier) => imagePresetForRatio(tier, ratio));
+            } catch {
+                return [];
+            }
+        });
+        const existing = new Set(profile.size.presets.map((preset) => `${preset.tier}:${preset.ratio}`));
+        return [...profile.size.presets, ...generated.filter((preset) => !existing.has(`${preset.tier}:${preset.ratio}`))];
+    }
     const pixels = buildImageResolutionOptions(profile.size.values);
-    const tiers = profile.size.parameter === "aspect_ratio" ? IMAGE_RESOLUTIONS.filter((tier) => imageQualityForTier(profile, tier)) : [];
+    const tiers = profile.size.parameter === "aspect_ratio"
+        ? IMAGE_RESOLUTIONS.filter((tier) => imageQualityForTier(profile, tier))
+        : profile.size.parameter === "size" && profile.size.allowCustom
+          ? Array.from(new Set(pixels.map((pixel) => pixel.tier)))
+          : [];
+    const candidateRatios = profile.size.allowCustom ? IMAGE_RATIOS : profile.size.values;
     const ratios = tiers.flatMap((tier) =>
-        profile.size.values.flatMap((ratio) => {
+        candidateRatios.flatMap((ratio) => {
             try {
                 const preset = imagePresetForRatio(tier, ratio);
-                return pixels.some((pixel) => pixel.ratio === preset.ratio) ? [] : [preset];
+                return pixels.some((pixel) => pixel.tier === tier && pixel.ratio === preset.ratio) ? [] : [preset];
             } catch {
                 return [];
             }

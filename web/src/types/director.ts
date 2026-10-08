@@ -154,4 +154,6 @@ export type DirectorSceneOutput = {
     normal?: Blob;
     clayVideo?: Blob;
     clayVideoMimeType?: string;
+    /** 从实际录制 WebM 播放时长探测得到的毫秒数，不是请求时长。 */
+    clayVideoDurationMs?: number;
 };

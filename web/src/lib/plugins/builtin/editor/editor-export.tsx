@@ -9,8 +9,15 @@ import { buildTimelineRenderPlan, type TimelineRenderSource } from "@/lib/timeli
 import { exportTimelineToMp4, type TimelineExportProgress } from "@/lib/timeline/timeline-export";
 import { resourceFileUrl } from "@/services/api/resources";
 import { waitForGenerationTask } from "@/services/api/task-center";
-import { createTimelineRenderTask, type TimelineRenderResult } from "@/services/api/timeline-tasks";
+import { createTimelineRenderTask, type TimelineRenderOutput, type TimelineRenderResult } from "@/services/api/timeline-tasks";
 import type { TimelineProject } from "@/types/timeline";
+
+const OUTPUT_PRESETS: Record<string, { label: string; output: TimelineRenderOutput }> = {
+    "16:9": { label: "16:9", output: { width: 1920, height: 1080, fpsNumerator: 30, fpsDenominator: 1, sampleRate: 48000 } },
+    "9:16": { label: "9:16", output: { width: 1080, height: 1920, fpsNumerator: 30, fpsDenominator: 1, sampleRate: 48000 } },
+    "1:1": { label: "1:1", output: { width: 1080, height: 1080, fpsNumerator: 30, fpsDenominator: 1, sampleRate: 48000 } },
+    "4:3": { label: "4:3", output: { width: 1440, height: 1080, fpsNumerator: 30, fpsDenominator: 1, sampleRate: 48000 } },
+};
 
 type ExportState = {
     phase: "idle" | "running" | "done" | "error";
@@ -20,22 +27,22 @@ type ExportState = {
     result: TimelineRenderResult | null;
 };
 
-/** 从时间线 clip 收集渲染源（按 nodeId 关联；directMedia 提供本地媒体定位）。 */
+/** 从时间线 clip 收集渲染源；同一节点的不同片段保留各自的直连媒体。 */
 function collectRenderSources(project: TimelineProject): TimelineRenderSource[] {
-    const seen = new Set<string>();
     const sources: TimelineRenderSource[] = [];
     for (const clip of project.clips) {
-        if (clip.kind !== "video" && clip.kind !== "image") continue;
+        if (clip.kind !== "video" && clip.kind !== "audio") continue;
+        const track = project.tracks.find((item) => item.id === clip.trackId);
+        if (clip.kind === "audio" && (track?.visible === false || track?.muted)) continue;
         const direct = clip.directMedia;
         if (!direct) continue;
-        if (seen.has(clip.nodeId)) continue;
-        seen.add(clip.nodeId);
         sources.push({
             nodeId: clip.nodeId,
-            fileName: `input-${sources.length}.mp4`,
-            durationMs: clip.durationMs,
+            clipId: clip.id,
+            fileName: `input-${sources.length}${clip.kind === "audio" ? ".audio" : ".mp4"}`,
+            durationMs: direct.durationMs || clip.sourceDurationMs || clip.durationMs,
             storageKey: direct.storageKey,
-            url: direct.url,
+            url: direct.dataUrl || direct.content || direct.url,
         });
     }
     return sources;
@@ -45,16 +52,21 @@ export function EditorExport() {
     const { project } = useEditorStoreContext();
     const { projectId } = useEditorHostContext();
     const [state, setState] = useState<ExportState>({ phase: "idle", mode: null, percent: 0, detail: "", result: null });
+    const [outputPreset, setOutputPreset] = useState<keyof typeof OUTPUT_PRESETS>("16:9");
 
     const sources = useMemo(() => (project ? collectRenderSources(project) : []), [project]);
-    const plan = useMemo(() => (project ? buildTimelineRenderPlan(project, sources) : null), [project, sources]);
+    const plan = useMemo(() => {
+        if (!project) return null;
+        try { return buildTimelineRenderPlan(project, sources); }
+        catch { return null; }
+    }, [project, sources]);
 
     // 主路径：提交后端渲染任务并轮询（服务端任务上限 60 分钟，前端多留余量）。
     const renderRemote = async () => {
         if (!project || sources.length === 0 || state.phase === "running") return;
         setState({ phase: "running", mode: "remote", percent: 0, detail: "提交渲染任务…", result: null });
         try {
-            const created = await createTimelineRenderTask({ projectId, timeline: project });
+            const created = await createTimelineRenderTask({ projectId, timeline: project, output: OUTPUT_PRESETS[outputPreset].output });
             const done = await waitForGenerationTask(created.id, {
                 timeoutMs: 62 * 60 * 1000,
                 intervalMs: 3000,
@@ -153,6 +165,16 @@ export function EditorExport() {
                     <span className="tabular-nums text-[var(--director-dock-fg)]/80">{sources.length} 个</span>
                 </div>
 
+                <label className="mb-2 flex items-center justify-between gap-2 text-[11px] text-[var(--director-dock-fg)]/70">
+                    <span>输出规格</span>
+                    <select
+                        value={outputPreset}
+                        onChange={(event) => setOutputPreset(event.target.value as keyof typeof OUTPUT_PRESETS)}
+                        className="rounded border border-[var(--director-sequencer-border)] bg-[var(--director-control-hover)] px-2 py-1 text-[11px] text-[var(--director-dock-fg-strong)]"
+                    >
+                        {Object.entries(OUTPUT_PRESETS).map(([value, preset]) => <option key={value} value={value}>{preset.label}</option>)}
+                    </select>
+                </label>
                 <button
                     type="button"
                     onClick={renderRemote}
@@ -221,7 +243,7 @@ export function EditorExport() {
                     默认提交服务端渲染任务（异步，产物可直接预览/下载）；本地 ffmpeg.wasm 导出保留为离线兜底。
                 </p>
                 {sources.length === 0 && (
-                    <p className="mt-1 text-[11px] text-[var(--director-dock-fg)]/55">悬空引用片段（节点已删除）按计划跳过，不影响其余片段导出。</p>
+                    <p className="mt-1 text-[11px] text-[var(--director-dock-fg)]/55">当前时间线没有可渲染媒体；请先补齐素材再导出。</p>
                 )}
             </div>
         </div>

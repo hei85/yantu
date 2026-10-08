@@ -154,14 +154,10 @@ type tapNowNodeData struct {
 }
 
 // 读取公开分享前先校验目标画布归属，避免把导入结果写入他人画布。
-func (s *Service) ImportTapNow(userID, canvasProjectID, shareID string) (*TapNowImportResult, error) {
+func (s *Service) ImportTapNow(userID, shareID string) (*TapNowImportResult, error) {
 	userID = strings.TrimSpace(userID)
-	canvasProjectID = strings.TrimSpace(canvasProjectID)
-	if userID == "" || canvasProjectID == "" {
-		return nil, kernel.Unauthorized("请先打开已同步的故事创作画布")
-	}
-	if _, err := s.repo.CanvasProjectForUser(userID, canvasProjectID); err != nil {
-		return nil, err
+	if userID == "" {
+		return nil, kernel.Unauthorized("请先登录")
 	}
 	detail, normalizedShareID, err := fetchTapNowDetail(strings.TrimSpace(shareID))
 	if err != nil {

@@ -6,22 +6,19 @@ import { scopedLocalStorage, setActiveUserScope } from "@/lib/user-scope";
 import { CANVAS_STORE_KEY, flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { CANVAS_HISTORY_STORE_KEY, useCanvasHistoryStore } from "@/stores/canvas/use-canvas-history-store";
 import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore } from "@/stores/use-asset-store";
+import { ASSET_FOLDER_STORE_KEY, flushAssetFolderStorePersistence, useAssetFolderStore } from "@/stores/use-asset-folder-store";
 import { CONFIG_STORE_KEY, defaultConfig, normalizeConfigSnapshot, useConfigStore, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { CREATION_PREFERENCES_STORE_KEY, useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
 import { defaultModelCapabilityConfig, STANDARD_IMAGE_SIZE_VALUES, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { imageSizeConfigWithPresets } from "@/lib/image-size-presets";
 import { useUserStore } from "@/stores/use-user-store";
 import { PLUGIN_STORE_KEY, usePluginStore } from "@/stores/use-plugin-store";
-import { initializeRemoteUserDataSession, installRemoteUserDataAutoSync, resetRemoteUserDataSync, withRemoteUserDataSyncExclusive } from "@/services/user-data-sync";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
 
 export async function switchUserStorageScope(userId?: string | null) {
     await withGenerationConsumersPaused(async () => {
-        await withRemoteUserDataSyncExclusive(async () => {
-            await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence()]);
-            resetRemoteUserDataSync();
-            setActiveUserScope(userId);
-        });
+        await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence(), flushAssetFolderStorePersistence()]);
+        setActiveUserScope(userId);
     });
 }
 
@@ -33,10 +30,11 @@ export async function applyUserSession(payload: AuthSessionPayload) {
         // Query key 不携带用户 ID；身份变化时必须取消并清空旧账号请求，避免跨账号复用内存数据。
         if (previousUserId !== nextUserId) appQueryClient.clear();
         await switchUserStorageScope(payload.user?.id);
-        const [persistedCanvas, persistedCanvasHistory, persistedAssets, persistedPlugins] = await Promise.all([
+        const [persistedCanvas, persistedCanvasHistory, persistedAssets, persistedAssetFolders, persistedPlugins] = await Promise.all([
             localForageStorage.getItem(CANVAS_STORE_KEY),
             localForageStorage.getItem(CANVAS_HISTORY_STORE_KEY),
             localForageStorage.getItem(ASSET_STORE_KEY),
+            localForageStorage.getItem(ASSET_FOLDER_STORE_KEY),
             localForageStorage.getItem(PLUGIN_STORE_KEY),
         ]);
         const persistedConfig = scopedLocalStorage.getItem(CONFIG_STORE_KEY);
@@ -50,6 +48,7 @@ export async function applyUserSession(payload: AuthSessionPayload) {
             useCanvasStore.persist.rehydrate(),
             useCanvasHistoryStore.persist.rehydrate(),
             useAssetStore.persist.rehydrate(),
+            useAssetFolderStore.persist.rehydrate(),
             useConfigStore.persist.rehydrate(),
             usePluginStore.persist.rehydrate(),
             useCreationPreferencesStore.persist.rehydrate(),
@@ -58,6 +57,7 @@ export async function applyUserSession(payload: AuthSessionPayload) {
         if (!persistedCanvas) useCanvasStore.setState({ projects: [] });
         if (!persistedCanvasHistory) useCanvasHistoryStore.setState({ deletedProjects: [] });
         if (!persistedAssets) useAssetStore.setState({ assets: [] });
+        if (!persistedAssetFolders) useAssetFolderStore.setState({ folders: [] });
         if (!persistedPlugins) usePluginStore.setState({ installations: [], runtimeStatuses: {}, pluginStates: {} });
         if (!persistedCreationPreferences) useCreationPreferencesStore.setState({ preferences: {} });
         if (!persistedConfig) {
@@ -76,10 +76,6 @@ export async function applyUserSession(payload: AuthSessionPayload) {
             const catalog = await getModelCatalog();
             useConfigStore.getState().mergeSystemChannels(modelCatalogChannels(catalog));
         }
-        installRemoteUserDataAutoSync();
-        if (payload.user?.id) {
-            await initializeRemoteUserDataSession(payload.user.id);
-        } else resetRemoteUserDataSync();
     } finally {
         useUserStore.getState().setHydrated(true);
     }
@@ -124,6 +120,7 @@ export function systemChannelModelChannels(channels: PublicChannelCatalog[]): Mo
                 icon: model.icon || "",
                 capability: model.capability as ModelCapability,
                 protocol: model.protocol as any,
+                capabilityVersion: model.capabilityVersion,
                 capabilityConfig: (model.capabilityConfig as ModelCapabilityConfig | undefined) || defaultModelCapabilityConfig(),
                 channelModelId: model.id,
                 channelId: channel.id,

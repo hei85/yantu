@@ -1,0 +1,86 @@
+{
+  "schema": "claude-mods.ffmpeg-ops.encoding-presets/v1",
+  "updated": "2026-06-12",
+  "note": "Recipe data the agent queries instead of re-deriving. Args are ffmpeg argv fragments; {input}/{output} are placeholders. Social specs drift - check the 'updated' stamp and the platform's current docs before trusting a target older than ~6 months.",
+  "delivery": {
+    "web_h264": {
+      "use": "Default web/share delivery - universal playback",
+      "args": "-c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart",
+      "container": "mp4"
+    },
+    "web_h264_small": {
+      "use": "Size-sensitive H.264 (email, chat upload caps)",
+      "args": "-c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p -vf scale=-2:720 -c:a aac -b:a 128k -movflags +faststart",
+      "container": "mp4"
+    },
+    "hevc_storage": {
+      "use": "Personal library/storage - ~40% smaller, modern devices",
+      "args": "-c:v libx265 -crf 24 -preset slow -tag:v hvc1 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart",
+      "container": "mp4"
+    },
+    "av1_web": {
+      "use": "Best compression for web-first targets; encode cost highest",
+      "args": "-c:v libsvtav1 -crf 32 -preset 6 -pix_fmt yuv420p10le -c:a libopus -b:a 128k",
+      "container": "webm"
+    },
+    "archive_ffv1": {
+      "use": "Lossless preservation master (archival standard)",
+      "args": "-c:v ffv1 -level 3 -g 1 -slicecrc 1 -c:a flac",
+      "container": "mkv"
+    },
+    "normalize_source": {
+      "use": "Fix problem sources (HEVC/VFR/Zoom/Loom) before editing",
+      "args": "-c:v libx264 -crf 18 -preset fast -pix_fmt yuv420p -fps_mode cfr -r 30 -c:a aac -b:a 192k -ar 48000",
+      "container": "mp4"
+    }
+  },
+  "audio": {
+    "podcast_opus": {
+      "use": "Voice distribution - best codec per bit",
+      "args": "-vn -c:a libopus -b:a 32k -ac 1 -application voip"
+    },
+    "music_opus": {
+      "use": "Music/general audio",
+      "args": "-vn -c:a libopus -b:a 128k"
+    },
+    "stt_prep": {
+      "use": "Whisper-family input - 16 kHz mono PCM",
+      "args": "-vn -ac 1 -ar 16000 -c:a pcm_s16le",
+      "container": "wav"
+    },
+    "loudness_targets_lufs": {
+      "streaming_platforms": -14,
+      "podcast": -16,
+      "ebu_r128_broadcast": -23
+    }
+  },
+  "social": {
+    "_note": "Specs as of the 'updated' stamp. aspect = canvas; fit landscape sources with the blurred-pad pattern in SKILL.md.",
+    "youtube_standard": {
+      "aspect": "16:9", "resolution": "1920x1080", "fps_max": 60,
+      "args": "-c:v libx264 -crf 19 -preset slow -pix_fmt yuv420p -c:a aac -b:a 192k -ar 48000 -movflags +faststart"
+    },
+    "youtube_shorts": {
+      "aspect": "9:16", "resolution": "1080x1920", "duration_max_s": 180,
+      "args": "-c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart"
+    },
+    "instagram_reel": {
+      "aspect": "9:16", "resolution": "1080x1920", "duration_max_s": 900, "fps_max": 60,
+      "args": "-c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart"
+    },
+    "tiktok": {
+      "aspect": "9:16", "resolution": "1080x1920", "duration_max_s": 600,
+      "args": "-c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart"
+    },
+    "twitter_x": {
+      "aspect": "16:9 or 1:1", "resolution": "1920x1080", "duration_max_s": 140, "size_max_mb": 512,
+      "args": "-c:v libx264 -crf 22 -preset slow -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart"
+    }
+  },
+  "gif": {
+    "standard": {
+      "use": "README/PR demo GIF - palettegen quality at sane size",
+      "filter": "fps=12,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4"
+    }
+  }
+}

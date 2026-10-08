@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
-import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
+import { buildGenerationConfig, pinCanvasVideoGenerationConfig } from "@/lib/canvas/canvas-project-generation";
 import { createModelChannel, defaultConfig, encodeChannelModel, type AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType } from "@/types/canvas";
 
@@ -55,5 +55,39 @@ describe("video option clamping", () => {
         } as unknown as Parameters<typeof buildGenerationConfig>[1];
         const built = buildGenerationConfig(config, node, "video");
         expect(built.videoGenerateAudio).toBe("false");
+    });
+
+    test("pins the confirmed video request settings across later global config updates", () => {
+        const config = videoConfig({ audioSupported: true, generateAudio: "false" });
+        const node = {
+            id: "storyboard-video",
+            type: CanvasNodeType.Video,
+            title: "分镜视频",
+            position: { x: 0, y: 0 },
+            width: 320,
+            height: 200,
+            metadata: {
+                model: config.videoModel,
+                size: "16:9",
+                seconds: "8",
+                vquality: "768p",
+                generateAudio: "false",
+                watermark: "false",
+            },
+        } as unknown as Parameters<typeof buildGenerationConfig>[1] & NonNullable<Parameters<typeof pinCanvasVideoGenerationConfig>[1]>;
+
+        const expected = buildGenerationConfig(config, node, "video");
+        const pinned = pinCanvasVideoGenerationConfig(config, node);
+        const afterGlobalUpdate = buildGenerationConfig({ ...config, size: "9:16", vquality: "2K", videoGenerateAudio: "true", videoWatermark: "true", quality: "high" }, pinned, "video");
+
+        expect(afterGlobalUpdate).toMatchObject({
+            model: expected.model,
+            size: expected.size,
+            quality: expected.quality,
+            videoSeconds: expected.videoSeconds,
+            vquality: expected.vquality,
+            videoGenerateAudio: expected.videoGenerateAudio,
+            videoWatermark: expected.videoWatermark,
+        });
     });
 });

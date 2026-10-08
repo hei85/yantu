@@ -36,7 +36,7 @@ export async function loadFFmpeg(onProgress?: (progress: MergeVideoProgress) => 
 }
 
 export async function mergeVideos(inputs: MergeVideoInput[], onProgress?: (progress: MergeVideoProgress) => void) {
-    if (inputs.length < 2) throw new Error("至少选择 2 个视频才能合并");
+    if (inputs.length < 1) throw new Error("至少需要一个视频才能输出成片");
     const ffmpeg = await loadFFmpeg(onProgress);
     const { fetchFile } = await import("@ffmpeg/util");
     const files: string[] = [];

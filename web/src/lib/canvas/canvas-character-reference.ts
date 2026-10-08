@@ -39,6 +39,8 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
             characterVisualStatus: card.visualStatus,
             characterVoiceStatus: card.voiceStatus,
             characterVoiceName: card.voice?.profile.name,
+            characterVoiceVersionId: card.voice?.voiceVersion.id,
+            characterVoiceVersion: card.voice?.voiceVersion,
             characterVoiceProfile: card.voice ? {
                 name: card.voice.profile.name,
                 provider: card.voice.profile.provider,
@@ -54,6 +56,8 @@ export function refreshCanvasCharacterReferenceNodes(nodes: CanvasNodeData[], as
             && metadata.characterVisualStatus === patch.characterVisualStatus
             && metadata.characterVoiceStatus === patch.characterVoiceStatus
             && metadata.characterVoiceName === patch.characterVoiceName
+            && metadata.characterVoiceVersionId === patch.characterVoiceVersionId
+            && JSON.stringify(metadata.characterVoiceVersion) === JSON.stringify(patch.characterVoiceVersion)
             && JSON.stringify(metadata.characterDefinition) === JSON.stringify(patch.characterDefinition)
             && JSON.stringify(metadata.characterVoiceProfile) === JSON.stringify(patch.characterVoiceProfile)
             && metadata.characterVoiceInstructions === patch.characterVoiceInstructions

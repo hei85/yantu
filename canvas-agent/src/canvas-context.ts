@@ -79,6 +79,7 @@ export function buildCanvasContext(state: CanvasSnapshot | null): CanvasContext 
     const warnings: string[] = [];
     if (!nodes.length) warnings.push("画布为空；创建前先确认用户要放置的区域或使用默认网格布局。");
     if (nodes.some((node) => node.metadata?.status === "error")) warnings.push("画布中存在生成失败节点；重试前应读取节点的 errorDetails 或 generationErrorCode。");
+    if (nodes.some((node) => ["error", "unavailable"].includes(conversionState(node)?.status || ""))) warnings.push("画布中存在转换失败或本地能力不可用的节点；请读取 conversion.errorMessage。");
     if (resources.some((resource) => !resource.isReady)) warnings.push("存在尚未就绪或缺少持久化资源引用的媒体节点；不要把占位节点当作可用参考素材。");
 
     return {
@@ -100,6 +101,23 @@ export function buildCanvasContext(state: CanvasSnapshot | null): CanvasContext 
         connections: (state.connections || []).map((connection) => connectionSummary(connection, nodeById)),
         resources,
         warnings,
+    };
+}
+
+/** Read version guards without resending every node, edge and resource. */
+export function buildCanvasContextSummary(state: CanvasSnapshot | null) {
+    const { nodes, connections, resources, selection, ...context } = buildCanvasContext(state);
+    return {
+        ...context,
+        detail: "summary" as const,
+        selection: selection.slice(0, 20),
+        omitted: {
+            nodes: nodes.length,
+            connections: connections.length,
+            resources: resources.length,
+            selection: Math.max(0, selection.length - 20),
+        },
+        nextTools: ["canvas_find_nodes", "canvas_get_node", "canvas_get_connection", "canvas_get_storyboard", "canvas_get_generation_tasks", "canvas_get_resources"],
     };
 }
 
@@ -134,9 +152,24 @@ export function getCanvasNode(state: CanvasSnapshot | null, input: { id: string 
     return {
         found: true,
         id: node.id,
-        node: compactContextNode(node),
+        node: {
+            ...compactContextNode(node),
+            // Overview previews are truncated. Targeted reads retain complete
+            // editable text without exposing arbitrary metadata or media URLs.
+            metadata: {
+                ...Object.fromEntries(["content", "prompt", "composerContent"].flatMap((key) =>
+                    typeof node.metadata?.[key] === "string" ? [[key, node.metadata[key]]] : [])),
+                locked: node.metadata?.locked === true,
+                collapsed: node.metadata?.collapsed === true,
+                ...(node.type === "script" && node.metadata?.storyboard && typeof node.metadata.storyboard === "object"
+                    ? { storyboard: node.metadata.storyboard }
+                    : {}),
+            },
+        },
         resource: resourceSummary(node),
         connections,
+        revision: state.revision ?? 0,
+        stateHash: hashState(state),
     };
 }
 
@@ -322,7 +355,7 @@ function validateFiniteNumber(issues: Array<{ index: number; severity: "error" |
 
 const MAX_SHOT_DURATION_SECONDS = 15;
 
-// 视频模型单镜硬上限：超过 15 秒的镜头无法生成视频，写入分镜时直接拦下。
+// 叙事镜头可以超过单次模型上限；这里只提示必须在提交视频前拆分 GenerationSegment。
 function validateStoryboardShotDurations(issues: Array<{ index: number; severity: "error" | "warning"; message: string }>, index: number, metadata: unknown, label: string) {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return;
     const storyboard = (metadata as Record<string, unknown>).storyboard;
@@ -332,7 +365,7 @@ function validateStoryboardShotDurations(issues: Array<{ index: number; severity
     const oversize = rows.filter((row) => row && typeof row === "object" && !Array.isArray(row) && typeof (row as Record<string, unknown>).durationSeconds === "number" && ((row as Record<string, unknown>).durationSeconds as number) > MAX_SHOT_DURATION_SECONDS);
     if (!oversize.length) return;
     const detail = oversize.map((row) => { const item = row as Record<string, unknown>; return `第 ${item.shotNumber ?? "?"} 镜 ${item.durationSeconds} 秒`; }).join("、");
-    issues.push({ index, severity: "error", message: `${label}含超时长镜头：${detail}；单镜不得超过 ${MAX_SHOT_DURATION_SECONDS} 秒（视频模型上限），请拆成两镜或压缩后重写分镜` });
+    issues.push({ index, severity: "warning", message: `${label}含长叙事镜头：${detail}；durationSeconds 可保留为目标叙事时长，但提交视频前必须按真实模型能力拆成不超过 ${MAX_SHOT_DURATION_SECONDS} 秒的 GenerationSegment` });
 }
 
 function validatePositiveNumber(issues: Array<{ index: number; severity: "error" | "warning"; message: string }>, index: number, value: unknown, label: string) {
@@ -350,8 +383,8 @@ function validatePosition(issues: Array<{ index: number; severity: "error" | "wa
     validateFiniteNumber(issues, index, position.y, `${label}.y`);
 }
 
-function connectionKey(connection: Pick<CanvasConnection, "fromNodeId" | "toNodeId" | "fromHandleId" | "toHandleId">) {
-    return [connection.fromNodeId, connection.toNodeId, connection.fromHandleId || "", connection.toHandleId || ""].join("\0");
+function connectionKey(connection: Pick<CanvasConnection, "fromNodeId" | "toNodeId" | "fromHandleId" | "toHandleId" | "relation" | "storyboardRowId">) {
+    return [connection.fromNodeId, connection.toNodeId, connection.fromHandleId || "", connection.toHandleId || "", connection.relation || "", connection.storyboardRowId || ""].join("\0");
 }
 
 function isMediaNodeType(type: CanvasNode["type"] | undefined) {
@@ -373,6 +406,7 @@ export function hashState(state: CanvasSnapshot) {
 function compactContextNode(node: CanvasNode) {
     const metadata = node.metadata || {};
     const resource = resourceSummary(node);
+    const conversion = conversionState(node);
     return {
         id: node.id,
         type: node.type,
@@ -380,7 +414,9 @@ function compactContextNode(node: CanvasNode) {
         position: node.position,
         size: { width: node.width, height: node.height },
         parentId: node.parentId,
-        status: String(metadata.status || "idle"),
+        locked: metadata.locked === true,
+        collapsed: metadata.collapsed === true,
+        status: conversion?.status || String(metadata.status || "idle"),
         content: preview(metadata.content, 240),
         prompt: preview(metadata.prompt || metadata.composerContent, 300),
         generation: metadata.generationMode || metadata.workflowKind || metadata.taskId ? {
@@ -395,7 +431,18 @@ function compactContextNode(node: CanvasNode) {
             provider: metadata.taskProvider,
             errorCode: metadata.taskErrorCode || metadata.generationErrorCode,
         } : undefined,
-        error: metadata.status === "error" ? preview(metadata.errorDetails || metadata.generationErrorCode, 360) : undefined,
+        error: conversion && ["error", "unavailable"].includes(conversion.status) ? preview(conversion.errorMessage, 360) : metadata.status === "error" ? preview(metadata.errorDetails || metadata.generationErrorCode, 360) : undefined,
+        conversion: conversion ? {
+            operation: conversion.operation,
+            status: conversion.status,
+            sourceNodeId: conversion.sourceNodeId,
+            videoFrameTimeSeconds: conversion.videoFrameTimeSeconds,
+            resultWidth: conversion.resultWidth,
+            resultHeight: conversion.resultHeight,
+            detectedPeople: conversion.detectedPeople,
+            errorCode: conversion.errorCode,
+            errorMessage: preview(conversion.errorMessage, 360),
+        } : undefined,
         asset: metadata.assetId || metadata.characterAssetId ? {
             assetId: metadata.assetId || metadata.characterAssetId,
             versionId: metadata.characterVersionId,
@@ -409,11 +456,12 @@ function compactContextNode(node: CanvasNode) {
 
 function resourceSummary(node: CanvasNode): CanvasResourceSummary | null {
     const metadata = node.metadata || {};
+    const conversion = conversionState(node);
     const storageKey = stringValue(metadata.storageKey);
     const resourceId = storageKey?.startsWith("resource:") ? storageKey.slice("resource:".length) : undefined;
     const hasResourceSignal = Boolean(storageKey || metadata.resourceId || metadata.assetId || metadata.primaryImageId || metadata.mimeType || ["image", "video", "audio"].includes(node.type));
     if (!hasResourceSignal) return null;
-    const status = stringValue(metadata.status) || "idle";
+    const status = conversion?.status || stringValue(metadata.status) || "idle";
     return {
         nodeId: node.id,
         nodeTitle: node.title || "未命名节点",
@@ -428,7 +476,26 @@ function resourceSummary(node: CanvasNode): CanvasResourceSummary | null {
         width: numberValue(metadata.naturalWidth),
         height: numberValue(metadata.naturalHeight),
         durationMs: numberValue(metadata.durationMs),
-        isReady: status === "success" && Boolean(storageKey || metadata.resourceId || metadata.primaryImageId),
+        isReady: conversion ? status === "completed" && Boolean(storageKey) && storageKey === conversion.resultStorageKey : status === "success" && Boolean(storageKey || metadata.resourceId || metadata.primaryImageId),
+    };
+}
+
+function conversionState(node: CanvasNode) {
+    if (node.type !== "media-conversion") return null;
+    const raw = node.metadata?.mediaConversion;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const value = raw as Record<string, unknown>;
+    return {
+        operation: stringValue(value.operation),
+        status: stringValue(value.status) || "idle",
+        sourceNodeId: stringValue(value.sourceNodeId),
+        videoFrameTimeSeconds: numberValue(value.videoFrameTimeSeconds),
+        resultStorageKey: stringValue(value.resultStorageKey),
+        resultWidth: numberValue(value.resultWidth),
+        resultHeight: numberValue(value.resultHeight),
+        detectedPeople: numberValue(value.detectedPeople),
+        errorCode: stringValue(value.errorCode),
+        errorMessage: stringValue(value.errorMessage),
     };
 }
 
@@ -441,6 +508,8 @@ function connectionSummary(connection: CanvasConnection, nodeById: Map<string, C
         toTitle: nodeById.get(connection.toNodeId)?.title || "未知节点",
         fromHandleId: connection.fromHandleId,
         toHandleId: connection.toHandleId,
+        relation: connection.relation,
+        storyboardRowId: connection.storyboardRowId,
     };
 }
 

@@ -1,14 +1,10 @@
 # 衍图 Canvas Agent
 
-本地 Canvas Agent 用来连接画布网页和用户电脑上的 Codex / Claude Code。本地开发时优先连接 `http://localhost:3000`，不需要先使用线上站点。
+本地 Canvas Agent 用来连接画布网页和外部 Codex 的衍图插件 / yingce MCP。它只提供本机 Runtime 和 stdio MCP，不启动第二套 Codex 或 Claude 推理宿主。本地开发时优先连接 `http://localhost:3000`。
 
 ## 启动
 
-```bash
-npx -y @ddcat666/open-ai-canvas-agent
-```
-
-本仓库开发时也可以直接运行。依赖锁定在 `bun.lock`，不要用 pnpm 或 npm 覆盖同一套 `node_modules`：
+当前仓库统一使用本地构建产物启动。依赖锁定在 `bun.lock`，不要用 pnpm 或 npm 覆盖同一套 `node_modules`：
 
 ```bash
 cd canvas-agent
@@ -136,136 +132,56 @@ $env:HF_HUB_CACHE = Join-Path $env:HF_HOME "hub"
 
 ## Codex MCP
 
-如果希望 Codex 终端能直接操作画布，需要先把 Canvas Agent 注册成 Codex MCP。
+衍图唯一 Agent 路线是：
 
-### Codex app 插件
-
-仓库内提供了 Codex app 插件：`plugins/yingce`。该插件尚未上架公共插件目录，直接搜索不会显示；在 Codex app 中添加本仓库的 marketplace 后即可安装。插件会注册 `yingce` MCP，并带上画布操作说明。
-
-添加本地 marketplace 时建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
-
-```bash
-cd /path/to/open-ai-canvas
-codex plugin marketplace add "$(pwd)"
-codex plugin add yingce@yingce-local
+```text
+外部 Codex -> 衍图插件 Skill -> yingce MCP stdio -> Runtime /api/tools -> 软件业务服务
 ```
 
-插件默认通过 npm 启动 MCP：
+仓库内插件位于 `plugins/yingce`。在仓库根目录执行：
 
-```bash
-npx -y @ddcat666/open-ai-canvas-agent mcp
+```powershell
+.\scripts\install-yingce-plugin.ps1 -Build
 ```
 
-使用时可以直接在 Codex 里说“打开衍图”，插件会优先启动本地画布和本地 Agent，读取 Local URL 和 Connect token，然后直接打开画布网页地址新建并连接画布。如果自动连接失败，再检查本地画布服务和 Canvas Agent 是否都已启动。
+脚本会构建当前 `canvas-agent/dist`、刷新插件市场与安装缓存，并把全局 `yingce` MCP 指向当前仓库。发布包的 `.mcp.json` 使用插件内相对启动器，不写死绝对路径。
 
-Canvas Agent 启动后，给 Codex 添加 MCP：
+手工注册时可以使用：
 
-```bash
-codex mcp add yingce -- npx -y @ddcat666/open-ai-canvas-agent mcp
+```powershell
+codex mcp add yingce -- node D:\path\to\open-ai-canvas\canvas-agent\dist\index.js mcp
 ```
 
-本仓库开发时可以改成，实际使用建议替换为本机绝对路径：
+可用工具包括：
 
-```bash
-codex mcp add yingce -- node /path/to/open-ai-canvas/canvas-agent/dist/index.js mcp
+- 画布：`canvas_get_context`、`canvas_find_nodes`、`canvas_apply_ops`、`canvas_create_workflow`、`canvas_get_storyboard`、`canvas_update_storyboard`。
+- 生成：`canvas_generate_image`、`canvas_generate_video`、`canvas_generate_audio`、`canvas_merge_videos`。
+- 技能：`skill_catalog`、`skill_search`、`skill_read`、`skill_prepare`。
+- 模型：`film_list_models`、`film_validate_strategy`。
+- 整片：`film_create_run`、`film_get_run`、`film_update_plan`、`film_submit_step`、`film_get_tasks`。
+- 验收：`film_probe_media`、`film_check_shot`、`film_render_timeline`、`film_verify_delivery`。
+- 诊断：`runtime_diagnostics`。
+
+## Agent 生命周期
+
+- 外部 Codex 活跃时负责创作判断；MCP 提交立即返回 `runId/stepId/attemptId/taskId`，不等待几分钟的生成。
+- 软件调度器和任务 worker 只执行已授权计划、既定重试、下载、渲染和验收，不拥有新的开放式创作判断。
+- Codex 回合结束不等于影片完成。需要计划外新判断时进入 `WAITING_AGENT`，除非宿主有经验证的继续能力，否则不会偷偷启动内置推理进程。
+- 影片只有保存成功、资源可重新读取且必需检查通过后，才允许进入 `COMPLETED`。
+
+## 已移除的内置控制入口
+
+以下 URL 不再注册推理或线程操作，只返回 HTTP 410 / `agent_control_removed`：
+
+```text
+/agent/codex/workspace
+/agent/codex/threads
+/agent/codex/threads/new
+/agent/codex/threads/:threadId
+/agent/codex/threads/:threadId/resume
+/agent/codex/threads/:threadId/delete
+/agent/codex/turn
+/agent/claude/turn
 ```
 
-Canvas Agent 源码使用 TypeScript 编写，MCP 协议层使用官方 `@modelcontextprotocol/sdk`，工具入参使用 `zod` 描述。
-
-如果希望终端里的 Codex 不被 MCP 审批卡住，可以在 `~/.codex/config.toml` 里给这个 MCP 设置自动放行：
-
-```toml
-[mcp_servers.yingce]
-command = "npx"
-args = ["-y", "@ddcat666/open-ai-canvas-agent", "mcp"]
-default_tools_approval_mode = "approve"
-```
-
-可用工具：
-
-- `canvas_get_state`
-- `canvas_get_context`
-- `canvas_find_nodes`
-- `canvas_get_node`
-- `canvas_get_connection`
-- `canvas_get_generation_tasks`
-- `canvas_get_resources`
-- `canvas_validate_ops`
-- `canvas_get_selection`
-- `canvas_export_snapshot`
-- `canvas_apply_ops`
-- `canvas_create_workflow`
-- `canvas_create_text_node`
-- `canvas_create_image_prompt_flow`
-
-`canvas_create_workflow` 是创建流水线/节点图的高阶工具，不要把工作流退化成批量文本节点。它会根据节点语义自动选择真实节点类型、按实际尺寸布局、创建默认顺序连线，并复核连接与重叠结果：
-
-| kind | 画布节点类型 | 用途 |
-| --- | --- | --- |
-| `character_cards` | `image` | 角色拆分图片卡片 |
-| `character_three_view` | `image` | 角色正面/侧面/背面三视图 |
-| `storyboard_video` | `video` | 分镜剧情视频 |
-| `script` | `script` | 剧本或分镜文字 |
-
-媒体节点优先提供 `prompt`/`content`；对三个影视语义节点，即使模型漏填提示词，工具也会从工作流标题和节点语义生成最小可用创作提示词。已有画布素材必须先通过 `canvas_find_nodes` 或 `canvas_get_resources` 获取真实 node id，再放入 `referenceNodeIds`。
-
-```json
-{
-  "title": "搞笑修仙小说流水线",
-  "nodes": [
-    { "ref": "cards", "kind": "character_cards", "title": "角色拆分图片卡片" },
-    { "ref": "views", "kind": "character_three_view", "title": "角色三视图", "referenceRefs": ["cards"] },
-    { "ref": "video", "kind": "storyboard_video", "title": "分镜剧情视频", "referenceRefs": ["views"], "runGeneration": false }
-  ]
-}
-```
-
-`canvas_apply_ops` 示例：
-
-```json
-{
-  "ops": [
-    {
-      "type": "add_node",
-      "nodeType": "text",
-      "title": "标题",
-      "position": { "x": 0, "y": 0 },
-      "metadata": { "content": "文本内容" }
-    }
-  ]
-}
-```
-
-画布写工具返回的结果包含 `ok`、`message` 和 `data`。`data.snapshot` 是本地 Runtime 写入后的最新快照，`data.verification` 会列出 `createdNodeIds`、`removedNodeIds`、缺失节点/连线、前后状态摘要和生成任务观察结果。生成任务的 `message` 会明确区分“已提交/生成中，尚未完成”和“已完成且资源就绪”；不要只根据节点已经创建就向用户报告生成完成。
-
-推荐的 Agent 工作流是：先调用 `canvas_get_context` 读取语义化上下文和 `stateHash`；不知道节点 id 时调用 `canvas_find_nodes`，已经知道 id 后用 `canvas_get_node` 或 `canvas_get_connection` 做精确复核；需要观察生成中的节点时调用 `canvas_get_generation_tasks`；涉及图片、视频或音频参考时调用 `canvas_get_resources`；复杂写操作先调用 `canvas_validate_ops`，通过后再调用 `canvas_apply_ops`。这样 Agent 不需要猜测节点 id，也不会把 loading/error/占位媒体误判成可用资源。
-
-## 侧边栏 Codex
-
-本地面板会把提示词发送给 Canvas Agent。Canvas Agent 使用官方 `@openai/codex` CLI 的 `codex app-server --stdio` 启动并复用同一个 Codex thread，启动时会注入 `yingce` MCP 配置并自动放行 MCP 审批，真正执行画布修改前仍由网页侧边栏二次确认。
-
-侧边栏会展示 Codex 返回的 `thread.started`、`turn.started`、`item.*`、`turn.completed` 等结构化事件；收到 app-server 的 `item/agentMessage/delta` 时，Canvas Agent 会转成 `item.updated`，网页会用同一条消息做真实流式更新，并把工具细节收进运行日志。
-
-侧边栏上传或粘贴的图片会先发到本机 Canvas Agent，再由 Canvas Agent 临时写入本机文件并作为 app-server `localImage` 输入传给 Codex；前端会提示附件体积，单次请求体限制为 30MB。
-
-侧边栏 Composer 中显式提及的网页技能不会被拼接进用户 Prompt。网页只为本轮提及的技能获取 bundle，本机 Runtime 将 `SKILL.md`、`references/`、`scripts/`、`assets/` 等目录完整写入当前 turn 的临时技能目录，并通过 Codex app-server 的原生 `skill` 输入项加载；技能不会被复制进文本输入，也不会添加 `$skill-name` 伪标记，turn 完成后删除整个临时目录。未被用户提及的技能不会传给本机 Runtime。
-
-网页内置在线 Agent 使用另一条渐进式路径：系统上下文只列技能名称、简介、版本和文件数；模型先读取入口 `SKILL.md`，再按入口引用调用文件清单、搜索或单文件读取工具，不会一次性加载整个技能包。
-
-## Claude Code
-
-Claude Code Adapter 代码暂时保留，但当前网页侧边栏只开放 Codex。后续开放 Claude 入口时，Canvas Agent 会调用本机 `claude -p --output-format stream-json` 并把流式 JSON 事件转发到侧边栏。
-
-如果希望 Claude Code 也能操作画布，需要给 Claude Code 添加同一个 MCP。建议用 user scope，避免 Canvas Agent 从不同目录启动时找不到配置：
-
-```bash
-claude mcp add --scope user --transport stdio yingce -- npx -y @ddcat666/open-ai-canvas-agent mcp
-```
-
-本仓库开发时可以改成：
-
-```bash
-claude mcp add --scope user --transport stdio yingce -- node /path/to/open-ai-canvas/canvas-agent/dist/index.js mcp
-```
-
-Canvas Agent 调用 Claude Code 时会默认带上 `--allowedTools mcp__yingce__*`，画布写操作仍由网页侧边栏确认。
+代码中也不再保留 `runCodexTurn`、`runCodexTurnNow`、`CodexAppClient`、`runClaudeTurn` 和 `@openai/codex` 运行依赖。共享 `/api/tools`、事件桥、任务、资源、时间线和手工操作继续保留。

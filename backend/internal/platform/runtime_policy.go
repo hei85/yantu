@@ -34,7 +34,6 @@ type RuntimeResourcePolicy struct {
 	StructuredDataMB        int64 `json:"structuredDataMB"`
 	TaskDataGB              int64 `json:"taskDataGB"`
 	AssetCount              int64 `json:"assetCount"`
-	CanvasCount             int64 `json:"canvasCount"`
 	TaskCount               int64 `json:"taskCount"`
 	APICallLogCount         int64 `json:"apiCallLogCount"`
 	RecycleBinRetentionDays int   `json:"recycleBinRetentionDays"`
@@ -57,7 +56,6 @@ type RuntimeRequestPolicy struct {
 	ResourceUploadPerMinute    int   `json:"resourceUploadPerMinute"`
 	ResourceImportPerMinute    int   `json:"resourceImportPerMinute"`
 	AssetWritePerMinute        int   `json:"assetWritePerMinute"`
-	CanvasWritePerMinute       int   `json:"canvasWritePerMinute"`
 	RegisterPerHour            int   `json:"registerPerHour"`
 	LoginIPPerTenMinutes       int   `json:"loginIPPerTenMinutes"`
 	LoginAccountPerTenMinutes  int   `json:"loginAccountPerTenMinutes"`
@@ -116,7 +114,6 @@ func baseRuntimePolicy() RuntimePolicySetting {
 			StructuredDataMB:        256,
 			TaskDataGB:              1,
 			AssetCount:              2_000,
-			CanvasCount:             1_000,
 			TaskCount:               20_000,
 			APICallLogCount:         100_000,
 			RecycleBinRetentionDays: 30,
@@ -137,7 +134,6 @@ func baseRuntimePolicy() RuntimePolicySetting {
 			ResourceUploadPerMinute:    30,
 			ResourceImportPerMinute:    30,
 			AssetWritePerMinute:        120,
-			CanvasWritePerMinute:       120,
 			RegisterPerHour:            30,
 			LoginIPPerTenMinutes:       50,
 			LoginAccountPerTenMinutes:  10,
@@ -167,7 +163,7 @@ func applySelfUseMaximums(value *RuntimePolicySetting) {
 	value.Resource = RuntimeResourcePolicy{
 		ResourceUploadMB: maxRuntimeUploadMB, GeneratedFileMB: maxRuntimeUploadMB,
 		DailyUploadMB: maxRuntimeDataMB, StoredFileGB: maxRuntimeStorageGB, StructuredDataMB: maxRuntimeDataMB,
-		TaskDataGB: maxRuntimeStorageGB, AssetCount: maxRuntimeCount, CanvasCount: maxRuntimeCount,
+		TaskDataGB: maxRuntimeStorageGB, AssetCount: maxRuntimeCount,
 		TaskCount: maxRuntimeCount, APICallLogCount: maxRuntimeCount,
 		RecycleBinRetentionDays: 0,
 	}
@@ -180,7 +176,7 @@ func applySelfUseMaximums(value *RuntimePolicySetting) {
 	value.Request = RuntimeRequestPolicy{
 		TaskCreatePerMinute:     maxRuntimeRate,
 		ResourceUploadPerMinute: maxRuntimeRate, ResourceImportPerMinute: maxRuntimeRate,
-		AssetWritePerMinute: maxRuntimeRate, CanvasWritePerMinute: maxRuntimeRate,
+		AssetWritePerMinute:  maxRuntimeRate,
 		RegisterPerHour:      maxRuntimeRate,
 		LoginIPPerTenMinutes: maxRuntimeRate, LoginAccountPerTenMinutes: maxRuntimeRate,
 		SystemRelayPerMinute: maxRuntimeRate, CustomRelayPerMinute: maxRuntimeRate,
@@ -336,7 +332,7 @@ func validateRuntimePolicy(value RuntimePolicySetting) error {
 		return kernel.BadAuthRequest("单文件上限不能大于账号文件总容量")
 	}
 	for label, item := range map[string]int64{
-		"素材数量": resource.AssetCount, "画布数量": resource.CanvasCount,
+		"素材数量":   resource.AssetCount,
 		"任务历史数量": resource.TaskCount, "请求日志数量": resource.APICallLogCount,
 	} {
 		if item < 1 || item > maxRuntimeCount {
@@ -367,8 +363,7 @@ func validateRuntimePolicy(value RuntimePolicySetting) error {
 	for label, item := range map[string]int{
 		"任务创建频控": request.TaskCreatePerMinute,
 		"资源上传频控": request.ResourceUploadPerMinute, "资源导入频控": request.ResourceImportPerMinute,
-		"素材写入频控": request.AssetWritePerMinute,
-		"画布写入频控": request.CanvasWritePerMinute, "注册频控": request.RegisterPerHour,
+		"素材写入频控": request.AssetWritePerMinute, "注册频控": request.RegisterPerHour,
 		"登录 IP 频控": request.LoginIPPerTenMinutes,
 		"登录账号频控":   request.LoginAccountPerTenMinutes, "系统渠道频控": request.SystemRelayPerMinute,
 		"自定义渠道频控": request.CustomRelayPerMinute,

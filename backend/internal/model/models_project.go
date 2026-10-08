@@ -80,7 +80,6 @@ type AnnouncementImageDraft struct {
 type Asset struct {
 	ID               string             `json:"id" gorm:"primaryKey;size:80"`
 	UserID           string             `json:"userId" gorm:"index;size:36;index:idx_assets_user_updated,priority:1"`
-	FolderID         string             `json:"folderId,omitempty" gorm:"index;size:36"`
 	Kind             string             `json:"kind" gorm:"index;size:24"`
 	Category         AssetCategory      `json:"category" gorm:"index;size:32"`
 	Status           AssetVersionStatus `json:"status" gorm:"index;size:24"`
@@ -89,17 +88,6 @@ type Asset struct {
 	PayloadJSON      string             `json:"payloadJson" gorm:"type:text"`
 	CreatedAt        time.Time          `json:"createdAt"`
 	UpdatedAt        time.Time          `json:"updatedAt" gorm:"index:idx_assets_user_updated,priority:2"`
-}
-
-// AssetFolder 是用户素材库的一层自定义分类；业务分类仍由 Asset.Category 表达。
-type AssetFolder struct {
-	ID        string    `json:"id" gorm:"primaryKey;size:36"`
-	UserID    string    `json:"userId" gorm:"index;size:36;uniqueIndex:idx_asset_folders_user_name,priority:1"`
-	Name      string    `json:"name" gorm:"size:80"`
-	NameKey   string    `json:"-" gorm:"size:80;uniqueIndex:idx_asset_folders_user_name,priority:2"`
-	Position  int       `json:"position" gorm:"index"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type ProjectAssetLink struct {
@@ -180,16 +168,39 @@ type VoiceProfile struct {
 	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
-type CharacterVoiceBinding struct {
-	ID             string    `json:"id" gorm:"primaryKey;size:36"`
-	AssetVersionID string    `json:"assetVersionId" gorm:"uniqueIndex;size:36"`
-	VoiceProfileID string    `json:"voiceProfileId" gorm:"index;size:36"`
-	Instructions   string    `json:"instructions" gorm:"type:text"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+// VoiceProfileVersion 是角色声音身份的不可变版本；分镜只引用此 ID，避免逐镜重新设计声音。
+type VoiceProfileVersion struct {
+	ID                       string    `json:"id" gorm:"primaryKey;size:36"`
+	VoiceProfileID           string    `json:"voiceProfileId" gorm:"index;size:36;uniqueIndex:idx_voice_profile_versions_number,priority:1"`
+	CharacterAssetID         string    `json:"characterId" gorm:"index;size:36"`
+	Version                  int       `json:"version" gorm:"uniqueIndex:idx_voice_profile_versions_number,priority:2"`
+	VoiceStrategy            string    `json:"voiceStrategy" gorm:"size:24"`
+	VoiceModel               string    `json:"voiceModel,omitempty" gorm:"size:240"`
+	VoiceID                  string    `json:"voiceId,omitempty" gorm:"size:240"`
+	ReferenceAudioResourceID string    `json:"referenceAudioResourceId,omitempty" gorm:"index;size:36"`
+	ReferenceAudioAuthorized bool      `json:"referenceAudioAuthorized"`
+	Tone                     string    `json:"tone,omitempty" gorm:"size:240"`
+	EmotionStyle             string    `json:"emotionStyle,omitempty" gorm:"size:240"`
+	SpeakingRate             float64   `json:"speakingRate"`
+	Language                 string    `json:"language,omitempty" gorm:"size:80"`
+	Accent                   string    `json:"accent,omitempty" gorm:"size:120"`
+	CapabilityRevision       string    `json:"capabilityRevision,omitempty" gorm:"size:120"`
+	Status                   string    `json:"status" gorm:"size:24;index"`
+	CreatedAt                time.Time `json:"createdAt"`
 }
 
-// Project 是短剧领域聚合根；CanvasProject 仍代表可独立创作的画布文档。
+type CharacterVoiceBinding struct {
+	ID                  string               `json:"id" gorm:"primaryKey;size:36"`
+	AssetVersionID      string               `json:"assetVersionId" gorm:"uniqueIndex;size:36"`
+	VoiceProfileID      string               `json:"voiceProfileId" gorm:"index;size:36"`
+	VoiceVersionID      string               `json:"voiceVersionId" gorm:"index;size:36"`
+	VoiceProfileVersion *VoiceProfileVersion `json:"-" gorm:"-"`
+	Instructions        string               `json:"instructions" gorm:"type:text"`
+	CreatedAt           time.Time            `json:"createdAt"`
+	UpdatedAt           time.Time            `json:"updatedAt"`
+}
+
+// Project 是短剧领域聚合根。
 type Project struct {
 	ID                string        `json:"id" gorm:"primaryKey;size:36"`
 	UserID            string        `json:"userId" gorm:"index;size:36;uniqueIndex:idx_projects_user_name,priority:1"`
@@ -366,29 +377,6 @@ type ProductionTaskLink struct {
 	ArtifactType   string    `json:"artifactType,omitempty" gorm:"index;size:40;uniqueIndex:idx_production_task_context,priority:3"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
-}
-
-type CanvasProject struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:80"`
-	UserID      string    `json:"userId" gorm:"index;size:36;index:idx_canvas_projects_user_updated,priority:1;index:idx_canvas_projects_user_project_updated,priority:1"`
-	ProjectID   string    `json:"projectId,omitempty" gorm:"index;size:36;index:idx_canvas_projects_user_project_updated,priority:2"`
-	Title       string    `json:"title" gorm:"size:240"`
-	PayloadJSON string    `json:"payloadJson" gorm:"type:text"`
-	Revision    int64     `json:"revision" gorm:"not null;default:1"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt" gorm:"index:idx_canvas_projects_user_updated,priority:2;index:idx_canvas_projects_user_project_updated,priority:3"`
-}
-
-type CanvasShare struct {
-	ID          string     `json:"id" gorm:"primaryKey;size:36"`
-	UserID      string     `json:"userId" gorm:"index;size:36;uniqueIndex:idx_canvas_share_owner_project,priority:1"`
-	ProjectID   string     `json:"projectId" gorm:"index;size:80;uniqueIndex:idx_canvas_share_owner_project,priority:2"`
-	TokenHash   string     `json:"-" gorm:"uniqueIndex;size:64"`
-	TokenCipher string     `json:"-" gorm:"type:text"`
-	Enabled     bool       `json:"enabled" gorm:"index"`
-	ExpiresAt   *time.Time `json:"expiresAt" gorm:"index"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 type PromptTemplate struct {

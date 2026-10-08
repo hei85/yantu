@@ -66,16 +66,7 @@ export function projectAttentionCount(detail: ProjectDetail) {
 }
 
 export function projectContinueTarget(detail: ProjectDetail): ProjectContinueTarget {
-    const latestCanvas = [...detail.canvases].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
     const latestUnit = [...detail.units].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
-    if (latestCanvas && (!latestUnit || latestCanvas.updatedAt >= latestUnit.updatedAt)) {
-        return {
-            href: `/canvas/${latestCanvas.id}`,
-            title: latestCanvas.title,
-            context: "继续编辑项目画布",
-            updatedAt: latestCanvas.updatedAt,
-        };
-    }
     if (latestUnit) {
         return {
             href: `/projects/${detail.project.id}/chapters/${latestUnit.id}`,
@@ -168,13 +159,13 @@ export function projectNextActions(detail: ProjectDetail, limit = 4): ProjectWor
         }
     }
 
-    if (!detail.canvases.length && detail.units.length) {
+    if (!detail.canvasUnitLinks.length && detail.units.length) {
         actions.push({
-            id: "create-canvas",
-            title: "建立第一张项目画布",
-            description: "把章节、分镜和参考资产放进同一个制作空间。",
+            id: "link-canvas",
+            title: "关联项目画布",
+            description: "把本机画布关联到章节，供分镜与生成任务追踪。",
             href: `${projectRoot}/canvases`,
-            actionLabel: "查看项目画布",
+            actionLabel: "管理画布关联",
             tone: "default",
         });
     }

@@ -30,6 +30,7 @@ type channelModelItem struct {
 	ID                     string                        `json:"id"`
 	Name                   string                        `json:"name"`
 	DisplayName            string                        `json:"display_name"`
+	Description            string                        `json:"description"`
 	ModelType              string                        `json:"model_type"`
 	SupportedEndpointTypes []string                      `json:"supported_endpoint_types"`
 	DefaultParameters      channelModelCatalogParameters `json:"default_parameters"`
@@ -37,6 +38,54 @@ type channelModelItem struct {
 	SupportsImages         *bool                         `json:"supports_images"`
 	MinImages              *int                          `json:"min_images"`
 	MaxImages              *int                          `json:"max_images"`
+	Yingce                 channelModelYingceMetadata    `json:"yingce"`
+}
+
+// Relays return both ID strings and objects, and use either JSON naming style.
+func (item *channelModelItem) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		return json.Unmarshal(data, &item.ID)
+	}
+	type plain channelModelItem
+	var value struct {
+		plain
+		DisplayNameCamel string   `json:"displayName"`
+		ModelTypeCamel   string   `json:"modelType"`
+		Capability       string   `json:"capability"`
+		EndpointsCamel   []string `json:"supportedEndpointTypes"`
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*item = channelModelItem(value.plain)
+	item.DisplayName = firstNonEmpty(item.DisplayName, value.DisplayNameCamel)
+	item.ModelType = firstNonEmpty(item.ModelType, value.ModelTypeCamel, value.Capability)
+	if len(item.SupportedEndpointTypes) == 0 {
+		item.SupportedEndpointTypes = value.EndpointsCamel
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if defaults := firstCatalogRaw(fields, "default_parameters", "defaultParameters"); len(defaults) > 0 {
+		if err := json.Unmarshal(defaults, &item.DefaultParameters); err != nil {
+			return err
+		}
+	}
+	if len(item.Options.Resolution) == 0 {
+		item.Options.Resolution = catalogOptionsFromJSON(firstCatalogRaw(fields, "supported_resolutions", "supportedResolutions", "resolutions", "resolution_options", "resolutionOptions"))
+	}
+	if len(item.Options.AspectRatio) == 0 {
+		item.Options.AspectRatio = catalogOptionsFromJSON(firstCatalogRaw(fields, "supported_aspect_ratios", "supportedAspectRatios", "aspect_ratios", "aspectRatios", "ratios", "ratio_options", "ratioOptions"))
+	}
+	if len(item.Options.DurationSeconds) == 0 {
+		item.Options.DurationSeconds = catalogOptionsFromJSON(firstCatalogRaw(fields, "supported_durations", "supportedDurations", "durations", "duration_options", "durationOptions"))
+	}
+	return nil
+}
+
+type channelModelYingceMetadata struct {
+	Observed []CapabilityObservation `json:"observed"`
 }
 
 type channelModelCatalogParameters struct {
@@ -75,10 +124,14 @@ func (s *Service) FetchChannelModels(ctx context.Context, actor *model.User, inp
 type ChannelModelCatalogItem struct {
 	ID                     string                               `json:"id"`
 	DisplayName            string                               `json:"displayName,omitempty"`
+	Description            string                               `json:"description,omitempty"`
+	Observed               []CapabilityObservation              `json:"observed,omitempty"`
 	ModelType              string                               `json:"modelType,omitempty"`
 	SupportedEndpointTypes []string                             `json:"supportedEndpointTypes,omitempty"`
 	DefaultParameters      ChannelModelCatalogDefaultParameters `json:"defaultParameters,omitempty"`
 	Options                ChannelModelCatalogOptions           `json:"options,omitempty"`
+	ResolutionSource       string                               `json:"resolutionSource,omitempty"`
+	ResolutionSourceURL    string                               `json:"resolutionSourceURL,omitempty"`
 	SupportsImages         *bool                                `json:"supportsImages,omitempty"`
 	MinImages              *int                                 `json:"minImages,omitempty"`
 	MaxImages              *int                                 `json:"maxImages,omitempty"`
@@ -104,6 +157,9 @@ type ChannelModelCatalogOption struct {
 func (s *Service) FetchChannelModelCatalog(ctx context.Context, actor *model.User, input ChannelModelsRequest) ([]ChannelModelCatalogItem, error) {
 	if actor == nil || strings.TrimSpace(actor.ID) == "" {
 		return nil, Unauthorized("请先登录")
+	}
+	if err := requireAxonBaseURL(input.BaseURL); err != nil {
+		return nil, err
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(input.BaseURL), "/")
 	apiKey := strings.TrimSpace(input.APIKey)
@@ -165,6 +221,8 @@ func (s *Service) FetchChannelModelCatalog(ctx context.Context, actor *model.Use
 	items := payload.Data
 	if apiFormat == "gemini" {
 		items = payload.Models
+	} else if len(items) == 0 {
+		items = payload.Models
 	}
 	seen := make(map[string]bool, len(items))
 	catalog := make([]ChannelModelCatalogItem, 0, len(items))
@@ -177,6 +235,8 @@ func (s *Service) FetchChannelModelCatalog(ctx context.Context, actor *model.Use
 		catalog = append(catalog, ChannelModelCatalogItem{
 			ID:                     name,
 			DisplayName:            strings.TrimSpace(item.DisplayName),
+			Description:            strings.TrimSpace(item.Description),
+			Observed:               mergeCapabilityObservations(nil, item.Yingce.Observed),
 			ModelType:              normalizeCatalogModelType(item.ModelType),
 			SupportedEndpointTypes: normalizeCatalogEndpointTypes(item.SupportedEndpointTypes),
 			DefaultParameters: ChannelModelCatalogDefaultParameters{
@@ -199,6 +259,9 @@ func (s *Service) FetchChannelModelCatalog(ctx context.Context, actor *model.Use
 	})
 	if s.isPluginEnabled() {
 		catalog = extendChannelModelCatalog(baseURL, apiFormat, headers, catalog)
+	}
+	for index := range catalog {
+		catalog[index] = enrichCatalogVideoResolutions(catalog[index])
 	}
 	return catalog, nil
 }
@@ -231,7 +294,7 @@ func normalizeCatalogEndpointTypes(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	normalized := make([]string, 0, len(values))
 	for _, value := range values {
-		item := strings.TrimSpace(value)
+		item := normalizeCatalogEndpoint(value)
 		if item == "" || seen[item] {
 			continue
 		}

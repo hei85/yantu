@@ -220,7 +220,9 @@ function buildComposerGenerationContext(
                 const labelKind = input.sourceKind === "drawing" ? "drawing" : input.type;
                 label = generationLabel(labelKind, counts[labelKind]++);
                 labelByNodeId.set(input.nodeId, label);
-                if (input.type === "text") textBlocks.push(`【${label}】\n${input.text || ""}`);
+                // The mention already inserts this label into nextPrompt. Append only
+                // the referenced text so generation flows do not emit the label twice.
+                if (input.type === "text") textBlocks.push(input.text || "");
                 else selectedInputs.push(input);
             }
             nextPrompt += input.type === "text" ? `【${label}】` : `@${label}`;
@@ -302,9 +304,11 @@ export function generationInputMentionLabel(input: NodeGenerationInput, inputs: 
 
 export function normalizeGenerationNodeMentionTokens(prompt: string, inputs: NodeGenerationInput[]) {
     const labelByNodeId = new Map(generationSlotEntries(inputs).map(({ input, label }) => [input.nodeId, label]));
-    return prompt.replace(/@\[node:([^\]]+)\]/g, (token, nodeId: string) => {
+    return prompt.replace(/@\[node:([^\]]+)\]/g, (token, nodeId: string, offset: number) => {
         const label = labelByNodeId.get(nodeId);
-        return label ? `@${label}` : token;
+        // A stable token can touch Chinese prose. Keep a boundary after turning
+        // it into a numbered label, or the parser silently drops that image.
+        return label ? `@${label}${hasMentionBoundary(prompt, offset + token.length) ? "" : " "}` : token;
     });
 }
 

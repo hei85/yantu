@@ -60,7 +60,7 @@ func RegisterLibTVRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"ok": true})
 	})
-	r.POST("/canvas-projects/:id/import/libtv", func(c *gin.Context) {
+	r.POST("/libtv/import", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -76,7 +76,7 @@ func RegisterLibTVRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		result, err := svc.ImportLibTV(user.ID, c.Param("id"), strings.TrimSpace(req.UUID))
+		result, err := svc.ImportLibTV(user.ID, strings.TrimSpace(req.UUID))
 		if err != nil {
 			failService(c, err)
 			return

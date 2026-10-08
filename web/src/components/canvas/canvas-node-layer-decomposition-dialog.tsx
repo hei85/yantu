@@ -95,7 +95,7 @@ export function CanvasNodeLayerDecompositionDialog({
                 <div className="flex flex-col gap-4">
                     <div>
                         <h3 className="text-lg font-semibold">拆分图片图层</h3>
-                        <p className="mt-1 text-sm opacity-60">可在图片上拖拽框选对象，AI 会返回多个透明背景图层，并在画布中自动排列为独立节点。</p>
+                        <p className="mt-1 text-sm opacity-60">框选 2–6 个对象，每层单独生成并计费；未框选时生成主体、背景两层。返回后核对透明背景与各层内容，画布会分开排列。</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <Tag color={regions.length ? "blue" : "default"}>{regions.length ? `已框选 ${regions.length} 个区域` : "未框选，按描述拆分"}</Tag>

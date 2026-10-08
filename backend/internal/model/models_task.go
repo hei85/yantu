@@ -5,10 +5,20 @@ import "time"
 type Task struct {
 	CreationSubmissionID   *string    `json:"creationSubmissionId,omitempty" gorm:"size:36;uniqueIndex"`
 	ID                     string     `json:"id" gorm:"primaryKey;size:36"`
-	UserID                 string     `json:"userId" gorm:"index;size:36;index:idx_tasks_user_created,priority:1;index:idx_tasks_user_project_created,priority:1"`
+	UserID                 string     `json:"userId" gorm:"index;size:36;index:idx_tasks_user_created,priority:1;index:idx_tasks_user_project_created,priority:1;uniqueIndex:idx_tasks_user_client_operation,priority:1"`
+	ClientOperationID      *string    `json:"clientOperationId,omitempty" gorm:"size:120;uniqueIndex:idx_tasks_user_client_operation,priority:2"`
+	ClientOperationHash    string     `json:"-" gorm:"size:64"`
 	TraceID                string     `json:"-" gorm:"index;size:96"`
 	RequestID              string     `json:"-" gorm:"index;size:96"`
 	ProjectID              string     `json:"projectId" gorm:"index;size:80;index:idx_tasks_user_project_created,priority:2"`
+	ProductionRunID        string     `json:"productionRunId,omitempty" gorm:"size:36;index"`
+	ProductionStepID       string     `json:"productionStepId,omitempty" gorm:"size:36;index"`
+	ProductionAttemptID    string     `json:"productionAttemptId,omitempty" gorm:"size:36;index"`
+	CapabilityRevision     string     `json:"capabilityRevision,omitempty" gorm:"size:120;index"`
+	StoryboardRowID        string     `json:"storyboardRowId,omitempty" gorm:"size:120;index"`
+	SegmentID              string     `json:"segmentId,omitempty" gorm:"size:120;index"`
+	SegmentOrder           int        `json:"segmentOrder"`
+	TrackID                string     `json:"trackId,omitempty" gorm:"size:120;index"`
 	Type                   string     `json:"type" gorm:"index;size:64"`
 	Status                 TaskStatus `json:"status" gorm:"index;size:24;index:idx_tasks_status_created,priority:1;index:idx_tasks_claim,priority:1;index:idx_tasks_provider_cancel,priority:1"`
 	Stage                  string     `json:"stage" gorm:"size:80"`

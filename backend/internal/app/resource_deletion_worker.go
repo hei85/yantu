@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/platform"
 )
 
 const resourceDeletionLease = 2 * time.Minute
@@ -42,9 +43,17 @@ func (s *Service) startResourceDeletionWorker(ctx context.Context) {
 
 func (s *Service) cleanupDetachedResources() {
 	now := time.Now()
+	readyBefore := now.Add(-detachedReadyResourceRetention)
+	if platform.PortableNoLoginEnabled() {
+		// Portable canvases are persisted in browser IndexedDB, outside the
+		// server's reference snapshot. Absence from that snapshot is not proof
+		// that a ready media file or video poster is unused. Preserve ready
+		// uploads until an explicit deletion; incomplete uploads still expire.
+		readyBefore = time.Time{}
+	}
 	candidates, err := s.repo.ResourceCleanupCandidates(
 		now.Add(-incompleteResourceRetention),
-		now.Add(-detachedReadyResourceRetention),
+		readyBefore,
 		500,
 	)
 	if err != nil {
@@ -150,7 +159,7 @@ func (s *Service) cleanupExpiredArchivedAssets() {
 	for _, asset := range expired {
 		// 自动清理与用户手动删除走同一条强校验路径：先检查业务引用，
 		// 再以事务 + Outbox 删除资源记录和物理对象，不能从 repository 旁路。
-		if err := s.DeleteUserAsset(asset.UserID, asset.ID); err != nil {
+		if err := s.deleteUserAssetWithResources(asset.UserID, asset.ID); err != nil {
 			log.Printf("expired archived asset delete failed for %s: %v", asset.ID, err)
 			continue
 		}

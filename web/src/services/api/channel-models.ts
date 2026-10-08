@@ -1,4 +1,5 @@
 import { http } from "@/services/api/request";
+import type { ChannelModelCatalogItem } from "@/lib/channel-model-catalog";
 
 export type ChannelModel = {
     id: string;
@@ -45,6 +46,7 @@ export type ChannelModelMutation = {
     protocol?: ChannelModel["protocol"];
     enabled?: boolean;
     capabilityConfig?: ChannelModel["capabilityConfig"];
+    variants?: Array<Pick<ChannelModelVariant, "selector" | "resolution" | "videoSeconds" | "providerModelKey" | "enabled">>;
 };
 
 export function listAdminChannelModels(channelId: string) {
@@ -54,6 +56,10 @@ export function listAdminChannelModels(channelId: string) {
 // 管理员从上游读取模型目录；确认导入后才会写入渠道模型，启用仍需人工确认。
 export function fetchAdminChannelModels(channelId: string) {
     return http.post<{ models: string[] }>(`/admin/channels/${encodeURIComponent(channelId)}/models/fetch`);
+}
+
+export function fetchAdminChannelModelCatalog(channelId: string) {
+    return http.get<{ models: ChannelModelCatalogItem[] }>(`/admin/channels/${encodeURIComponent(channelId)}/models/catalog`);
 }
 
 export function importAdminChannelModels(channelId: string, models: string[]) {

@@ -1,4 +1,4 @@
-import { Button, Image as AntImage, InputNumber, Modal, Popover } from "antd";
+import { Button, InputNumber, Modal, Popover } from "antd";
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ArrowLeftRight, ArrowUp, AtSign, Boxes, Camera, ChevronDown, FileText, GripVertical, ImageIcon, ImagePlus, Link2, LoaderCircle, Maximize2, Music2, Pencil, SlidersHorizontal, UserRound, Video, WandSparkles, X } from "lucide-react";
@@ -28,6 +28,7 @@ import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins
 import { createPluginHostContext } from "@/services/plugin-host";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useResolvedCanvasResourceReferences } from "./use-resolved-canvas-resource-references";
+import { CanvasImagePreview } from "./canvas-image-preview";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -801,19 +802,13 @@ function ConnectedReferenceShelf({
                     })}
                 </div>
             </div>
-            {imagePreview?.previewUrl ? (
-                <AntImage
+            {imagePreview ? (
+                <CanvasImagePreview
+                    key={imagePreview.id}
                     src={imagePreview.previewUrl}
+                    storageKey={imagePreview.previewStorageKey || (imagePreview.kind === "image" || imagePreview.kind === "character" ? imagePreview.storageKey : undefined)}
                     alt={imagePreview.title || imagePreview.label}
-                    style={{ display: "none" }}
-                    preview={{
-                        open: true,
-                        movable: true,
-                        minScale: 0.5,
-                        maxScale: 12,
-                        scaleStep: 0.25,
-                        onOpenChange: (open) => !open && setImagePreview(null),
-                    }}
+                    onClose={() => setImagePreview(null)}
                 />
             ) : null}
         </>

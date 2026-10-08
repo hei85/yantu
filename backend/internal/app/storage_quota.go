@@ -29,12 +29,12 @@ func (s *Service) AccountFileStorageUsage(userID string) (*AccountFileStorageUsa
 }
 
 func structuredBytes(usage repository.UserStorageUsage) int64 {
-	return usage.AssetBytes + usage.CanvasBytes
+	return usage.AssetBytes
 }
 
 func validateStructuredStorageQuotaWithPolicy(usage repository.UserStorageUsage, kind string, creating bool, deltaBytes int64, policy RuntimeResourcePolicy) error {
 	if structuredBytes(usage)+deltaBytes > megabytes(policy.StructuredDataMB) {
-		return QuotaExceeded(fmt.Sprintf("账号画布和素材数据已达到 %dMB 上限，请先删除不需要的内容", policy.StructuredDataMB))
+		return QuotaExceeded(fmt.Sprintf("账号素材数据已达到 %dMB 上限，请先删除不需要的内容", policy.StructuredDataMB))
 	}
 	if !creating {
 		return nil
@@ -43,10 +43,6 @@ func validateStructuredStorageQuotaWithPolicy(usage repository.UserStorageUsage,
 	case "asset":
 		if usage.AssetCount >= policy.AssetCount {
 			return QuotaExceeded(fmt.Sprintf("账号素材数量已达到 %d 个上限", policy.AssetCount))
-		}
-	case "canvas":
-		if usage.CanvasCount >= policy.CanvasCount {
-			return QuotaExceeded(fmt.Sprintf("账号画布数量已达到 %d 个上限", policy.CanvasCount))
 		}
 	}
 	return nil
@@ -81,11 +77,6 @@ func validateStructuredReplacementQuotaWithPolicy(usage repository.UserStorageUs
 			return QuotaExceeded(fmt.Sprintf("账号素材数量不能超过 %d 个", policy.AssetCount))
 		}
 		deltaBytes -= usage.AssetBytes
-	case "canvas":
-		if int64(count) > policy.CanvasCount {
-			return QuotaExceeded(fmt.Sprintf("账号画布数量不能超过 %d 个", policy.CanvasCount))
-		}
-		deltaBytes -= usage.CanvasBytes
 	}
 	return validateStructuredStorageQuotaWithPolicy(usage, kind, false, deltaBytes, policy)
 }
@@ -108,7 +99,7 @@ func createTaskWithStorageQuotaRepository(repo *repository.Repository, task *mod
 	return repo.CreateTaskWithActiveLimit(task, policy.Task.ActiveTaskLimit)
 }
 
-// 任务完成会同时扩张任务历史和画布操作数据，必须在同一临界区核算并原子写入。
+// 任务完成会同时扩张任务历史和操作结果，必须在同一临界区核算并原子写入。
 func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJSON []byte, opsJSON []byte, hasCanvasOps bool) error {
 	policy, err := s.RuntimePolicy()
 	if err != nil {
@@ -125,7 +116,6 @@ func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJ
 	taskDelta := int64(len(resultJSON) + len(publicInputJSON) - len(task.ResultJSON) - len(task.InputJSON))
 
 	results := make([]model.Result, 0, 2)
-	structuredDelta := int64(0)
 	if hasCanvasOps {
 		results = append(results, model.Result{ID: newID(), UserID: task.UserID, TaskID: task.ID, Kind: "canvas_ops", Payload: string(opsJSON)})
 	}
@@ -135,10 +125,6 @@ func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJ
 	if err := validateTaskDataGrowthQuotaWithPolicy(usage, taskDelta, policy.Resource); err != nil {
 		return err
 	}
-	if err := validateStructuredStorageQuotaWithPolicy(usage, "canvas", false, structuredDelta, policy.Resource); err != nil {
-		return err
-	}
-
 	expectedStatus := task.Status
 	completed := *task
 	completed.Status = model.TaskStatusSucceeded

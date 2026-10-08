@@ -114,7 +114,7 @@ describe("canvas node generation video text references", () => {
         const note = node("note", CanvasNodeType.Text, "角色设定：禾禾\n光影氛围：暗调");
         const context = buildNodeGenerationContext(target.id, [image, note, target], [connection(image.id), connection(note.id)], "参考图：@图片1\n任务要求：@文本1", [], true);
 
-        expect(context.prompt).toBe("参考图：@图片1\n任务要求：【文本1】\n\n【文本1】\n角色设定：禾禾\n光影氛围：暗调");
+        expect(context.prompt).toBe("参考图：@图片1\n任务要求：【文本1】\n\n角色设定：禾禾\n光影氛围：暗调");
         expect(context.referenceImages.map((item) => item.id)).toEqual(["image-a"]);
         expect(context.textCount).toBe(1);
         expect(context.imageCount).toBe(1);

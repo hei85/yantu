@@ -150,7 +150,7 @@ export function useCanvasUpload({
     }, [canvasId, domainProjectId, queryClient]);
 
     const activeUploadsRef = useRef(new Set<string>());
-    const createFileNode = useCallback(async (file: File, position: Position, replaceId?: string) => {
+    const createFileNode = useCallback(async (file: File, position: Position, replaceId?: string, options: { beforeCommit?: () => void | Promise<void>; suppressPlaceholder?: boolean; requireRemoteResource?: boolean } = {}) => {
         const original = replaceId ? nodesRef.current.find((node) => node.id === replaceId) : undefined;
         if (replaceId && (!original || activeUploadsRef.current.has(replaceId))) return null;
         const id = replaceId || `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -158,33 +158,38 @@ export function useCanvasUpload({
         const progress = startUploadStatus(replaceId ? "替换文件" : "上传文件", "读取文件信息", domainProjectId ? 4 : 3);
         try {
             const placeholder = await createFileUploadPlaceholder(id, file, position);
-            setNodes((current) => replaceId ? current.map((item) => item.id === id ? {
-                ...item, width: placeholder.width, height: placeholder.height,
-                metadata: { ...item.metadata, fileUpload: "uploading", fileUploadProgress: undefined, status: undefined, size: undefined, errorDetails: undefined },
-            } : item) : [...current, placeholder]);
-            selectInsertedNode(id, "close");
+            if (!options.suppressPlaceholder) {
+                setNodes((current) => replaceId ? current.map((item) => item.id === id ? {
+                    ...item, width: placeholder.width, height: placeholder.height,
+                    metadata: { ...item.metadata, fileUpload: "uploading", fileUploadProgress: undefined, status: undefined, size: undefined, errorDetails: undefined },
+                } : item) : [...current, placeholder]);
+                selectInsertedNode(id, "close");
+            }
             let lastPercent: number | undefined;
             const onProgress = (loaded: number, total: number) => {
                 const percent = uploadPercent(loaded, total);
                 if (percent === undefined || percent === lastPercent) return;
                 lastPercent = percent;
-                setNodes((current) => current.map((item) => item.id === id ? { ...item, metadata: { ...item.metadata, fileUploadProgress: percent } } : item));
+                if (!options.suppressPlaceholder) setNodes((current) => current.map((item) => item.id === id ? { ...item, metadata: { ...item.metadata, fileUploadProgress: percent } } : item));
                 progress.update(percent === 100 ? "文件已传输，正在保存与处理" : `已上传 ${percent}%`, 2);
             };
             progress.update("上传文件并同步资源", 2);
             let metadata: CanvasNodeData["metadata"];
             if (placeholder.type === CanvasNodeType.Image) {
-                metadata = imageMetadata(await uploadImage(file, onProgress));
+                const image = await uploadImage(file, onProgress);
+                if (options.requireRemoteResource && (image.pendingResourceUpload || !resourceIdFromStorageKey(image.storageKey))) throw new Error("图片没有保存为后端 Resource，MCP 上传已拒绝本机暂存结果");
+                metadata = imageMetadata(image);
             } else if (placeholder.type === CanvasNodeType.Text) {
                 const content = await file.text();
                 const resource = await uploadResourceFile(file, "file", { fileName: file.name }, onProgress);
                 metadata = { content, prompt: content, storageKey: resourceStorageKey(resource.id), mimeType: file.type || "text/plain", bytes: file.size, status: "success" };
             } else {
                 const media = await uploadMediaFile(file, placeholder.type === CanvasNodeType.Video ? "video" : "audio", onProgress);
+                if (options.requireRemoteResource && (media.pendingResourceUpload || !resourceIdFromStorageKey(media.storageKey))) throw new Error("媒体没有保存为后端 Resource，MCP 上传已拒绝本机暂存结果");
                 metadata = placeholder.type === CanvasNodeType.Video ? videoMetadata(media) : audioMetadata(media);
             }
             progress.update("更新画布节点", 3);
-            const currentNode = nodesRef.current.find((item) => item.id === id);
+            const currentNode = nodesRef.current.find((item) => item.id === id) || (options.suppressPlaceholder ? original || placeholder : undefined);
             if (!currentNode) {
                 progress.done("上传完成，画布占位已移除");
                 return null;
@@ -207,16 +212,25 @@ export function useCanvasUpload({
                     } : {}),
                 },
             };
-            setNodes((current) => current.map((item) => item.id === id ? { ...item, type: node.type, metadata: node.metadata } : item));
+            await options.beforeCommit?.();
+            setNodes((current) => replaceId || !options.suppressPlaceholder
+                ? current.map((item) => item.id === id ? { ...item, type: node.type, metadata: node.metadata } : item)
+                : current.some((item) => item.id === node.id) ? current : [...current, node]);
+            if (options.suppressPlaceholder) selectInsertedNode(id, "close");
             if (domainProjectId) progress.update("写入项目资产", 4);
             const persisted = await persistMediaNode(node);
+            if (options.requireRemoteResource && !persisted) throw new Error("文件已上传，但 Asset/项目关联持久化失败");
             const localOnly = metadata.storageKey && !resourceIdFromStorageKey(metadata.storageKey);
             progress.done(localOnly ? "已保存在本机，尚未上传到服务器" : persisted ? "文件已添加到画布" : "文件已添加，项目资产待重试");
             if (localOnly) message.warning("文件已保存在本机，尚未上传到服务器");
             return id;
         } catch (error) {
             const details = error instanceof Error ? error.message : "文件上传失败";
-            setNodes((current) => current.map((item) => item.id !== id ? item : original?.metadata?.content ? {
+            if (options.suppressPlaceholder) {
+                setNodes((current) => original
+                    ? current.map((item) => item.id === id ? original : item)
+                    : current.filter((item) => item.id !== id));
+            } else setNodes((current) => current.map((item) => item.id !== id ? item : original?.metadata?.content ? {
                 ...item, width: original.width, height: original.height, metadata: original.metadata,
             } : { ...item, metadata: { ...item.metadata, fileUpload: "error", fileUploadProgress: undefined, errorDetails: details } }));
             progress.fail(details);
@@ -694,9 +708,9 @@ export function useCanvasUpload({
             return { id, type: CanvasNodeType.Video, title: payload.title, position: { x: center.x - size.width / 2, y: center.y - size.height / 2 }, width: size.width, height: size.height, metadata: { content: payload.url, storageKey: payload.storageKey, status: NODE_STATUS_SUCCESS, naturalWidth: payload.width, naturalHeight: payload.height, durationMs: payload.durationMs, hasAudio: payload.hasAudio, bytes: payload.bytes, mimeType: payload.mimeType || "video/mp4", assetId: payload.assetId } } satisfies CanvasNodeData;
         }
         const storedImage = payload.url
-            ? { url: payload.url, storageKey: undefined, width: payload.width || 1, height: payload.height || 1, bytes: payload.bytes || 0, mimeType: payload.mimeType || "image/png" }
+            ? { url: payload.url, storageKey: payload.storageKey, width: payload.width || 1, height: payload.height || 1, bytes: payload.bytes || 0, mimeType: payload.mimeType || "image/png" }
             : payload.storageKey
-                ? { url: payload.dataUrl, storageKey: payload.storageKey, width: payload.width || 1, height: payload.height || 1, bytes: payload.bytes || 0, mimeType: payload.mimeType || "image/png" }
+                ? { url: await resolveImageUrl(payload.storageKey, payload.dataUrl || ""), storageKey: payload.storageKey, width: payload.width || 1, height: payload.height || 1, bytes: payload.bytes || 0, mimeType: payload.mimeType || "image/png" }
                 : await uploadImage(payload.dataUrl);
         const meta = !payload.storageKey && (!payload.width || !payload.height) ? await readImageMeta(storedImage.url) : storedImage;
         const size = fitNodeSize(meta.width, meta.height);

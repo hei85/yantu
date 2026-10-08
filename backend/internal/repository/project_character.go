@@ -58,6 +58,14 @@ func (r *Repository) CharacterVoiceBinding(assetVersionID string) (*model.Charac
 	return &binding, nil
 }
 
+func (r *Repository) VoiceProfileVersion(id string) (*model.VoiceProfileVersion, error) {
+	var version model.VoiceProfileVersion
+	if err := r.db.First(&version, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &version, nil
+}
+
 func (r *Repository) VoiceProfileForUser(userID string, id string) (*model.VoiceProfile, error) {
 	var profile model.VoiceProfile
 	if err := r.db.First(&profile, "id = ? AND user_id = ?", id, userID).Error; err != nil {
@@ -89,6 +97,15 @@ func (r *Repository) CreateVoiceProfile(profile *model.VoiceProfile) error {
 func (r *Repository) VoiceProfileBySampleResource(userID string, resourceID string) (*model.VoiceProfile, error) {
 	var profile model.VoiceProfile
 	if err := r.db.First(&profile, "user_id = ? AND sample_resource_id = ? AND status = ?", userID, resourceID, "active").Error; err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func (r *Repository) VoiceProfileByProviderKey(userID, provider, voiceKey string) (*model.VoiceProfile, error) {
+	var profile model.VoiceProfile
+	err := r.db.Where("user_id = ? AND provider = ? AND voice_key = ?", userID, provider, voiceKey).First(&profile).Error
+	if err != nil {
 		return nil, err
 	}
 	return &profile, nil
@@ -152,6 +169,18 @@ func saveCharacterVersion(tx *gorm.DB, asset *model.Asset, version *model.AssetV
 		}
 	}
 	if voice != nil {
+		if voice.VoiceProfileVersion != nil {
+			version := voice.VoiceProfileVersion
+			var current int
+			if err := tx.Model(&model.VoiceProfileVersion{}).Where("voice_profile_id = ?", version.VoiceProfileID).Select("COALESCE(MAX(version), 0)").Scan(&current).Error; err != nil {
+				return err
+			}
+			version.Version = current + 1
+			if err := tx.Create(version).Error; err != nil {
+				return err
+			}
+			voice.VoiceVersionID = version.ID
+		}
 		if err := tx.Create(voice).Error; err != nil {
 			return err
 		}

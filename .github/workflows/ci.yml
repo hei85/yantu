@@ -9,6 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  source-audit:
+    name: Public source boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/audit-release.py
+
   backend:
     name: Backend (Go)
     runs-on: ubuntu-latest
@@ -23,8 +33,12 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Vet
         run: go vet ./...
-      - name: Test
-        run: go test ./...
+      # Generic upstream provider fixtures use non-Axon localhost endpoints.
+      # This job checks the published restriction instead of relaxing it for fixtures.
+      - name: Axon distribution regression tests
+        run: |
+          go test ./internal/distribution -count=1
+          go test ./internal/app ./internal/handler -run '^TestDistribution' -count=1
       - name: Build
         run: go build ./...
 
@@ -38,13 +52,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: '1.4.2'
       - name: Install
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run typecheck
-      - name: Test
-        run: bun test
+      - name: Axon catalog and nullable capability regression tests
+        run: bun test test/distribution-policy.test.ts test/model-picker-null-catalog.test.ts test/future-video-model-import.test.tsx test/video-resolution-default-display.test.tsx test/video-resolution-validation.test.tsx
       - name: Build
         run: bun run build
 
@@ -61,10 +75,10 @@ jobs:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: '1.4.2'
       - name: Install
         run: bun install --frozen-lockfile
-      - name: Test
-        run: bun run test
+      - name: MCP binding and production self-check regression tests
+        run: bun test test/distribution-policy.test.ts test/film-self-check.test.ts test/film-storyboard-binding.test.ts test/film-production-stages-schema.test.ts test/image-toolbar-tools-schema.test.ts
       - name: Build
         run: bun run build

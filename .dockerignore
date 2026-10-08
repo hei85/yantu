@@ -19,6 +19,13 @@ backend/cmd/server/server
 web/.next
 web/dist
 web/node_modules
+**/node_modules
+canvas-agent-config
+runtime
+python-runtime
+workspace
+logs
+backups
 web/out
 *.log
 *.db

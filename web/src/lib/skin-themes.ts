@@ -73,11 +73,6 @@ export type SkinModeTokens = {
     adminSurface: string;
     adminSubtle: string;
     adminStrong: string;
-    authBackground: string;
-    authPanel: string;
-    authCard: string;
-    authAccent: string;
-    authMuted: string;
 };
 
 export type SkinComponentTokens = {
@@ -260,11 +255,6 @@ export const SKIN_COLOR_GROUPS: readonly SkinColorGroup[] = [
             { key: "adminSurface", label: "后台卡片", help: "管理后台主卡片" },
             { key: "adminSubtle", label: "后台次级层", help: "后台弱分区" },
             { key: "adminStrong", label: "后台强调层", help: "后台高对比区块" },
-            { key: "authBackground", label: "登录页背景", help: "登录页整体底色" },
-            { key: "authPanel", label: "登录表单区", help: "登录页右侧表单面板" },
-            { key: "authCard", label: "登录卡片", help: "登录表单卡片" },
-            { key: "authAccent", label: "登录页强调", help: "登录页品牌强调文字" },
-            { key: "authMuted", label: "登录页次要文字", help: "登录页说明和辅助信息" },
         ],
     },
 ] as const;
@@ -340,11 +330,6 @@ export const DEFAULT_CLASSIC_SKIN: SkinDefinition = {
             adminSurface: "#ffffff",
             adminSubtle: "#f6f6f6",
             adminStrong: "#ececec",
-            authBackground: "#08090c",
-            authPanel: "#0b0c10",
-            authCard: "#121318",
-            authAccent: "#93c5fd",
-            authMuted: "#8a8b91",
         },
         dark: {
             canvas: "#0a0a0a",
@@ -392,11 +377,6 @@ export const DEFAULT_CLASSIC_SKIN: SkinDefinition = {
             adminSurface: "#181818",
             adminSubtle: "#222222",
             adminStrong: "#2a2a2a",
-            authBackground: "#08090c",
-            authPanel: "#0b0c10",
-            authCard: "#121318",
-            authAccent: "#93c5fd",
-            authMuted: "#8a8b91",
         },
         buttons: { light: { ...DEFAULT_BUTTON_GRADIENT }, dark: { ...DEFAULT_BUTTON_GRADIENT } },
         components: {
@@ -483,11 +463,6 @@ const MANAGED_VARIABLES = [
     "--skin-admin-layer-1",
     "--skin-admin-layer-2",
     "--skin-admin-layer-3",
-    "--auth-page-bg",
-    "--auth-panel-bg",
-    "--auth-card-bg",
-    "--auth-accent",
-    "--auth-muted",
     "--palette-status-success",
     "--palette-status-error",
     "--palette-status-loading",
@@ -594,11 +569,6 @@ export function skinSwatches(skin: SkinDefinition) {
         "adminSurface",
         "adminSubtle",
         "adminStrong",
-        "authBackground",
-        "authPanel",
-        "authCard",
-        "authAccent",
-        "authMuted",
         "controlActive",
         "controlFocus",
         "controlDisabledBackground",
@@ -789,11 +759,6 @@ export function skinCSSVariables(skin: SkinDefinition, mode: SkinThemeMode): Rec
         "--skin-admin-layer-1": color.adminSurface,
         "--skin-admin-layer-2": color.adminSubtle,
         "--skin-admin-layer-3": color.adminStrong,
-        "--auth-page-bg": color.authBackground,
-        "--auth-panel-bg": color.authPanel,
-        "--auth-card-bg": color.authCard,
-        "--auth-accent": color.authAccent,
-        "--auth-muted": color.authMuted,
         "--palette-status-success": color.success,
         "--palette-status-error": color.danger,
         "--palette-status-loading": color.info,

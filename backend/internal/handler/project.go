@@ -342,6 +342,19 @@ func RegisterProjectRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"link": link})
 	})
+	r.GET("/projects/:id/canvas-links", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		links, err := svc.ProjectCanvasLinks(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"links": links})
+	})
 	r.DELETE("/projects/:id/canvas-links/:canvasId/units/:unitId", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -358,7 +371,7 @@ func RegisterProjectRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"canvasId": c.Param("canvasId"), "unitId": c.Param("unitId")})
 	})
-	r.DELETE("/projects/:id/canvases/:canvasId", func(c *gin.Context) {
+	r.DELETE("/projects/:id/canvas-links/:canvasId", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
@@ -373,29 +386,6 @@ func RegisterProjectRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, gin.H{"canvasId": c.Param("canvasId")})
-	})
-	r.GET("/projects/:id/canvases", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		page, err := parsePositiveQueryInt(c.Query("page"), 1)
-		if err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		pageSize, err := parsePositiveQueryInt(c.Query("pageSize"), 40)
-		if err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		result, err := svc.ProjectCanvasesPage(user.ID, c.Param("id"), page, pageSize)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, result)
 	})
 	r.GET("/projects/:id/assets", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

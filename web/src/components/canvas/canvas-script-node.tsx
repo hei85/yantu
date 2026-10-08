@@ -12,7 +12,7 @@ import { StoryboardAssetsCell } from "@/components/canvas/storyboard-assets-cell
 import { ModelPicker } from "@/components/model-picker";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
-import { pipelineStatusLabel, type CanvasStoryboardPipelineProgress, type StoryboardPipelineStage } from "@/lib/canvas/canvas-storyboard-progress";
+import { pipelineStatusLabel, storyboardRowFocusNodeId, storyboardRowProductionDetails, storyboardRowProductionLabel, type CanvasStoryboardPipelineProgress, type StoryboardPipelineStage } from "@/lib/canvas/canvas-storyboard-progress";
 import { generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
 import { generationTaskShowsProgress, generationTaskStageLabel } from "@/lib/generation-task-display";
 import { navigateToSettings } from "@/lib/settings-navigation";
@@ -82,6 +82,7 @@ export function CanvasScriptNodeContent({
     scale,
     mentionReferences,
     onOpen,
+    onFocusOutput,
     onCreateImageNodes,
     onCreateVideoNodes,
     onGenerateImages,
@@ -112,6 +113,7 @@ export function CanvasScriptNodeContent({
     scale: number;
     mentionReferences: CanvasResourceReference[];
     onOpen: () => void;
+    onFocusOutput: (nodeId: string) => void;
     onCreateImageNodes: () => void;
     onCreateVideoNodes: () => void;
     onGenerateImages: (rowIds: string[]) => void;
@@ -179,7 +181,7 @@ export function CanvasScriptNodeContent({
     const pipelineDisabled = !rows.length || node.metadata?.status === "loading" || hasActiveBatchItems;
     const missingImages = Math.max(0, pipeline.images.total - pipeline.images.created);
     const missingVideos = Math.max(0, pipeline.videos.total - pipeline.videos.created);
-    const canMerge = pipeline.successfulVideoNodeIds.length >= 2 && pipeline.final.success === 0;
+    const canMerge = pipeline.successfulVideoNodeIds.length >= 2 && pipeline.final.created === 0;
     const allRowIds = pipeline.rows.map((item) => item.row.id);
     const moreMenuItems: MenuProps["items"] = [
         { key: "generate-images", icon: <ImageIcon className="size-3.5" />, label: "生成未完成分镜图", disabled: pipelineDisabled || pipeline.images.incomplete === 0, onClick: () => onGenerateImages(allRowIds) },
@@ -187,7 +189,7 @@ export function CanvasScriptNodeContent({
         {
             key: "merge",
             icon: <Merge className="size-3.5" />,
-            label: pipeline.final.success ? "成片已完成" : pipeline.successfulVideoNodeIds.length >= 2 ? `合并 ${pipeline.successfulVideoNodeIds.length} 段视频` : "合并成片（至少 2 段视频）",
+            label: pipeline.final.success ? "整片验收已通过" : pipeline.final.created ? "视频已合并，待整片验收" : pipeline.successfulVideoNodeIds.length >= 2 ? `合并 ${pipeline.successfulVideoNodeIds.length} 段视频` : "合并成片（至少 2 段视频）",
             disabled: !canMerge,
             onClick: () => onMergeVideos(),
         },
@@ -315,7 +317,13 @@ export function CanvasScriptNodeContent({
                 onWheel={(event) => event.stopPropagation()}
             >
                 {rows.length ? (
-                    rows.map((row) => (
+                    rows.map((row) => {
+                        const progressRow = pipeline.rows.find((item) => item.row.id === row.id);
+                        const outputNodeId = progressRow ? storyboardRowFocusNodeId(progressRow) : "";
+                        const rowStatusLabel = progressRow ? storyboardRowProductionLabel(progressRow) : "待生成";
+                        const rowDetails = progressRow ? storyboardRowProductionDetails(progressRow) : [];
+                        const taskHint = progressRow?.taskIds.length ? ` · 任务 ${progressRow.taskIds.join(", ")}` : "";
+                        return (
                         <div key={row.id} className="relative grid border-b" style={{ height: STORYBOARD_ROW_HEIGHT, borderColor: theme.node.stroke, gridTemplateColumns: SCRIPT_GRID_TEMPLATE }}>
                             <div className="flex flex-col items-center justify-center gap-0.5 border-r tabular-nums" style={{ color: theme.node.muted, borderColor: theme.node.stroke }}>
                                 <div className="flex items-center gap-0.5">
@@ -341,15 +349,30 @@ export function CanvasScriptNodeContent({
                                         {generationBatchItemLabel(batchItemByRowId.get(row.id)!)}
                                     </span>
                                 ) : null}
+                                <button
+                                    type="button"
+                                    className="max-w-[72px] truncate text-[var(--fs-micro)] leading-3 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]"
+                                    title={`${rowStatusLabel} · ${rowDetails.join(" · ")}${taskHint}${outputNodeId ? " · 点击定位关联节点" : ""}`}
+                                    aria-label={`镜头 ${row.shotNumber} 状态：${rowStatusLabel}；${rowDetails.join("；")}${taskHint}${outputNodeId ? "，点击定位关联节点" : ""}`}
+                                    disabled={!outputNodeId}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => { event.stopPropagation(); if (outputNodeId) onFocusOutput(outputNodeId); }}
+                                    style={{ color: progressRow?.videoState === "error" || progressRow?.imageState === "error" ? theme.accent.danger : theme.node.muted }}
+                                >
+                                    {rowStatusLabel}
+                                </button>
+                                {progressRow ? <span className="max-w-[60px] truncate text-[8px] leading-[9px]" title={rowDetails.join(" · ")} style={{ color: progressRow.audioState === "pending" || progressRow.assetRequirementState === "missing_required_scene" || progressRow.assetRequirementState === "missing_required_asset" || progressRow.assetRequirementState === "broken" ? theme.accent.danger : theme.node.faint }}>{rowDetails[0]} · {rowDetails[1]}</span> : null}
                             </div>
                             <CompactDurationInput value={row.durationSeconds} borderColor={theme.node.stroke} onChange={(durationSeconds) => onUpdateRow(row.id, { durationSeconds })} />
                             <CompactInput value={row.videoMotionPrompt} placeholder="描述视频运动、镜头和动作" onChange={(value) => onUpdateRow(row.id, { videoMotionPrompt: value })} borderColor={theme.node.stroke} />
                             <CompactInput value={row.dialogue} placeholder="台词或旁白" onChange={(value) => onUpdateRow(row.id, { dialogue: value })} borderColor={theme.node.stroke} />
                             <div className="flex h-full min-w-0 items-center px-3">
-                                <StoryboardAssetsCell bindings={row.assetBindings || []} nodes={nodes} />
+                                <StoryboardAssetsCell bindings={row.assetBindings || []} nodes={nodes} firstFrameNodeId={row.imageNodeId} />
                             </div>
                         </div>
-                    ))
+                        );
+                    })
                 ) : (
                     <button
                         type="button"
@@ -436,7 +459,6 @@ export function CanvasScriptNodeContent({
                             value={shotCount}
                             disabled={node.metadata?.status === "loading"}
                             options={[{ value: "auto", label: "自动拆分" }, ...Array.from({ length: 10 }, (_, index) => ({ value: String(index + 1) as StoryboardShotCount, label: `${index + 1} 镜` }))]}
-                            popupMatchSelectWidth={false}
                             onChange={onShotCountChange}
                         />
                     )}
@@ -453,7 +475,6 @@ export function CanvasScriptNodeContent({
                                 { value: "15", label: "每镜 15 秒" },
                                 { value: "30", label: "每镜 30 秒" },
                             ]}
-                            popupMatchSelectWidth={false}
                             onChange={onShotDurationChange}
                         />
                     )}
@@ -497,9 +518,9 @@ function StoryboardMiniPipeline({ pipeline, theme, rows }: { pipeline: CanvasSto
         { key: "videos", label: "视频", state: storyboardStepState(pipeline.videos), hint: pipelineStatusLabel(pipeline.videos) },
         {
             key: "final",
-            label: "合并成片",
-            state: pipeline.final.success > 0 ? "done" : pipeline.final.failed > 0 ? "error" : pipeline.final.loading > 0 || pipeline.successfulVideoNodeIds.length >= 2 ? "current" : "idle",
-            hint: pipelineStatusLabel(pipeline.final),
+            label: "交付验收",
+            state: pipeline.final.success > 0 ? "done" : pipeline.final.failed > 0 ? "error" : pipeline.final.created > 0 || pipeline.final.loading > 0 || pipeline.successfulVideoNodeIds.length >= 2 ? "current" : "idle",
+            hint: pipeline.final.success > 0 ? "ProductionRun 合同验收通过" : pipeline.final.failed > 0 ? "验收失败或产物失败，需修复" : pipeline.final.created > 0 ? "视频已渲染，等待 Brief 时长、画幅、音轨与解码验收" : pipelineStatusLabel(pipeline.final),
         },
     ];
     return (
@@ -675,7 +696,7 @@ export function CanvasScriptEditor({
                 ) : option.value === "durationSeconds" ? (
                     <InputNumber min={1} max={60} value={row.durationSeconds} addonAfter="s" onChange={(value) => updateRow(row.id, { durationSeconds: Number(value) || 1 })} />
                 ) : option.value === "assets" ? (
-                    <StoryboardAssetsCell bindings={row.assetBindings || []} nodes={nodes} />
+                    <StoryboardAssetsCell bindings={row.assetBindings || []} nodes={nodes} firstFrameNodeId={row.imageNodeId} />
                 ) : option.value === "shotSize" ? (
                     <Select
                         className="w-full"

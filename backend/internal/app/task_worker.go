@@ -264,10 +264,14 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		_, terminalErr := terminal.handleResultPersistenceFailure(task, fmt.Errorf("序列化画布操作失败：%w", err))
 		return terminalErr
 	}
+	// Completion strips private provider inputs from persisted task history.
+	// Keep this in-memory copy for dimension evidence; never retain credentials.
+	evidenceTask := *task
 	if err := s.saveTaskCompletionWithinStorageQuota(task, resultJSON, opsJSON, len(canvasOps) > 0); err != nil {
 		_, terminalErr := terminal.handleResultPersistenceFailure(task, err)
 		return terminalErr
 	}
+	s.recordVideoOutputObservation(evidenceTask, result)
 	return terminal.handleSuccess(task)
 }
 

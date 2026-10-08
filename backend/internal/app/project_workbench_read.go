@@ -72,15 +72,6 @@ type ProjectShotAssetReferenceVersion struct {
 	Representations []CharacterRepresentationSummary `json:"representations"`
 }
 
-type ProjectCanvasPage struct {
-	Canvases        []model.CanvasProject  `json:"canvases"`
-	CanvasUnitLinks []model.CanvasUnitLink `json:"canvasUnitLinks"`
-	Page            int                    `json:"page"`
-	PageSize        int                    `json:"pageSize"`
-	Total           int64                  `json:"total"`
-	HasMore         bool                   `json:"hasMore"`
-}
-
 type ProjectAssetCandidatePage struct {
 	Candidates []model.ProjectAssetCandidate `json:"candidates"`
 	Page       int                           `json:"page"`
@@ -335,24 +326,11 @@ func (s *Service) ProjectUnitWorkspace(userID string, projectID string, unitID s
 	return result, nil
 }
 
-func (s *Service) ProjectCanvasesPage(userID string, projectID string, page int, pageSize int) (ProjectCanvasPage, error) {
+func (s *Service) ProjectCanvasLinks(userID string, projectID string) ([]model.CanvasUnitLink, error) {
 	if _, err := s.repo.ProjectForUser(userID, projectID); err != nil {
-		return ProjectCanvasPage{}, err
+		return nil, err
 	}
-	page, pageSize = normalizeProjectPage(page, pageSize, 100)
-	canvases, total, err := s.repo.ProjectCanvasSummariesPage(userID, projectID, page, pageSize)
-	if err != nil {
-		return ProjectCanvasPage{}, err
-	}
-	ids := make([]string, 0, len(canvases))
-	for _, canvas := range canvases {
-		ids = append(ids, canvas.ID)
-	}
-	links, err := s.repo.ProjectCanvasUnitLinksForCanvases(projectID, ids)
-	if err != nil {
-		return ProjectCanvasPage{}, err
-	}
-	return ProjectCanvasPage{Canvases: canvases, CanvasUnitLinks: links, Page: page, PageSize: pageSize, Total: total, HasMore: int64(page*pageSize) < total}, nil
+	return s.repo.ProjectCanvasUnitLinks(projectID)
 }
 
 func (s *Service) ProjectAssetCandidatesPage(userID string, projectID string, page int, pageSize int, unitID string, status string, category string, query string) (ProjectAssetCandidatePage, error) {

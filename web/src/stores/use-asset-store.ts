@@ -9,11 +9,10 @@ import { parseCanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
-import { cleanupUnusedImages, collectImageStorageKeys, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { cleanupUnusedImages, collectImageStorageKeys, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { cleanupUnusedMedia, collectMediaStorageKeys, resolveMediaUrl } from "@/services/file-storage";
 import { flushGenerationAssetStorageLocks, insertOrReturnGenerationAsset, withGenerationArtifactCommitLock, withGenerationAssetStorageLock } from "@/services/generation-asset-repository";
 import { CANVAS_STORE_KEY, commitPendingCanvasStorePersistenceLocked, pendingCanvasStorePersistence, withCanvasStorePersistenceLock } from "@/stores/canvas/use-canvas-store";
-import { readAllCanvasSyncDrafts } from "@/services/canvas-sync-drafts";
 
 export type AssetKind = "text" | "image" | "video" | "audio" | "model" | "entity";
 export type { AssetCategory } from "@/lib/asset-category";
@@ -276,8 +275,7 @@ async function normalizePersistedAsset(asset: Asset): Promise<Asset> {
         if (asset.kind === "image") return { ...asset, coverUrl: asset.coverUrl.startsWith("blob:") ? url : asset.coverUrl, data: { ...asset.data, dataUrl: url } };
     }
 
-    // 非 resource: key 是早期本地存储格式，必须继续从 localForage 恢复，
-    // 但只在确有本地 key 时读取，不让远程资源重新走逐条网络查询。
+    // 非 resource: key 是本地存储格式，恢复时只从 IndexedDB 读取。
     if (asset.kind === "video" && storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(storageKey, asset.data.url) } };
     if (asset.kind === "audio" && storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(storageKey, asset.data.url) } };
     if (asset.kind === "model" && storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(storageKey, asset.data.url) } };
@@ -290,8 +288,14 @@ async function normalizePersistedAsset(asset: Asset): Promise<Asset> {
         };
     }
     if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
-    const image = await uploadImage(asset.data.dataUrl);
-    return { ...asset, coverUrl: asset.coverUrl.startsWith("data:image/") ? image.url : asset.coverUrl, data: { ...asset.data, dataUrl: image.url, storageKey: image.storageKey, bytes: image.bytes, mimeType: image.mimeType } };
+    const blob = await (await fetch(asset.data.dataUrl)).blob();
+    const localStorageKey = `image:${getActiveUserScope()}:${nanoid()}`;
+    const dataUrl = await setImageBlob(localStorageKey, blob);
+    return {
+        ...asset,
+        coverUrl: asset.coverUrl.startsWith("data:image/") ? dataUrl : asset.coverUrl,
+        data: { ...asset.data, dataUrl, storageKey: localStorageKey, bytes: blob.size, mimeType: blob.type || asset.data.mimeType },
+    };
 }
 
 async function generationAssetId(effectKey: string) {
@@ -415,7 +419,6 @@ export const useAssetStore = create<AssetStore>()(
                 await new Promise<void>((resolve, reject) => {
                     window.setTimeout(() =>
                         withGenerationArtifactCommitLock(scope, async () => {
-                            const syncDrafts = await readAllCanvasSyncDrafts(scope);
                             // 固定锁序：artifact -> Canvas（释放）-> Asset，避免跨 store 锁重入。
                             const canvasProjects = await withCanvasStorePersistenceLock(scope, async () => {
                                 await commitPendingCanvasStorePersistenceLocked(scope);
@@ -425,7 +428,7 @@ export const useAssetStore = create<AssetStore>()(
                             await withGenerationAssetStorageLock(scope, async () => {
                                 await commitPendingAssetStorePersistenceLocked(scope);
                                 const durableAssets = (await readPersistedAssetDocumentForScope(scope)).state.assets;
-                                const references = { projects: canvasProjects, assets: durableAssets, syncDrafts };
+                                const references = { projects: canvasProjects, assets: durableAssets };
                                 const imageKeys = new Set([...frozenExtraImageKeys, ...collectImageStorageKeys(references)]);
                                 const mediaKeys = new Set([...frozenExtraMediaKeys, ...collectMediaStorageKeys(references)]);
                                 await cleanupUnusedImages(

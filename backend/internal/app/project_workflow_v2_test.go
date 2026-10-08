@@ -19,11 +19,11 @@ func newProjectWorkflowV2TestService(t *testing.T) (*Service, *gorm.DB) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&model.Project{}, &model.ProjectUnit{}, &model.CanvasProject{}, &model.Asset{}, &model.AssetVersion{}, &model.ProjectAssetLink{}, &model.ProjectAssetCandidate{},
+		&model.Project{}, &model.ProjectUnit{}, &model.CanvasUnitLink{}, &model.Asset{}, &model.AssetVersion{}, &model.ProjectAssetLink{}, &model.ProjectAssetCandidate{},
 		&model.AssetRepresentation{}, &model.CharacterVoiceBinding{},
 		&model.Shot{}, &model.ShotRevision{}, &model.ShotArtifact{}, &model.ShotAssetReference{},
 		&model.WorkflowTemplateVersion{}, &model.WorkflowInstance{}, &model.WorkflowStepInstance{}, &model.WorkflowStepTask{},
-		&model.ProductionTaskLink{}, &model.Task{}, &model.Resource{},
+		&model.ProductionTaskLink{}, &model.ProductionRun{}, &model.Task{}, &model.Resource{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -539,10 +539,11 @@ func TestRegisterTaskOutputAcceptsLinkedCanvasAndCreatesShotArtifact(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	canvas := model.CanvasProject{ID: "canvas-1", UserID: "user-1", ProjectID: project.ID, Title: "探索画布", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	task := model.Task{ID: "task-1", UserID: "user-1", ProjectID: canvas.ID, Status: model.TaskStatusSucceeded, ResultJSON: `{}`, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	canvasID := "canvas-1"
+	canvasLink := model.CanvasUnitLink{ID: "canvas-link-1", ProjectID: project.ID, CanvasID: canvasID, UnitID: unit.ID}
+	task := model.Task{ID: "task-1", UserID: "user-1", ProjectID: canvasID, Status: model.TaskStatusSucceeded, ResultJSON: `{}`, CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	resource := model.Resource{ID: "resource-1", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	for _, item := range []any{&canvas, &task, &resource} {
+	for _, item := range []any{&canvasLink, &task, &resource} {
 		if err := db.Create(item).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -566,7 +567,7 @@ func TestRegisterTaskOutputAcceptsLinkedCanvasAndCreatesShotArtifact(t *testing.
 	if err := db.First(&productionLink, "task_id = ?", task.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if productionLink.ProjectID != project.ID || productionLink.CanvasID != canvas.ID || productionLink.ShotID != shot.ID {
+	if productionLink.ProjectID != project.ID || productionLink.CanvasID != canvasID || productionLink.ShotID != shot.ID {
 		t.Fatalf("unexpected production link: %+v", productionLink)
 	}
 	var storedArtifact model.ShotArtifact
@@ -575,5 +576,92 @@ func TestRegisterTaskOutputAcceptsLinkedCanvasAndCreatesShotArtifact(t *testing.
 	}
 	if storedArtifact.Type != "storyboard" || storedArtifact.Status != "ready" || !storedArtifact.Selected {
 		t.Fatalf("unexpected shot artifact: %+v", storedArtifact)
+	}
+}
+
+func TestRegisterTaskOutputSupportsLinkedFreeCanvasProductionTasks(t *testing.T) {
+	cases := []struct {
+		name              string
+		requestCanvasID   string
+		metadataCanvasID  string
+		requestResourceID string
+		projectCanvasID   string
+		runUserID         string
+		wantError         bool
+	}{
+		{name: "valid run canvas and result resource", metadataCanvasID: "canvas-free-1", requestResourceID: "resource-free-1", projectCanvasID: "canvas-free-1", runUserID: "user-1"},
+		{name: "rejects a different result resource", metadataCanvasID: "canvas-free-1", requestResourceID: "resource-other", projectCanvasID: "canvas-free-1", runUserID: "user-1", wantError: true},
+		{name: "rejects task metadata from another canvas", metadataCanvasID: "canvas-other", requestResourceID: "resource-free-1", projectCanvasID: "canvas-free-1", runUserID: "user-1", wantError: true},
+		{name: "rejects an unlinked run canvas", metadataCanvasID: "canvas-free-1", requestResourceID: "resource-free-1", projectCanvasID: "canvas-other", runUserID: "user-1", wantError: true},
+		{name: "rejects another user's run", metadataCanvasID: "canvas-free-1", requestResourceID: "resource-free-1", projectCanvasID: "canvas-free-1", runUserID: "user-2", wantError: true},
+		{name: "rejects a caller-supplied different canvas", requestCanvasID: "canvas-other", metadataCanvasID: "canvas-free-1", requestResourceID: "resource-free-1", projectCanvasID: "canvas-free-1", runUserID: "user-1", wantError: true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			service, db := newProjectWorkflowV2TestService(t)
+			project, unit := seedWorkflowProject(t, db)
+			if err := service.EnsureBuiltinProjectWorkflowTemplate(); err != nil {
+				t.Fatal(err)
+			}
+			workflow, err := service.CreateUnitWorkflow("user-1", project.ID, unit.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			canvasID := "canvas-free-1"
+			now := time.Now()
+			canvasLink := model.CanvasUnitLink{ID: "canvas-link-free-1", ProjectID: project.ID, CanvasID: testCase.projectCanvasID}
+			run := model.ProductionRun{ID: "production-run-free-1", UserID: testCase.runUserID, CanvasID: canvasID, Status: "planning", CreatedAt: now, UpdatedAt: now}
+			asset := model.Asset{ID: "asset-free-1", UserID: "user-1", Kind: "image", Category: model.AssetCategoryMaterial, Status: model.AssetVersionStatusConfirmed, PrimaryVersionID: "version-free-1", Title: "首帧", CreatedAt: now, UpdatedAt: now}
+			version := model.AssetVersion{ID: "version-free-1", AssetID: asset.ID, Version: 1, Status: model.AssetVersionStatusConfirmed, DefinitionJSON: "{}", CreatedAt: now, UpdatedAt: now}
+			assetLink := model.ProjectAssetLink{ID: "project-asset-free-1", ProjectID: project.ID, AssetID: asset.ID, CreatedAt: now}
+			resource := model.Resource{ID: "resource-free-1", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady, MimeType: "image/png", CreatedAt: now, UpdatedAt: now}
+			otherResource := model.Resource{ID: "resource-other", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady, MimeType: "image/png", CreatedAt: now, UpdatedAt: now}
+			task := model.Task{
+				ID: "task-free-1", UserID: "user-1", Type: "canvas_image", Status: model.TaskStatusSucceeded,
+				ProductionRunID: run.ID,
+				InputJSON:       `{"metadata":{"canvasId":"` + testCase.metadataCanvasID + `","productionRunId":"` + run.ID + `"}}`,
+				ResultJSON:      `{"mode":"image","images":[{"resourceId":"resource-free-1","storageKey":"resource:resource-free-1"}]}`,
+				CreatedAt:       now, UpdatedAt: now,
+			}
+			for _, item := range []any{&canvasLink, &run, &asset, &version, &assetLink, &resource, &otherResource, &task} {
+				if err := db.Create(item).Error; err != nil {
+					t.Fatalf("seed %T: %v", item, err)
+				}
+			}
+			requestResourceID := testCase.requestResourceID
+			if requestResourceID == "" {
+				requestResourceID = resource.ID
+			}
+			_, err = service.RegisterTaskOutput("user-1", project.ID, workflow.Steps[0].ID, RegisterTaskOutputRequest{
+				TaskID: task.ID, CanvasID: testCase.requestCanvasID, AssetVersionID: version.ID, ResourceID: requestResourceID, MediaType: "image", Role: "output",
+			})
+			if testCase.wantError {
+				if err == nil {
+					t.Fatal("RegisterTaskOutput unexpectedly accepted an invalid free-canvas task binding")
+				}
+				var count int64
+				if db.Model(&model.AssetRepresentation{}).Where("task_id = ?", task.ID).Count(&count).Error != nil || count != 0 {
+					t.Fatalf("invalid task binding created %d asset representations", count)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RegisterTaskOutput: %v", err)
+			}
+			var representation model.AssetRepresentation
+			if err := db.First(&representation, "task_id = ? AND asset_version_id = ?", task.ID, version.ID).Error; err != nil {
+				t.Fatalf("read asset representation: %v", err)
+			}
+			if representation.ResourceID != resource.ID {
+				t.Fatalf("representation resource = %q, want %q", representation.ResourceID, resource.ID)
+			}
+			var productionLink model.ProductionTaskLink
+			if err := db.First(&productionLink, "task_id = ?", task.ID).Error; err != nil {
+				t.Fatalf("read production task link: %v", err)
+			}
+			if productionLink.ProjectID != project.ID || productionLink.CanvasID != canvasID {
+				t.Fatalf("production link = %+v, want project %q and canvas %q", productionLink, project.ID, canvasID)
+			}
+		})
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/distribution"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 
@@ -387,6 +388,9 @@ func (s *Service) PublicSystemChannels() ([]PublicModelChannel, error) {
 	}
 	result := make([]PublicModelChannel, 0, len(channels))
 	for _, channel := range channels {
+		if requireAxonChannel(&channel) != nil {
+			continue
+		}
 		items, itemErr := s.repo.ChannelModels(channel.ID, false)
 		if itemErr != nil {
 			return nil, itemErr
@@ -404,6 +408,9 @@ func (s *Service) SystemChannel(id string) (*model.ModelChannel, error) {
 	if err := s.decryptSystemChannelSecrets(channel); err != nil {
 		return nil, err
 	}
+	if err := requireAxonChannel(channel); err != nil {
+		return nil, err
+	}
 	return channel, nil
 }
 
@@ -413,6 +420,9 @@ func (s *Service) adminSystemChannel(id string) (*model.ModelChannel, error) {
 		return nil, err
 	}
 	if err := s.decryptSystemChannelSecrets(channel); err != nil {
+		return nil, err
+	}
+	if err := requireAxonChannel(channel); err != nil {
 		return nil, err
 	}
 	return channel, nil
@@ -451,6 +461,12 @@ func normalizeAdminPage(page int, limit int) (int, int) {
 func (s *Service) CreateSystemChannel(actor *model.User, req ChannelRequest) (*PublicModelChannel, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
+	}
+	if err := requireAxonBaseURL(req.BaseURL); err != nil {
+		return nil, err
+	}
+	if len(req.Models) > 0 {
+		return nil, Forbidden("请先保存 Axon 连接，再从 Axon 目录导入模型")
 	}
 	channelID, err := s.repo.NextPrefixedID("CHANNEL")
 	if err != nil {
@@ -786,8 +802,29 @@ func channelFromRequest(req ChannelRequest, channel model.ModelChannel) (model.M
 }
 
 func (s *Service) channelFromRequest(req ChannelRequest, channel model.ModelChannel) (model.ModelChannel, error) {
+	if err := requireAxonBaseURL(req.BaseURL); err != nil {
+		return channel, err
+	}
+	if len(req.Models) > 0 {
+		if s.repo == nil {
+			return channel, Forbidden("请从 Axon 目录导入模型")
+		}
+		known, err := s.repo.ChannelModels(channel.ID, true)
+		if err != nil {
+			return channel, err
+		}
+		allowed := map[string]bool{}
+		for _, item := range known {
+			allowed[item.ModelKey] = true
+		}
+		for _, name := range req.Models {
+			if !allowed[name] {
+				return channel, Forbidden("新模型必须从 Axon 目录导入")
+			}
+		}
+	}
 	name := strings.TrimSpace(req.Name)
-	baseURL := strings.TrimSpace(req.BaseURL)
+	baseURL := distribution.AxonBaseURL
 	if name == "" {
 		return channel, BadAuthRequest("请填写渠道名称")
 	}
@@ -862,21 +899,21 @@ func publicChannel(channel model.ModelChannel, admin bool, channelModels []model
 	models := make([]string, 0, len(channelModels))
 	modelSpecs := make([]PublicChannelModelSpec, 0, len(channelModels))
 	for _, item := range channelModels {
-		if !item.Enabled {
+		// A row with no request route cannot be called, even if an old import
+		// marked it enabled. Do not advertise it in the creation picker.
+		if !item.Enabled || item.Protocol == "" {
 			continue
 		}
 		models = append(models, item.ModelKey)
-		if item.Enabled {
-			capabilityConfig, decodeErr := DecodeModelCapabilityConfig(item.CapabilityConfigJSON)
-			if decodeErr == nil && capabilityConfig != nil {
-				if normalized, normalizeErr := NormalizeModelCapabilityConfigForModel(item.Capability, string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), capabilityConfig); normalizeErr == nil {
-					capabilityConfig = normalized
-				}
+		capabilityConfig, decodeErr := DecodeModelCapabilityConfig(item.CapabilityConfigJSON)
+		if decodeErr == nil && capabilityConfig != nil {
+			if normalized, normalizeErr := NormalizeModelCapabilityConfigForModel(item.Capability, string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), capabilityConfig); normalizeErr == nil {
+				capabilityConfig = normalized
 			}
-			modelSpecs = append(modelSpecs, PublicChannelModelSpec{Model: item.ModelKey, DisplayName: item.DisplayName, ChannelLabel: item.ChannelLabel, Description: item.Description, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, CapabilityConfig: capabilityConfig})
 		}
+		modelSpecs = append(modelSpecs, PublicChannelModelSpec{Model: item.ModelKey, DisplayName: item.DisplayName, ChannelLabel: item.ChannelLabel, Description: item.Description, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, CapabilityConfig: capabilityConfig})
 	}
-	if len(models) == 0 {
+	if len(models) == 0 && channel.Scope != model.ChannelScopeSystem {
 		_ = json.Unmarshal([]byte(channel.ModelsJSON), &models)
 	}
 	apiKey := ""

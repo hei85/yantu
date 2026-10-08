@@ -1,6 +1,9 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestProviderFailureDetailsReadsTopLevelModerationError(t *testing.T) {
 	code, message := providerFailureDetails(map[string]any{
@@ -40,6 +43,20 @@ func TestContentModerationFailureRequiresExactProviderCode(t *testing.T) {
 	}
 	if isContentModerationFailure("上游 HTTP 400") {
 		t.Fatal("generic HTTP 400 must remain retryable")
+	}
+}
+
+func TestProviderHTTPErrorUsesModerationCategoryForStableCode(t *testing.T) {
+	err := providerHTTPError{
+		StatusCode: 400,
+		Body:       `{"error":{"code":"sensitive_words_detected","message":"restricted by safety guidelines, request id: secret"}}`,
+	}
+	message := err.Error()
+	if message != "请求内容未通过模型服务安全审核，请调整后重试" {
+		t.Fatalf("providerHTTPError.Error() = %q, want safe moderation category", message)
+	}
+	if strings.Contains(message, "secret") {
+		t.Fatalf("provider response detail leaked: %q", message)
 	}
 }
 

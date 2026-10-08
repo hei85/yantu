@@ -749,6 +749,16 @@ func (s *Service) persistGeneratedMediaValueMode(userID string, value interface{
 				if kind == "image" && (width <= 0 || height <= 0) {
 					width, height = imageDimensions(data)
 				}
+				durationMs := int64(intValue(item["durationMs"]))
+				// 上游只给 data URL 而未回传宽高时，用真实媒体探测补齐元数据；探测失败不影响生成成功事实。
+				if kind == "video" && (width <= 0 || height <= 0) {
+					if probedWidth, probedHeight, probedDurationMs := probeMediaBytesMetadata(data, mimeType); probedWidth > 0 && probedHeight > 0 {
+						width, height = probedWidth, probedHeight
+						if durationMs <= 0 {
+							durationMs = probedDurationMs
+						}
+					}
+				}
 				quotaDay := ""
 				if enforceQuota {
 					quotaDay, err = s.reserveGeneratedResourceQuota(userID, int64(len(data)))
@@ -756,7 +766,7 @@ func (s *Service) persistGeneratedMediaValueMode(userID string, value interface{
 						return nil, err
 					}
 				}
-				resource, _, err := s.storeResource(userID, kind, "generated."+extensionFromMimeType(mimeType), mimeType, int64(len(data)), width, height, int64(intValue(item["durationMs"])), bytes.NewReader(data), nil, false)
+				resource, _, err := s.storeResource(userID, kind, "generated."+extensionFromMimeType(mimeType), mimeType, int64(len(data)), width, height, durationMs, bytes.NewReader(data), nil, false)
 				if err != nil {
 					if enforceQuota {
 						s.releaseUserUploadQuota(userID, quotaDay, int64(len(data)))
@@ -782,6 +792,9 @@ func (s *Service) persistGeneratedMediaValueMode(userID string, value interface{
 				item["mimeType"] = resource.MimeType
 				item["width"] = resource.Width
 				item["height"] = resource.Height
+				if durationMs > 0 && intValue(item["durationMs"]) <= 0 {
+					item["durationMs"] = resource.DurationMs
+				}
 			}
 		}
 		for key, child := range item {

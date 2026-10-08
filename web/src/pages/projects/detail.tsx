@@ -10,6 +10,7 @@ import { WorkspaceErrorState, WorkspaceLoadingState } from "@/components/layout/
 import type { ProjectDetail } from "@/services/api/projects";
 
 import { WorkflowChapterNavigator } from "./detail/workflow-chapter-navigator";
+import { createLocalCanvasProject } from "@/services/local-canvas-projects";
 
 const ProjectAssetsView = lazy(() => import("./detail/assets"));
 const ProjectCanvasesView = lazy(() => import("./detail/canvases"));
@@ -60,7 +61,6 @@ export default function ProjectDetailPage() {
     const detail: ProjectDetail | undefined = project ? {
         project,
         units: workspace?.unit ? units.map((unit) => unit.id === workspace.unit.id ? workspace.unit : unit) : units,
-        canvases: [],
         canvasUnitLinks: [],
         unitCanvasCounts: unitsQuery.data?.canvasCounts || {},
         assets: workspace?.assets || [],
@@ -82,27 +82,17 @@ export default function ProjectDetailPage() {
             : undefined;
         const shots = unit ? detail?.shots.filter((shot) => shot.unitId === unit.id) || [] : [];
         try {
-            const [{ createCanvasProjectWithRemoteSync }, storyboard] = await Promise.all([
-                import("@/services/user-data-sync"),
-                unit && shots.length ? import("@/lib/canvas/project-chapter-storyboard") : Promise.resolve(null),
-            ]);
+            const storyboard = unit && shots.length ? await import("@/lib/canvas/project-chapter-storyboard") : null;
             const seed = unit && shots.length ? storyboard?.upsertProjectChapterStoryboard([], [], { unit, shots }) : undefined;
             const initialContent = seed ? { nodes: seed.nodes, connections: seed.connections } : undefined;
             const title = unit ? `${unit.title} · ${shots.length ? "分镜画布" : "画布"}` : `${detail?.project.name || "项目"} · 新画布`;
-            const { id, syncError } = await createCanvasProjectWithRemoteSync(title, projectId, initialContent);
-            if (syncError) {
-                message.warning(syncError instanceof Error ? `画布已保存在本地，项目关联稍后重试：${syncError.message}` : "画布已保存在本地，项目关联稍后重试");
-                navigate(`/canvas/${id}`);
+            const { id } = createLocalCanvasProject(title, projectId, initialContent);
+            try {
+                await linkCanvasUnit(projectId, { canvasId: id, unitId: unit?.id || "", role: unit ? "storyboard" : "project" });
+            } catch (error) {
+                refreshProject();
+                message.error(error instanceof Error ? `画布已创建，但项目关联失败：${error.message}` : "画布已创建，但项目关联失败");
                 return;
-            }
-            if (unit) {
-                try {
-                    await linkCanvasUnit(projectId, { canvasId: id, unitId: unit.id, role: "storyboard" });
-                } catch (error) {
-                    refreshProject();
-                    message.error(error instanceof Error ? `画布已创建，但章节关联失败：${error.message}` : "画布已创建，但章节关联失败");
-                    return;
-                }
             }
             refreshProject();
             message.success(unit && shots.length ? `已创建章节画布并导入 ${shots.length} 个分镜` : unit ? "章节画布已创建并关联" : "项目画布已创建");

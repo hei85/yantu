@@ -70,7 +70,7 @@ export const IMAGE_PROMPT_REVERSE = `请根据参考图片反推一段适合用�
 
 export function workflowStarterPrompt(kind: "character_cards" | "character_three_view" | "storyboard_video", title: string, workflowTitle: string) {
     if (kind === "character_cards") return `请基于「${workflowTitle}」拆分主要角色，并为每个角色生成可用于后续创作的角色图片卡片：外观、服饰、身份、性格和视觉辨识点。`;
-    if (kind === "character_three_view") return `请基于上游角色卡片生成「${title}」：同一角色的正面、侧面、背面三视图，保持服饰、发型、道具和比例一致。`;
+    if (kind === "character_three_view") return `请基于上游角色卡片生成「${title}」：同一张图里同时给出同一角色的正面、侧面、背面三视图和正面脸部特写（正脸），保持五官、瞳色、服饰、发型、道具和比例一致。`;
     return `请基于上游角色三视图，为「${workflowTitle}」制作分镜剧情视频方案：包含镜头顺序、景别、动作、节奏和画面连续性。`;
 }
 

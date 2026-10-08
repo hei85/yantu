@@ -138,7 +138,14 @@ test("Dreamina background reconciler converges an official cancellation without 
     try {
         await (runtime as unknown as { start(): Promise<void> }).start();
         await waitForAsync(async () => {
-            const disk = JSON.parse(await fs.readFile(box.stateFile, "utf8")) as { records: Array<Record<string, unknown>> };
+            let state: string;
+            try {
+                state = await fs.readFile(box.stateFile, "utf8");
+            } catch (error) {
+                if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return false;
+                throw error;
+            }
+            const disk = JSON.parse(state) as { records: Array<Record<string, unknown>> };
             return disk.records[0]?.state === "cancelled";
         });
         assert.equal(queryCalls, 1);

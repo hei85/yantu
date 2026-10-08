@@ -104,27 +104,27 @@ func TestDuplicateSystemChannelCopiesSecretsModelsAndVariants(t *testing.T) {
 		t.Fatal(err)
 	}
 	sourceModel := model.ChannelModel{
-		ID:                    "model-source",
-		ChannelID:             source.ID,
-		ModelKey:              "seedance-2",
-		ProviderModelKey:      "seedance-2",
-		DisplayName:           "Seedance 2",
-		SortOrder:             3,
-		Capability:            "video",
-		Protocol:              model.ChannelInterfaceVolcengineArkVideo,
-		Enabled:               true,
+		ID:               "model-source",
+		ChannelID:        source.ID,
+		ModelKey:         "seedance-2",
+		ProviderModelKey: "seedance-2",
+		DisplayName:      "Seedance 2",
+		SortOrder:        3,
+		Capability:       "video",
+		Protocol:         model.ChannelInterfaceVolcengineArkVideo,
+		Enabled:          true,
 	}
 	if err := db.Create(&sourceModel).Error; err != nil {
 		t.Fatal(err)
 	}
 	sourceTier := model.ChannelModelVariant{
-		ID:                    "tier-source",
-		ChannelModelID:        sourceModel.ID,
-		SelectorKey:           `{}`,
-		SelectorJSON:          `{}`,
-		Resolution:            "720p",
-		ProviderModelKey:      "seedance-2",
-		Enabled:               true,
+		ID:               "tier-source",
+		ChannelModelID:   sourceModel.ID,
+		SelectorKey:      `{}`,
+		SelectorJSON:     `{}`,
+		Resolution:       "720p",
+		ProviderModelKey: "seedance-2",
+		Enabled:          true,
 	}
 	if err := db.Create(&sourceTier).Error; err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a","supported_endpoint_types":["openai"]}]}`))
 	}))
 	defer upstream.Close()
 
@@ -249,7 +249,8 @@ func TestFetchAdminChannelModelsReaddsDeletedModel(t *testing.T) {
 	if err := db.First(&active, "channel_id = ? AND model_key = ?", channel.ID, "model-a").Error; err != nil {
 		t.Fatal(err)
 	}
-	if active.ID == deleted.ID || active.Enabled {
+	// The advertised chat endpoint must be retained when a deleted model is reimported.
+	if active.ID == deleted.ID || !active.Enabled || active.Protocol != "chat-completion" {
 		t.Fatalf("re-added model = %#v", active)
 	}
 	var total int64
@@ -265,7 +266,7 @@ func TestImportAdminChannelModelsOnlyImportsSelectedModels(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-b"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-b","supported_endpoint_types":["image-generation"]}]}`))
 	}))
 	defer upstream.Close()
 
@@ -302,8 +303,157 @@ func TestImportAdminChannelModelsOnlyImportsSelectedModels(t *testing.T) {
 	if err := db.Where("channel_id = ?", channel.ID).Find(&imported).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(imported) != 1 || imported[0].ModelKey != "model-b" {
+	if len(imported) != 1 || imported[0].ModelKey != "model-b" || imported[0].Capability != "image" || imported[0].Protocol != "openai-image" || !imported[0].Enabled {
 		t.Fatalf("imported models = %#v, want only model-b", imported)
+	}
+}
+
+func TestImportAdminChannelModelsAutoConfiguresBareGPTImageFamily(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-image-2","supported_endpoint_types":["generate","edit"]},{"id":"gpt-image-2.5","supported_endpoint_types":["generate","edit"]},{"id":"gpt-image-2.5-flare","supported_endpoint_types":["generate","edit"]},{"id":"gpt-image-2.5-sunburst","supported_endpoint_types":["generate","edit"]}]}`))
+	}))
+	defer upstream.Close()
+
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: upstream.URL + "/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	selected := []string{"gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"}
+	result, err := svc.ImportAdminChannelModels(context.Background(), admin, channel.ID, selected)
+	if err != nil {
+		t.Fatalf("ImportAdminChannelModels() error = %v", err)
+	}
+	if result.Added != int64(len(selected)) {
+		t.Fatalf("Added = %d, want %d", result.Added, len(selected))
+	}
+	var imported []model.ChannelModel
+	if err := db.Where("channel_id = ?", channel.ID).Find(&imported).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(imported) != len(selected) {
+		t.Fatalf("imported models = %#v, want %d rows", imported, len(selected))
+	}
+	for _, item := range imported {
+		if item.Capability != "image" || item.Protocol != model.ChannelInterfaceOpenAIImage || !item.Enabled || item.CapabilityConfigJSON == "" {
+			t.Errorf("bare GPT Image model was not configured and enabled: %#v", item)
+		}
+	}
+}
+
+func TestImportAdminChannelModelsAcceptsDifferentOpenAIRelayCatalogs(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	cases := []struct {
+		name, payload string
+		want          map[string]string
+	}{
+		{"id-strings", `{"data":["deepseek-r1","tenant/gpt-4.1","qwen-image","flux-1-pro","tts-1","minimax_h3_private","indextts2-v1","text-embedding-3-small"]}`, map[string]string{
+			"deepseek-r1": "chat-completion", "tenant/gpt-4.1": "chat-completion", "qwen-image": "openai-image", "flux-1-pro": "openai-image", "tts-1": "openai-audio", "minimax_h3_private": "", "indextts2-v1": "", "text-embedding-3-small": "",
+		}},
+		{"id-objects", `{"data":[{"id":"custom-chat"},{"id":"custom-picture","model_type":"image"},{"id":"gpt-4o-mini-tts"}]}`, map[string]string{"custom-chat": "chat-completion", "custom-picture": "openai-image", "gpt-4o-mini-tts": "openai-audio"}},
+		{"camel-fields-and-paths", `{"data":[{"id":"art-alias","modelType":"image","supportedEndpointTypes":["generate","edit"]},{"id":"voice-alias","supportedEndpointTypes":["POST /v1/audio/speech"]},{"id":"movie-alias","supportedEndpointTypes":[" /v1/videos "]},{"id":"chat-alias","supportedEndpointTypes":["POST /v1/responses"]},{"id":"gpt-image-2","modelType":"image","supportedEndpointTypes":["private-image-api"]}]}`, map[string]string{"art-alias": "openai-image", "voice-alias": "openai-audio", "movie-alias": "newapi", "chat-alias": "openai-response", "gpt-image-2": ""}},
+		{"models-envelope", `{"models":[{"id":"another-chat"},{"id":"another-image","capability":"image","supported_endpoint_types":["POST /v1/images/generations"]}]}`, map[string]string{"another-chat": "chat-completion", "another-image": "openai-image"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != "/v1/models" || request.Method != http.MethodGet || request.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("unexpected model discovery request: %s %s", request.Method, request.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.payload))
+			}))
+			defer upstream.Close()
+			svc, db := newChannelModelTestService(t)
+			admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+			channel := model.ModelChannel{ID: "new-relay", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: tc.name, BaseURL: upstream.URL + "/v1", APIKey: "test-key", APIFormat: "openai", ModelsJSON: `[]`}
+			if err := db.Create(&channel).Error; err != nil {
+				t.Fatal(err)
+			}
+			names, err := svc.PreviewAdminChannelModels(context.Background(), admin, channel.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := svc.ImportAdminChannelModels(context.Background(), admin, channel.ID, names)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Added != int64(len(tc.want)) {
+				t.Fatalf("added=%d, want=%d", result.Added, len(tc.want))
+			}
+			var saved []model.ChannelModel
+			if err := db.Where("channel_id = ?", channel.ID).Find(&saved).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range saved {
+				want, exists := tc.want[item.ModelKey]
+				if !exists || string(item.Protocol) != want || item.Enabled != (want != "") {
+					t.Fatalf("unexpected auto configuration: model=%s protocol=%s enabled=%v want=%s", item.ModelKey, item.Protocol, item.Enabled, want)
+				}
+			}
+			second, err := svc.ImportAdminChannelModels(context.Background(), admin, channel.ID, names)
+			if err != nil || second.Added != 0 {
+				t.Fatalf("repeat import added duplicates: result=%#v error=%v", second, err)
+			}
+		})
+	}
+}
+
+func TestImportAdminChannelModelsRepairsLegacyImageProtocolAndCanEnable(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-image-2.5-flare"}]}`))
+	}))
+	defer upstream.Close()
+
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-1", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: upstream.URL + "/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacyConfig, ok := defaultChannelModelCapabilityJSON("image", "", "gpt-image-2.5-flare")
+	if !ok {
+		t.Fatal("expected the legacy image declaration")
+	}
+	legacy := model.ChannelModel{
+		ID: "MODEL_LEGACY", ChannelID: channel.ID, ModelKey: "gpt-image-2.5-flare", ProviderModelKey: "gpt-image-2.5-flare",
+		DisplayName: "GPT Image 2.5 Flare", Capability: "image", CapabilityVersion: 1,
+		CapabilityConfigJSON: legacyConfig, Enabled: false,
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.ImportAdminChannelModels(context.Background(), admin, channel.ID, []string{legacy.ModelKey})
+	if err != nil {
+		t.Fatalf("ImportAdminChannelModels() error = %v", err)
+	}
+	if result.Added != 0 {
+		t.Fatalf("Added = %d, want 0 for an existing model", result.Added)
+	}
+	var repaired model.ChannelModel
+	if err := db.First(&repaired, "id = ?", legacy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if repaired.Protocol != model.ChannelInterfaceOpenAIImage || repaired.Enabled {
+		t.Fatalf("import repair = %#v, want protocol fixed and explicit disabled state preserved", repaired)
+	}
+
+	enabled := true
+	updated, err := svc.SaveAdminChannelModel(admin, channel.ID, repaired.ID, ChannelModelRequest{
+		ModelKey: repaired.ModelKey, ProviderModelKey: repaired.ProviderModelKey, Capability: "image",
+		Protocol: string(model.ChannelInterfaceOpenAIImage), Enabled: &enabled,
+		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceOpenAIImage), repaired.ProviderModelKey),
+	})
+	if err != nil {
+		t.Fatalf("SaveAdminChannelModel() enabling repaired image model: %v", err)
+	}
+	if !updated.Enabled || updated.Protocol != model.ChannelInterfaceOpenAIImage {
+		t.Fatalf("updated legacy image model = %#v, want enabled openai-image", updated)
 	}
 }
 
@@ -488,6 +638,47 @@ func TestResolveProviderConfigMapsSKUToProviderModel(t *testing.T) {
 	}
 	if config.ChannelModelKey != item.ModelKey || config.Model != item.ProviderModelKey {
 		t.Fatalf("resolved config = %#v", config)
+	}
+}
+
+func TestResolveProviderConfigHydratesAuthoritativeAudioCapability(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	svc.dataDir = t.TempDir()
+	channel := model.ModelChannel{
+		ID: "audio-channel", Scope: model.ChannelScopeSystem, Enabled: true, Name: "IndexTTS relay",
+		BaseURL: "https://audio.example/v1", APIKey: "test-key", APIFormat: "openai",
+	}
+	if err := svc.encryptSystemChannelSecrets(&channel); err != nil {
+		t.Fatal(err)
+	}
+	audio := DefaultAudioCapabilityConfig()
+	audio.TTS, audio.VoiceReference, audio.ReferenceAudioParameter = "configured", "configured", "reference_audio"
+	encoded, err := json.Marshal(&ModelCapabilityConfig{Version: 1, Audio: audio})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelModel := model.ChannelModel{
+		ID: "audio-model-id", ChannelID: channel.ID, ModelKey: "indextts2-v1", ProviderModelKey: "indextts2-v1",
+		Capability: "audio", Protocol: model.ChannelInterfaceAsyncAudio, Enabled: true, CapabilityVersion: 3,
+		CapabilityConfigJSON: string(encoded),
+	}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&channelModel).Error; err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := svc.resolveProviderConfig(providerConfig{
+		ChannelID: channel.ID, Model: channelModel.ModelKey, CapabilityRevision: channelModelCapabilityRevision(channelModel),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.CapabilityConfig == nil || resolved.CapabilityConfig.Audio == nil || resolved.CapabilityConfig.Audio.VoiceReference != "configured" || resolved.CapabilityConfig.Audio.ReferenceAudioParameter != "reference_audio" {
+		t.Fatalf("authoritative audio capability was not hydrated: %#v", resolved.CapabilityConfig)
+	}
+	if _, err := svc.resolveProviderConfig(providerConfig{ChannelID: channel.ID, Model: channelModel.ModelKey, CapabilityRevision: "audio-model-id:2"}); err == nil {
+		t.Fatal("stale task capability revision was accepted")
 	}
 }
 

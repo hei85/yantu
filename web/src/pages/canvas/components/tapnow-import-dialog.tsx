@@ -8,7 +8,6 @@ import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type Viewpo
 
 type Props = {
     open: boolean;
-    projectId: string;
     viewport: ViewportTransform;
     viewportSize: { width: number; height: number };
     onClose: () => void;
@@ -49,7 +48,7 @@ function buildCanvasNodes(result: TapNowImportResult, viewport: ViewportTransfor
     }));
 }
 
-export function TapNowImportDialog({ open, projectId, viewport, viewportSize, onClose, onApply }: Props) {
+export function TapNowImportDialog({ open, viewport, viewportSize, onClose, onApply }: Props) {
     const { message } = App.useApp();
     const [value, setValue] = useState("");
     const [loading, setLoading] = useState(false);
@@ -79,7 +78,7 @@ export function TapNowImportDialog({ open, projectId, viewport, viewportSize, on
         }
         setLoading(true);
         try {
-            setResult(await importTapNowCanvas(projectId, shareID));
+            setResult(await importTapNowCanvas(shareID));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取 TapNow 画布失败");
         } finally {

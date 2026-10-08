@@ -10,12 +10,27 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
-
 func TestAuthorizeSystemProxyAllowsConfiguredGenerationModel(t *testing.T) {
 	channel := &model.ModelChannel{APIFormat: "openai", ModelsJSON: `["gpt-image-1"]`}
 	body := []byte(`{"model":"gpt-image-1","prompt":"test"}`)
 	if err := authorizeSystemProxy(channel, model.ChannelInterfaceOpenAIImage, http.MethodPost, "/images/generations", "application/json", body); err != nil {
 		t.Fatalf("authorizeSystemProxy() error = %v", err)
+	}
+}
+
+func TestAuthorizeSystemProxyAsyncAudioTaskPaths(t *testing.T) {
+	channel := &model.ModelChannel{APIFormat: "openai", ModelsJSON: `["indextts2-v1"]`}
+	body := []byte(`{"model":"indextts2-v1","input":"你好","response_format":"wav"}`)
+	if err := authorizeSystemProxy(channel, model.ChannelInterfaceAsyncAudio, http.MethodPost, "/audio/tasks", "application/json", body); err != nil {
+		t.Fatalf("async audio submit rejected: %v", err)
+	}
+	if err := authorizeSystemProxy(channel, model.ChannelInterfaceAsyncAudio, http.MethodGet, "/audio/tasks/task_abc-123", "", nil); err != nil {
+		t.Fatalf("async audio poll rejected: %v", err)
+	}
+	for _, path := range []string{"/audio/tasks/../models", "/audio/tasks/task_abc-123/content", "/audio/tasks/task_abc-123/extra"} {
+		if err := authorizeSystemProxy(channel, model.ChannelInterfaceAsyncAudio, http.MethodGet, path, "", nil); err == nil {
+			t.Fatalf("unexpectedly allowed async audio path %q", path)
+		}
 	}
 }
 
@@ -26,7 +41,6 @@ func TestAuthorizeSystemProxyAllowsGrokImageJSONEdits(t *testing.T) {
 		t.Fatalf("authorizeSystemProxy() error = %v", err)
 	}
 }
-
 
 func TestAuthorizeCustomRelayAllowsModelsAndAgentEndpoints(t *testing.T) {
 	tests := []struct {
@@ -40,6 +54,8 @@ func TestAuthorizeCustomRelayAllowsModelsAndAgentEndpoints(t *testing.T) {
 		{method: http.MethodPost, target: "https://api.example.com/v1/chat/completions", apiFormat: "openai", contentType: "application/json; charset=utf-8"},
 		{method: http.MethodPost, target: "https://api.anthropic.com/v1/messages", apiFormat: "claude", contentType: "application/json"},
 		{method: http.MethodPost, target: "https://api.example.com/v1/audio/speech", apiFormat: "openai", contentType: "application/json"},
+		{method: http.MethodPost, target: "https://api.example.com/v1/audio/tasks", apiFormat: "openai", contentType: "application/json"},
+		{method: http.MethodGet, target: "https://api.example.com/v1/audio/tasks/task_abc-123", apiFormat: "openai"},
 		{method: http.MethodPost, target: "https://api.example.com/v1/images/edits", apiFormat: "openai", contentType: "multipart/form-data; boundary=test"},
 		{method: http.MethodPost, target: "https://api.example.com/v1/images/edits", apiFormat: "openai", contentType: "application/json"},
 		{method: http.MethodPost, target: "https://api.example.com/v1/videos", apiFormat: "openai", contentType: "application/json"},

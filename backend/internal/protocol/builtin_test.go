@@ -160,6 +160,47 @@ func TestImageAndVideoAdaptersMapProviderShapes(t *testing.T) {
 	}
 }
 
+func TestMiniMaxVideoAdapterMapsDeliveryParametersIntoProviderPayload(t *testing.T) {
+	adapter, ok := Builtins().Get("minimax-video")
+	if !ok {
+		t.Fatal("MiniMax adapter missing")
+	}
+	request := GenerationRequest{
+		Model:       "MiniMax-H3",
+		Prompt:      "a landscape shot",
+		Duration:    12,
+		AspectRatio: "16:9",
+		Resolution:  "768P",
+	}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := spec.Body.(map[string]any)
+	if !ok {
+		t.Fatalf("request body type = %T", spec.Body)
+	}
+	for key, want := range map[string]any{
+		"duration":   12,
+		"ratio":      "16:9",
+		"resolution": "768P",
+	} {
+		if got := body[key]; got != want {
+			t.Errorf("payload[%q] = %#v, want %#v", key, got, want)
+		}
+	}
+
+	request.Extra = map[string]any{"ratio": "9:16", "resolution": "2K"}
+	spec, err = adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = spec.Body.(map[string]any)
+	if body["ratio"] != "9:16" || body["resolution"] != "2K" {
+		t.Fatalf("explicit provider overrides were not preserved: %#v", body)
+	}
+}
+
 func TestArkVideoAdapterMapsFullModalReferences(t *testing.T) {
 	adapter, ok := Builtins().Get("volcengine-ark-video")
 	if !ok {

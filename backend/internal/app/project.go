@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -85,7 +84,6 @@ type ProjectListPage struct {
 type ProjectDetail struct {
 	Project         model.Project                 `json:"project"`
 	Units           []model.ProjectUnit           `json:"units"`
-	Canvases        []model.CanvasProject         `json:"canvases"`
 	CanvasUnitLinks []model.CanvasUnitLink        `json:"canvasUnitLinks"`
 	Assets          []ProjectAssetSummary         `json:"assets"`
 	AssetFolders    []model.ProjectAssetFolder    `json:"assetFolders"`
@@ -125,9 +123,13 @@ func (s *Service) summarizeProjects(userID string, projects []model.Project) ([]
 		if unitsErr != nil {
 			return nil, unitsErr
 		}
-		canvases, canvasesErr := s.repo.ProjectCanvasSummaries(userID, project.ID)
-		if canvasesErr != nil {
-			return nil, canvasesErr
+		canvasLinks, canvasLinksErr := s.repo.ProjectCanvasUnitLinks(project.ID)
+		if canvasLinksErr != nil {
+			return nil, canvasLinksErr
+		}
+		canvasIDs := map[string]struct{}{}
+		for _, link := range canvasLinks {
+			canvasIDs[link.CanvasID] = struct{}{}
 		}
 		assetCount, assetCountErr := s.repo.ProjectAssetCount(project.ID)
 		if assetCountErr != nil {
@@ -139,7 +141,7 @@ func (s *Service) summarizeProjects(userID string, projects []model.Project) ([]
 				completed++
 			}
 		}
-		result = append(result, ProjectSummary{Project: project, CanvasCount: len(canvases), AssetCount: assetCount, UnitCount: len(units), CompletedUnitCount: completed})
+		result = append(result, ProjectSummary{Project: project, CanvasCount: len(canvasIDs), AssetCount: assetCount, UnitCount: len(units), CompletedUnitCount: completed})
 	}
 	return result, nil
 }
@@ -165,10 +167,6 @@ func (s *Service) ProjectDetail(userID string, id string) (ProjectDetail, error)
 	}
 	// 项目工作台只返回章节摘要，长篇小说正文由单章接口按需读取。
 	units, err := s.repo.ProjectUnitSummaries(project.ID)
-	if err != nil {
-		return ProjectDetail{}, err
-	}
-	canvases, err := s.repo.ProjectCanvasSummaries(userID, project.ID)
 	if err != nil {
 		return ProjectDetail{}, err
 	}
@@ -212,7 +210,7 @@ func (s *Service) ProjectDetail(userID string, id string) (ProjectDetail, error)
 	if err != nil {
 		return ProjectDetail{}, err
 	}
-	return ProjectDetail{Project: *project, Units: units, Canvases: canvases, CanvasUnitLinks: canvasUnitLinks, Assets: assets, AssetFolders: assetFolders, Workflows: workflows, Shots: shots, ShotRevisions: shotRevisions, ShotArtifacts: shotArtifacts, ShotReferences: shotReferences, AssetCandidates: candidates, Tasks: tasks}, nil
+	return ProjectDetail{Project: *project, Units: units, CanvasUnitLinks: canvasUnitLinks, Assets: assets, AssetFolders: assetFolders, Workflows: workflows, Shots: shots, ShotRevisions: shotRevisions, ShotArtifacts: shotArtifacts, ShotReferences: shotReferences, AssetCandidates: candidates, Tasks: tasks}, nil
 }
 
 func (s *Service) CreateProject(userID string, req CreateProjectRequest) (model.Project, error) {
@@ -257,7 +255,7 @@ func (s *Service) CreateProject(userID string, req CreateProjectRequest) (model.
 		return model.Project{}, err
 	}
 	if _, err := s.createProjectWorkflow(project.ID, "", "project"); err != nil {
-		if deleteErr := s.repo.DeleteProject(userID, project.ID, nil); deleteErr != nil {
+		if deleteErr := s.repo.DeleteProject(userID, project.ID); deleteErr != nil {
 			return model.Project{}, errors.Join(err, fmt.Errorf("项目初始化失败，回滚项目记录失败：%w", deleteErr))
 		}
 		return model.Project{}, err
@@ -356,23 +354,16 @@ func (s *Service) DeleteProject(userID string, id string) error {
 	if _, err := s.repo.ProjectForUser(userID, id); err != nil {
 		return err
 	}
-	canvases, err := s.repo.ProjectCanvasDocuments(userID, id)
+	links, err := s.repo.ProjectCanvasUnitLinks(id)
 	if err != nil {
 		return err
 	}
-	projectScopeIDs := make([]string, 0, len(canvases)+1)
+	projectScopeIDs := make([]string, 0, len(links)+1)
 	projectScopeIDs = append(projectScopeIDs, id)
-	canvasUpdates := make([]model.CanvasProject, 0, len(canvases))
-	deleteTime := time.Now()
-	for _, canvas := range canvases {
-		payloadJSON, payloadErr := canvasPayloadWithoutProject(canvas.PayloadJSON, deleteTime)
-		if payloadErr != nil {
-			return payloadErr
+	for _, link := range links {
+		if !containsString(projectScopeIDs, link.CanvasID) {
+			projectScopeIDs = append(projectScopeIDs, link.CanvasID)
 		}
-		canvas.PayloadJSON = payloadJSON
-		canvas.UpdatedAt = deleteTime
-		canvasUpdates = append(canvasUpdates, canvas)
-		projectScopeIDs = append(projectScopeIDs, canvas.ID)
 	}
 	activeTaskCount, err := s.repo.ActiveTaskCountForProjectIDs(userID, projectScopeIDs)
 	if err != nil {
@@ -381,7 +372,7 @@ func (s *Service) DeleteProject(userID string, id string) error {
 	if activeTaskCount > 0 {
 		return BadAuthRequest("项目仍有进行中的生成任务，请等待任务完成或取消后再删除")
 	}
-	if err := s.repo.DeleteProject(userID, id, canvasUpdates); err != nil {
+	if err := s.repo.DeleteProject(userID, id); err != nil {
 		if errors.Is(err, repository.ErrProjectHasActiveTasks) {
 			return BadAuthRequest("项目仍有进行中的生成任务，请等待任务完成或取消后再删除")
 		}
@@ -548,21 +539,24 @@ func (s *Service) LinkCanvasUnit(userID string, projectID string, req LinkCanvas
 	}
 	canvasID := strings.TrimSpace(req.CanvasID)
 	unitID := strings.TrimSpace(req.UnitID)
-	if canvasID == "" || unitID == "" {
-		return model.CanvasUnitLink{}, BadAuthRequest("画布和章节不能为空")
+	if canvasID == "" {
+		return model.CanvasUnitLink{}, BadAuthRequest("画布不能为空")
 	}
-	if _, err := s.repo.CanvasProjectForUser(userID, canvasID); err != nil {
-		return model.CanvasUnitLink{}, err
-	}
-	if _, err := s.repo.ProjectUnit(projectID, unitID); err != nil {
-		return model.CanvasUnitLink{}, err
-	}
-	if err := s.repo.AssignCanvasToProject(userID, canvasID, projectID); err != nil {
+	if unitID != "" {
+		if _, err := s.repo.ProjectUnit(projectID, unitID); err != nil {
+			return model.CanvasUnitLink{}, err
+		}
+	} else if existing, err := s.repo.ProjectForCanvas(userID, canvasID); err == nil && existing.ID != projectID {
+		return model.CanvasUnitLink{}, BadAuthRequest("画布已关联到其他项目")
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.CanvasUnitLink{}, err
 	}
 	role := strings.TrimSpace(req.Role)
 	if role == "" {
-		role = "storyboard"
+		role = "project"
+		if unitID != "" {
+			role = "storyboard"
+		}
 	}
 	now := time.Now()
 	link := model.CanvasUnitLink{ID: newID(), ProjectID: projectID, CanvasID: canvasID, UnitID: unitID, Role: role, CreatedAt: now}
@@ -579,51 +573,17 @@ func (s *Service) UnlinkCanvasUnit(userID string, projectID string, canvasID str
 	if _, err := s.repo.ProjectForUser(userID, projectID); err != nil {
 		return err
 	}
-	canvas, err := s.repo.CanvasProjectForUser(userID, strings.TrimSpace(canvasID))
-	if err != nil {
+	if _, err := s.repo.CanvasUnitLink(projectID, strings.TrimSpace(canvasID), strings.TrimSpace(unitID)); err != nil {
 		return err
 	}
-	if canvas.ProjectID != projectID {
-		return BadAuthRequest("画布不属于当前项目")
-	}
-	if _, err := s.repo.CanvasUnitLink(projectID, canvas.ID, strings.TrimSpace(unitID)); err != nil {
-		return err
-	}
-	return s.repo.DeleteCanvasUnitLink(projectID, canvas.ID, strings.TrimSpace(unitID))
+	return s.repo.DeleteCanvasUnitLink(projectID, strings.TrimSpace(canvasID), strings.TrimSpace(unitID))
 }
 
 func (s *Service) UnlinkCanvasProject(userID string, projectID string, canvasID string) error {
 	if _, err := s.repo.ProjectForUser(userID, projectID); err != nil {
 		return err
 	}
-	canvas, err := s.repo.CanvasProjectForUser(userID, strings.TrimSpace(canvasID))
-	if err != nil {
-		return err
-	}
-	if canvas.ProjectID != projectID {
-		return BadAuthRequest("画布不属于当前项目")
-	}
-	now := time.Now()
-	payloadJSON, err := canvasPayloadWithoutProject(canvas.PayloadJSON, now)
-	if err != nil {
-		return err
-	}
-	// 关系列、同步快照和更新时间必须原子更新，否则浏览器会用旧 projectId 把关系重新写回。
-	return s.repo.UnassignCanvasFromProject(userID, projectID, canvas.ID, payloadJSON, now, canvas.Revision)
-}
-
-func canvasPayloadWithoutProject(payloadJSON string, updatedAt time.Time) (string, error) {
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
-		return "", BadAuthRequest("画布数据格式错误，无法解除项目关系")
-	}
-	delete(payload, "projectId")
-	payload["updatedAt"] = updatedAt.Format(time.RFC3339Nano)
-	next, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	return string(next), nil
+	return s.repo.DeleteProjectCanvasLinks(projectID, strings.TrimSpace(canvasID))
 }
 
 func IsProjectNotFound(err error) bool {
@@ -636,11 +596,8 @@ func (s *Service) ensureTaskProjectActive(userID string, canvasOrProjectID strin
 	if id == "" {
 		return nil
 	}
-	if canvas, err := s.repo.CanvasProjectForUser(userID, id); err == nil {
-		if canvas.ProjectID == "" {
-			return nil
-		}
-		project, projectErr := s.repo.ProjectForUser(userID, canvas.ProjectID)
+	if project, err := s.repo.ProjectForCanvas(userID, id); err == nil {
+		project, projectErr := s.repo.ProjectForUser(userID, project.ID)
 		if projectErr != nil {
 			return projectErr
 		}

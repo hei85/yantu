@@ -111,7 +111,7 @@ export function AppWorkspaceShell({ children }: { children: ReactNode }) {
                     {paletteOpen ? <Suspense fallback={null}><WorkspaceCommandPalette open onClose={() => setPaletteOpen(false)} /></Suspense> : null}
                 </div>
             </WorkspaceTopBarExtensionProvider>
-            <ModelSetupGuide hidden={pathname === "/login" || pathname === "/register" || pathname.startsWith("/admin")} />
+            <ModelSetupGuide hidden={pathname.startsWith("/admin")} />
         </>
     );
 }

@@ -129,8 +129,10 @@ function CompactMenuButton({
     const updatePosition = () => {
         const rect = triggerRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const menuHeight = Math.min(maxMenuHeight, items.length * MENU_ITEM_HEIGHT + 8);
-        const effectiveMenuWidth = Math.max(menuWidth, Math.round(rect.width));
+        const viewportWidth = Math.max(1, window.innerWidth - MENU_MARGIN * 2);
+        const viewportHeight = Math.max(1, window.innerHeight - MENU_MARGIN * 2);
+        const menuHeight = Math.min(maxMenuHeight, items.length * MENU_ITEM_HEIGHT + 8, viewportHeight);
+        const effectiveMenuWidth = Math.min(Math.max(menuWidth, Math.round(rect.width)), viewportWidth);
         const openAbove = rect.bottom + MENU_GAP + menuHeight > window.innerHeight && rect.top > menuHeight + MENU_GAP;
         const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - effectiveMenuWidth - MENU_MARGIN);
         const maxTop = Math.max(MENU_MARGIN, window.innerHeight - menuHeight - MENU_MARGIN);

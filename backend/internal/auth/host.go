@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"infinite-canvas/backend/internal/model"
@@ -43,8 +44,10 @@ func (nopHost) RequestRetryAfter(context.Context, string, time.Duration) time.Du
 }
 
 type Service struct {
-	repo *repository.Repository
-	host Host
+	repo            *repository.Repository
+	host            Host
+	portableAdminMu sync.Mutex
+	portableAdminID string
 }
 
 func New(repo *repository.Repository, host Host) *Service {

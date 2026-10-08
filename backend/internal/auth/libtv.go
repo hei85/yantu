@@ -243,14 +243,10 @@ func (s *Service) TestLibTV(actor *model.User, projectUUID string) error {
 	return err
 }
 
-func (s *Service) ImportLibTV(userID, canvasProjectID, projectUUID string) (*LibTVImportResult, error) {
+func (s *Service) ImportLibTV(userID, projectUUID string) (*LibTVImportResult, error) {
 	userID = strings.TrimSpace(userID)
-	canvasProjectID = strings.TrimSpace(canvasProjectID)
-	if userID == "" || canvasProjectID == "" {
-		return nil, kernel.Unauthorized("请先打开已同步的" + s.host.BrandName() + "画布")
-	}
-	if _, err := s.repo.CanvasProjectForUser(userID, canvasProjectID); err != nil {
-		return nil, err
+	if userID == "" {
+		return nil, kernel.Unauthorized("请先登录")
 	}
 	_, value, err := s.readLibTVSetting()
 	if err != nil {

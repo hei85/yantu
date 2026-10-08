@@ -1,4 +1,4 @@
-import { groupModelsByDisplayName, type DisplayModelGroup } from "@/lib/model-selection";
+import { compatibleModelInGroup, groupModelsByDisplayName, modelCompatibilityError, type DisplayModelGroup, type ModelRequirements } from "@/lib/model-selection";
 import { modelIcon, modelOptionName, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, type AiConfig } from "@/stores/use-config-store";
 
 export type ModelPickerGroup = {
@@ -47,4 +47,28 @@ export function groupModelsForPicker(config: AiConfig, options: string[]): Model
         });
     }
     return groups;
+}
+
+export type ModelPickerOptionResolution = {
+    /** 组内真正可选的模型；为空表示当前输入下整组不可用。 */
+    model: string;
+    displayModel: string;
+    /** 不可用时的人类可读原因，必须非空（用户反馈过“暗按钮点不了又不说明原因”）。 */
+    disabledReason: string;
+};
+
+/** 解析模型分组当前是否可选；不可选时必须给出具体原因，供选择器显示与测试断言。 */
+export function resolveModelPickerOption(input: {
+    config: AiConfig;
+    models: string[];
+    requirements?: ModelRequirements;
+    current?: string;
+    selected: boolean;
+}): ModelPickerOptionResolution {
+    const { config, models, requirements, current, selected } = input;
+    const first = models[0] || "";
+    const model = compatibleModelInGroup(config, models, requirements, selected ? current : undefined);
+    const displayModel = model || (selected ? current || first : first);
+    const disabledReason = model ? "" : modelCompatibilityError(config, first, requirements) || "当前输入不符合该模型能力";
+    return { model, displayModel, disabledReason };
 }

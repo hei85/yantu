@@ -23,8 +23,8 @@ func TestDeleteAdminResourcesSupportsPartialSuccessAndBatchedReferences(t *testi
 	if err := db.Create(&resources).Error; err != nil {
 		t.Fatal(err)
 	}
-	canvas := model.CanvasProject{ID: "canvas-1", UserID: "user-1", Title: "广告分镜", PayloadJSON: `{"nodes":[{"data":{"storageKey":"resource:resource-blocked"}}]}`}
-	if err := db.Create(&canvas).Error; err != nil {
+	asset := model.Asset{ID: "asset-blocked", UserID: "user-1", Title: "广告分镜素材", PayloadJSON: `{"data":{"storageKey":"resource:resource-blocked"}}`}
+	if err := db.Create(&asset).Error; err != nil {
 		t.Fatal(err)
 	}
 	directoryPath := filepath.Join(dataDir, "resources", filepath.FromSlash(resources[0].ObjectKey))
@@ -39,7 +39,7 @@ func TestDeleteAdminResourcesSupportsPartialSuccessAndBatchedReferences(t *testi
 	if len(result.Deleted) != 1 || result.Deleted[0] != "resource-free" {
 		t.Fatalf("deleted = %#v", result.Deleted)
 	}
-	if len(result.Blocked) != 1 || result.Blocked[0].ID != "resource-blocked" || len(result.Blocked[0].References) != 1 || result.Blocked[0].References[0].Kind != "画布" {
+	if len(result.Blocked) != 1 || result.Blocked[0].ID != "resource-blocked" || len(result.Blocked[0].References) != 1 || result.Blocked[0].References[0].Kind != "素材" {
 		t.Fatalf("blocked = %#v", result.Blocked)
 	}
 	assertModelCount(t, db, &model.Resource{}, "id = ?", 0, "resource-free")

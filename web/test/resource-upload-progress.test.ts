@@ -20,6 +20,21 @@ test("普通 multipart 将传输进度换算为文件字节，总量未知不伪
     }
 });
 
+test("普通 multipart 将已验证的 WebM 实测时长提交给资源库", async () => {
+    const adapter = apiClient.defaults.adapter;
+    try {
+        apiClient.defaults.adapter = async (config) => {
+            expect(config.data).toBeInstanceOf(FormData);
+            expect((config.data as FormData).get("durationMs")).toBe("613");
+            return { config, status: 200, statusText: "OK", headers: {}, data: { code: 0, data: { resource: { id: "webm-duration", durationMs: 613 } } } };
+        };
+        const resource = await uploadResourceFile(new Blob([new Uint8Array(32)], { type: "video/webm" }), "video", { durationMs: 613 });
+        expect(resource.durationMs).toBe(613);
+    } finally {
+        apiClient.defaults.adapter = adapter;
+    }
+});
+
 test("分片上传累加片内真实进度，传输 100% 后仍须等待合并响应", async () => {
     const adapter = apiClient.defaults.adapter;
     const size = 51 * 1024 * 1024;

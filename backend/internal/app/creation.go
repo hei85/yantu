@@ -141,11 +141,6 @@ func (s *Service) CreateCreationRun(userID string, req CreationRequest) (*Creati
 	if err := validateCreationJSON(req.State); err != nil {
 		return nil, err
 	}
-	if req.CanvasID != "" {
-		if _, err := s.repo.CanvasProjectForUser(userID, req.CanvasID); err != nil {
-			return nil, creationError(err)
-		}
-	}
 	b, _ := json.Marshal(req.State)
 	run := model.CreationRun{ID: newID(), UserID: userID, ClientKey: req.ClientKey, CreateHash: creationHash([]any{req.CanvasID, req.State}), CanvasID: req.CanvasID, Revision: 1, Status: "idle", StateJSON: string(b)}
 	if old, e := s.repo.CreationRunByClientKey(userID, req.ClientKey); e == nil {
@@ -277,17 +272,6 @@ func (s *Service) ChangeCreationRun(userID, id, action string, req CreationReque
 				run.ApprovedProposalHash = hash
 				run.ApprovedAt = &now
 				run.ApprovedCanvasJSON = ""
-				if run.CanvasID != "" {
-					canvas, e := repo.CanvasProjectForUser(userID, run.CanvasID)
-					if e != nil {
-						return e
-					}
-					baseline, e := creationApprovalBaseline(canvas.PayloadJSON, req.Ops)
-					if e != nil {
-						return e
-					}
-					run.ApprovedCanvasJSON = baseline
-				}
 			case "proposal-invalidate":
 				if req.Revision != run.Revision {
 					return repository.ErrCreationConflict
@@ -336,10 +320,10 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 	if err := validateCreationJSON(req); err != nil {
 		return nil, "", err
 	}
-	if req.Type != "canvas_text" && req.Type != "text" && req.Type != "canvas_image" && req.Type != "canvas_video" {
+	if req.Type != "canvas_text" && req.Type != "text" && req.Type != "canvas_image" && req.Type != "canvas_video" && req.Type != "canvas_audio" {
 		return nil, "", BadAuthRequest("智能创作任务类型不受支持")
 	}
-	expectedMode := map[string]string{"text": "text", "canvas_text": "text", "canvas_image": "image", "canvas_video": "video"}[req.Type]
+	expectedMode := map[string]string{"text": "text", "canvas_text": "text", "canvas_image": "image", "canvas_video": "video", "canvas_audio": "audio"}[req.Type]
 	if stringValue(req.Input["mode"]) != expectedMode || strings.TrimSpace(stringValue(req.Input["prompt"])) != strings.TrimSpace(req.Prompt) {
 		return nil, "", BadAuthRequest("任务类型、模式和实际提示词必须一致")
 	}
@@ -351,30 +335,6 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 	}
 	if req.Input["mask"] != nil {
 		return nil, "", BadAuthRequest("本期智能创作暂不支持蒙版任务")
-	}
-	if expectedMode != "text" {
-		canvas, e := s.repo.CanvasProjectForUser(userID, req.ProjectID)
-		if e != nil {
-			return nil, "", creationError(e)
-		}
-		doc, e := creationDocument(canvas.PayloadJSON)
-		if e != nil {
-			return nil, "", e
-		}
-		nodes, e := creationObjects(doc["nodes"])
-		if e != nil {
-			return nil, "", e
-		}
-		if refs, ok := req.Input["referenceImages"].([]any); ok {
-			for _, raw := range refs {
-				ref, _ := raw.(map[string]any)
-				node := nodes[stringValue(ref["id"])]
-				meta, _ := node["metadata"].(map[string]any)
-				if node == nil || node["type"] != "image" || meta["status"] != "success" || stringValue(ref["storageKey"]) != stringValue(meta["storageKey"]) {
-					return nil, "", creationConflict("参考素材已变化或尚未就绪")
-				}
-			}
-		}
 	}
 	for _, name := range []string{"referenceImages", "referenceVideos", "referenceAudios"} {
 		if list, ok := req.Input[name].([]any); ok {

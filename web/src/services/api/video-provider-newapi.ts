@@ -7,23 +7,26 @@ import type { ReferenceImage } from "@/types/image";
 
 import type { ApiEnvelope, ApiVideoResponse, RequestOptions, ResolvedAiConfig, VideoGenerationTask, VideoGenerationTaskState } from "./video-contracts";
 import type { VideoProviderDeps } from "./video-provider-deps";
-import { normalizeVideoSeconds, normalizeVideoSize } from "./video-validation";
+import { orderVideoImageReferences } from "./video-reference-roles";
+import { normalizeVideoAspectRatio, normalizeVideoSeconds } from "./video-validation";
 
 export async function createVideoGenerationsTask(deps: VideoProviderDeps, config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
     if (references.length > 9 || videoReferences.length > 3 || audioReferences.length > 3) throw new Error("NewAPI Video Generations 最多支持 9 张参考图、3 个参考视频和 3 个参考音频");
     if (audioReferences.length > 0 && videoReferences.length === 0) throw new Error("NewAPI Video Generations 的参考音频必须同时提供至少 1 个参考视频；纯音频生视频请切换到支持该模式的渠道");
+    const orderedReferences = orderVideoImageReferences(references, options);
     const [imageUrls, videoUrls, audioUrls] = await Promise.all([
-        Promise.all(references.map((item) => resolveVideoGenerationsUrl(item.url || item.dataUrl, item.storageKey))),
+        Promise.all(orderedReferences.map((item) => resolveVideoGenerationsUrl(item.url || item.dataUrl, item.storageKey))),
         Promise.all(videoReferences.map((item) => resolveVideoGenerationsUrl(item.url, item.storageKey))),
         Promise.all(audioReferences.map((item) => resolveVideoGenerationsUrl(item.url, item.storageKey))),
     ]);
     const profile = modelCapabilityConfigFor(config, model).video!;
     const resolution = newAPIVideoResolutionRequest(profile, config.vquality, modelOptionName(model));
+    const aspectRatio = normalizeVideoAspectRatio(config.size);
     const payload = {
         model: modelOptionName(model),
         prompt: prompt.trim(),
         seconds: normalizeVideoSeconds(config.videoSeconds),
-        aspect_ratio: normalizeVideoSize(config.size) || "16:9",
+        ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}),
         ...(resolution ? { resolution } : {}),
         ...(profile.generateAudio.supported ? { generate_audio: boolConfig(config.videoGenerateAudio, profile.generateAudio.default) } : {}),
         ...(imageUrls.length ? { image_urls: imageUrls } : {}),

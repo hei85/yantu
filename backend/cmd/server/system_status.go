@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"infinite-canvas/backend/internal/app"
 	"infinite-canvas/backend/internal/buildinfo"
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/service"
@@ -21,14 +22,15 @@ type systemStatus struct {
 }
 
 type systemStatusSnapshot struct {
-	Status            string                `json:"status"`
-	Ready             bool                  `json:"ready"`
-	Started           bool                  `json:"started"`
-	Draining          bool                  `json:"draining"`
-	ActiveWorkerTasks int64                 `json:"activeWorkerTasks"`
-	Build             buildinfo.Info        `json:"build"`
-	Schema            database.SchemaStatus `json:"schema"`
-	Checks            systemStatusChecks    `json:"checks"`
+	Status            string                 `json:"status"`
+	Ready             bool                   `json:"ready"`
+	Started           bool                   `json:"started"`
+	Draining          bool                   `json:"draining"`
+	ActiveWorkerTasks int64                  `json:"activeWorkerTasks"`
+	Build             buildinfo.Info         `json:"build"`
+	Schema            database.SchemaStatus  `json:"schema"`
+	Features          app.ProductionFeatures `json:"features"`
+	Checks            systemStatusChecks     `json:"checks"`
 }
 
 type systemStatusChecks struct {
@@ -56,6 +58,7 @@ func (s *systemStatus) snapshot(ctx context.Context) systemStatusSnapshot {
 		Draining: s.draining.Load(),
 		Build:    buildinfo.Current(),
 		Schema:   database.SchemaStatus{Expected: database.CurrentSchemaVersion},
+		Features: app.ProductionFeaturesFromEnv(),
 	}
 	if s.service != nil {
 		snapshot.ActiveWorkerTasks = s.service.ActiveWorkerTasks()

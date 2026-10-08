@@ -93,10 +93,14 @@ describe("统一图片分辨率与宽高比", () => {
 
     test("常用比例保持明确尺寸，等价比例归一", () => {
         expect(imagePresetForRatio("1k", "16:9").size).toBe("1824x1024");
+        expect(imagePresetForRatio("1k", "21:9").size).toBe("2016x864");
         expect(imagePresetForRatio("4k", "9:16").size).toBe("2160x3840");
         expect(imagePresetForRatio("1k", "32：18")).toEqual(imagePresetForRatio("1k", "16:9"));
         expect(imagePresetForRatio("2k", "7:3").ratio).toBe("21:9");
         expect(imagePresetForRatio("2k", "34:22").ratio).toBe("17:11");
+        const defaults = defaultImageCapabilityConfig();
+        expect(defaults.size.values).toContain("2016x864");
+        expect(defaults.size.values).not.toContain("2048x878");
     });
 
     test("三档预设与任意合理比例都满足像素范围", () => {
@@ -204,6 +208,70 @@ describe("统一图片分辨率与宽高比", () => {
         expect(empty).not.toContain('class="image-size-label"');
         expect(empty).toContain("自动尺寸");
         expect(empty).toContain("自定义比例或尺寸");
+    });
+
+    test("旧单一 1K 预设允许自定义时补比例快捷项但不增加分辨率档", () => {
+        const profile = defaultImageCapabilityConfig();
+        profile.size = imageSizeConfigWithPresets(profile, [imagePresetForRatio("1k", "1:1")]);
+        profile.size.allowCustom = true;
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={profile} size="1024x1024" onChange={() => {}} />);
+        expect(picker).toMatch(/<button[^>]*>1K/);
+        expect(picker).not.toMatch(/<button[^>]*>[24]K/);
+        expect(picker).toContain('title="16:9 · 1824 × 1024"');
+        expect(picker).toContain('title="9:16 · 1024 × 1824"');
+    });
+
+    test("自定义 size profile 无显式预设时从原像素档补比例快捷项", () => {
+        const profile = defaultImageCapabilityConfig("openai-image", "gpt-image-2");
+        profile.size = { parameter: "size", values: ["1024x1024"], default: "1024x1024", allowCustom: true };
+        const presets = imageSizePresets(profile);
+        const wide = presets.find((preset) => preset.ratio === "16:9");
+        expect(presets.find((preset) => preset.size === "1024x1024")).toMatchObject({ tier: "1k", ratio: "1:1" });
+        expect(wide).toMatchObject({ tier: "1k", size: "1824x1024" });
+        expect(imagePresetValue(profile, wide!)).toBe("1824x1024");
+
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={profile} size="1024x1024" onChange={() => {}} />);
+        expect(picker).toMatch(/<button[^>]*>1K/);
+        expect(picker).not.toMatch(/<button[^>]*>[24]K/);
+        expect(picker).toContain('title="16:9 · 1824 × 1024"');
+    });
+
+    test("aspect_ratio 自定义快捷项只使用旧预设已启用的 tier", () => {
+        const profile = defaultImageCapabilityConfig("gemini-image", "test");
+        profile.quality = { supported: false, values: [], default: "auto" };
+        profile.size = imageSizeConfigWithPresets(profile, [imagePresetForRatio("1k", "1:1")]);
+        profile.size.allowCustom = true;
+        const wide = imageSizePresets(profile).find((preset) => preset.ratio === "16:9" && preset.tier === "1k");
+        expect(wide).toBeDefined();
+        expect(imageTierAvailable(profile, "2k")).toBe(false);
+        expect(imagePresetValue(profile, wide!)).toBe("16:9");
+        expect(resolveImageRequestSize(profile, undefined, "16:9")).toEqual({ parameter: "aspect_ratio", value: "16:9" });
+
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={profile} size="1:1" onChange={() => {}} />);
+        expect(picker).toMatch(/<button[^>]*>1K/);
+        expect(picker).not.toMatch(/<button[^>]*>[24]K/);
+        expect(picker).toContain('title="16:9 · 1824 × 1024"');
+
+        const qualityTierProfile = defaultImageCapabilityConfig("gemini-image", "test");
+        qualityTierProfile.quality = { supported: true, values: ["medium"], default: "medium" };
+        qualityTierProfile.size = { parameter: "aspect_ratio", values: ["1:1"], default: "1:1", allowCustom: true };
+        const qualityTierPresets = imageSizePresets(qualityTierProfile);
+        expect(qualityTierPresets.some((preset) => preset.ratio === "16:9" && preset.tier === "2k")).toBe(true);
+        expect(new Set(qualityTierPresets.map((preset) => preset.tier))).toEqual(new Set(["2k"]));
+    });
+
+    test("没有可解析像素或声明分辨率时不从 allowCustom 凭空增加 tier", () => {
+        const sizeProfile = defaultImageCapabilityConfig("openai-image", "custom-no-tier");
+        sizeProfile.size = { parameter: "size", values: ["auto", "1:1"], default: "auto", allowCustom: true };
+        expect(imageSizePresets(sizeProfile)).toEqual([]);
+        const picker = renderToStaticMarkup(<ImageSizePicker profile={sizeProfile} size="auto" onChange={() => {}} />);
+        expect(picker).not.toMatch(/<button[^>]*>[124]K/);
+
+        const ratioProfile = defaultImageCapabilityConfig("gemini-image", "custom-no-tier");
+        ratioProfile.quality = { supported: false, values: [], default: "auto" };
+        ratioProfile.size = { parameter: "aspect_ratio", values: ["1:1"], default: "1:1", allowCustom: true };
+        expect(imageSizePresets(ratioProfile)).toEqual([]);
+        expect(imageTierAvailable(ratioProfile, "1k")).toBe(false);
     });
 
     test("管理员比例直接点选和输入，默认输出不再使用下拉框", () => {

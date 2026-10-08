@@ -24,8 +24,141 @@ tags:
   - name: assets
   - name: models
   - name: agent
+  - name: production
+  - name: skills
   - name: admin
 paths:
+  /skills/{id}/package:
+    put:
+      tags: [skills]
+      summary: 上传已有 ZIP 技能的新版本
+      description: 仅技能作者可上传。保留原技能 ID，并将 ZIP 解析为新的不可变技能包版本。
+      operationId: updateZipSkillPackage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 已将新 ZIP 包追加为该技能的当前版本，旧版本及用户引用保留
+        "400":
+          description: 技能不存在、不是 ZIP 技能或上传包无效/超过大小限制
+        "403":
+          description: 当前用户不是技能作者
+  /production-runs/{id}/steps/result:
+    post:
+      tags: [production]
+      summary: 记录制作质检步骤结果
+      description: |
+        将实际执行的程序质检、语义质检或连续性检查证据写回已有的 check/verify 步骤。状态由 checks 推导，使用 expectedRevision 做并发控制。
+        quality/continuity 步骤必须包含 semanticQuality；缺少或 unavailable 时记录 uncertain，不能将缺失的语义证据标成成功。
+        证据限制为 64 KiB JSON，不能包含凭证字段或媒体 URL。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedRevision, stepId, evidence]
+              properties:
+                expectedRevision:
+                  type: integer
+                  minimum: 0
+                stepId:
+                  type: string
+                  minLength: 1
+                evidence:
+                  type: object
+                  required: [checks]
+                  properties:
+                    checks:
+                      type: array
+                      minItems: 1
+                      maxItems: 200
+                      items:
+                        type: object
+                        required: [name, status]
+                        properties:
+                          name:
+                            type: string
+                          status:
+                            type: string
+                            enum: [passed, failed, uncertain]
+                    semanticQuality:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                          enum: [passed, failed, uncertain, unavailable]
+                  additionalProperties: true
+      responses:
+        "200":
+          description: 已记录证据并返回更新后的 ProductionRun
+        "400":
+          description: 证据格式无效或超出限制
+        "404":
+          description: 制作运行不存在或不属于当前用户
+        "409":
+          description: run 版本已变化、步骤类型错误或依赖尚未完成
+  /production-runs/{id}/steps/render:
+    post:
+      tags: [production]
+      summary: 按 ProductionPlan 提交主时间线渲染
+      description: |
+        只接受当前 run 中 Kind=render 的有效步骤，并核对依赖、revision、重试 lineage、完整 manifest、分镜片段/音轨/字幕与最新成功生成任务的真实资源绑定。
+        相同 idempotencyKey 和请求正文只返回原 attempt/task；不确定 attempt 不会重新排队。新 attempt 通过 retryOf 指向最近一次已结清 attempt。
+        输出画幅和帧率必须符合已固化的 Brief 与 ProductionPlan 时间基准。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedRevision, stepId, idempotencyKey, timeline]
+              properties:
+                expectedRevision: { type: integer, minimum: 0 }
+                stepId: { type: string, minLength: 1 }
+                idempotencyKey: { type: string, minLength: 1, maxLength: 120 }
+                retryOf: { type: string }
+                timeline:
+                  type: object
+                  required: [projectId, timeline]
+                  properties:
+                    projectId: { type: string, minLength: 1 }
+                    timeline:
+                      type: object
+                      description: TimelineProject；视频 clip 带 storyboardRowId/segmentId，音频和字幕 clip 带 storyboardRowId，并通过 directMedia.storageKey 引用对应生成任务的 resource:<id>
+                      additionalProperties: true
+                    output: { type: object, additionalProperties: true }
+      responses:
+        "200": { description: 返回持久化 render attempt 与 taskId；幂等重放返回同一任务 }
+        "400": { description: 时间线或交付参数无效 }
+        "404": { description: run 或资源不存在或无权访问 }
+        "409": { description: revision、步骤依赖、绑定清单、画幅或幂等键冲突 }
   /model-catalog:
     get:
       tags: [models]
@@ -91,111 +224,6 @@ paths:
                                     default: ""
         "401":
           $ref: "#/components/responses/Error"
-  /canvas-projects/{id}:
-    parameters:
-      - in: path
-        name: id
-        required: true
-        schema: { type: string }
-    get:
-      tags: [canvas]
-      summary: 读取当前用户画布内容和 revision
-      responses:
-        "200":
-          description: 信封 data.project 包含完整画布及服务端 revision
-        "404":
-          description: 画布不存在或不属于当前用户
-    put:
-      tags: [canvas]
-      summary: 按 revision 保存画布内容
-      description: 新建传 revision 0，更新传读取到的版本；成功原子加 1。忽略客户端 viewport 和 remoteContentHash，updatedAt 由服务端生成。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [project]
-              properties:
-                project:
-                  type: object
-                  required: [id, revision]
-                  properties:
-                    id: { type: string }
-                    revision: { type: integer, format: int64, minimum: 0 }
-                  additionalProperties: true
-      responses:
-        "200":
-          description: 信封 data.project 返回摘要及递增后的 revision
-        "400":
-          description: 请求、版本或素材引用不合法
-        "409":
-          description: 版本或资源状态冲突，原内容未被覆盖；保留草稿后加载最新版
-        "428":
-          description: 缺少 revision，需刷新客户端并重新读取
-  /canvas-projects/{id}/history:
-    get:
-      tags: [canvas]
-      summary: 读取当前画布版本与最近 20 份历史摘要
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: 信封 data 包含 currentRevision 和 snapshots；每项含 id、revision、title、nodeCount、connectionCount、payloadBytes、reason、contentUpdatedAt、createdAt，不含正文
-        "404":
-          description: 画布不存在或无权访问
-  /canvas-projects/{id}/history/{snapshotId}:
-    get:
-      tags: [canvas]
-      summary: 按需读取历史正文
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-        - in: path
-          name: snapshotId
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: 信封 data 包含 snapshot 摘要和 project 正文
-        "404":
-          description: 画布或快照不存在、已过期或无权访问
-  /canvas-projects/{id}/history/{snapshotId}/restore:
-    post:
-      tags: [canvas]
-      summary: 备份当前内容并将历史内容恢复为新版本
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-        - in: path
-          name: snapshotId
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [revision]
-              properties:
-                revision: { type: integer, format: int64, minimum: 1 }
-      responses:
-        "200":
-          description: 信封 data.project 返回恢复后的摘要及新 revision；当前 ID、归属与项目关联保留
-        "404":
-          description: 画布或快照不存在、已过期或无权访问
-        "409":
-          description: 当前版本或素材状态已变化，恢复未执行
-        "428":
-          description: 缺少当前 revision
   /public/welcome:
     get:
       tags: [meta]
@@ -344,13 +372,31 @@ paths:
       responses:
         "200":
           description: text/event-stream
-  /assets:
+  /resources/{id}/probe:
     get:
-      tags: [assets]
-      summary: 用户素材库
+      tags: [resources]
+      summary: 探测用户媒体资源
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: decode
+          schema: { type: boolean, default: false }
+          description: 为 true 时执行完整解码；视频额外解码首、中、尾帧并返回样本证据。
       responses:
         "200":
-          $ref: "#/components/responses/Envelope"
+          description: 媒体探测结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ResourceProbeResult"
 components:
   securitySchemes:
     sessionCookie:
@@ -402,6 +448,37 @@ components:
                 - provider_request_failed
                 - model_catalog_mismatch
                 - invalid_model_selection
+    ResourceProbeResult:
+      type: object
+      required: [resourceId, mediaType, probe]
+      properties:
+        resourceId: { type: string }
+        mediaType: { type: string }
+        probe:
+          $ref: "#/components/schemas/ResourceProbeReport"
+    ResourceProbeReport:
+      type: object
+      properties:
+        durationMs: { type: integer, format: int64 }
+        videoStreams: { type: integer }
+        audioStreams: { type: integer }
+        subtitleStreams: { type: integer }
+        width: { type: integer }
+        height: { type: integer }
+        decoded: { type: boolean }
+        videoFrameSamples:
+          type: array
+          description: decode=true 且资源含视频流时，必须包含已解码的 start/middle/end 样本。
+          items:
+            $ref: "#/components/schemas/MediaVideoFrameSample"
+    MediaVideoFrameSample:
+      type: object
+      required: [position, timestampMs, decoded, imageBytes]
+      properties:
+        position: { type: string, enum: [start, middle, end] }
+        timestampMs: { type: integer, format: int64 }
+        decoded: { type: boolean }
+        imageBytes: { type: integer, format: int64 }
   responses:
     Envelope:
       description: 业务成功信封

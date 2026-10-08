@@ -1,8 +1,7 @@
 import { Popover } from "antd";
 import { Switch } from "@/components/ui/base/switch";
-import { LogIn, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 
 import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
 import { WorkspaceAccountCard } from "./workspace-account-card";
@@ -15,12 +14,7 @@ export function WorkspaceAccountMenu() {
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const user = useUserStore((state) => state.user);
-    const hydrated = useUserStore((state) => state.hydrated);
     const [menuOpen, setMenuOpen] = useState(false);
-
-    if (!hydrated) {
-        return <span className="size-9 animate-pulse rounded-[var(--r-md)] bg-foreground/[.06]" aria-hidden />;
-    }
 
     return user ? (
         <><Popover
@@ -49,9 +43,5 @@ export function WorkspaceAccountMenu() {
                 <UserAvatar user={user} className="size-6" />
             </button>
         </Popover></>
-    ) : (
-        <Link to="/login" className="app-workspace-topbar-icon-button" aria-label="登录" title="登录">
-            <LogIn />
-        </Link>
-    );
+    ) : null;
 }

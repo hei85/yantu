@@ -31,6 +31,19 @@ func TestPromptOperationCatalogContainsProductJobs(t *testing.T) {
 	}
 }
 
+func TestStoryboardContractRequiresChineseSingleShotPrompts(t *testing.T) {
+	contract := StoryboardExecutionContract("单镜头 14 秒", "共 15 镜")
+	for _, want := range []string{"简体中文", "一镜一镜生成", "九宫格"} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("StoryboardExecutionContract() 缺少规则 %q", want)
+		}
+	}
+	template := DefaultStoryboardPromptTemplate()
+	if !strings.Contains(template, "简体中文") || !strings.Contains(template, "一个镜头") {
+		t.Fatalf("DefaultStoryboardPromptTemplate() 缺少中文与单镜约束")
+	}
+}
+
 func TestRenderShortDramaTemplateSubstitutesVariables(t *testing.T) {
 	definition, ok := PromptDefinition(OperationShortDramaOutline)
 	if !ok {
@@ -78,5 +91,17 @@ func TestValidatePromptTemplateResultSkillDraft(t *testing.T) {
 	protected := protectedPromptContext(OperationSkillDraft, map[string]string{"用户想法": "做一个电商主图技能"})
 	if !strings.Contains(protected, "做一个电商主图技能") || !strings.Contains(protected, "skill-draft/v1") {
 		t.Fatalf("protectedPromptContext() = %q, want idea and JSON contract", protected)
+	}
+}
+
+func TestCharacterTurnaroundTemplateRequiresFrontFaceAlongsideThreeViews(t *testing.T) {
+	definition, ok := PromptDefinition(OperationCharacterTurnaround)
+	if !ok {
+		t.Fatal("character_turnaround definition missing")
+	}
+	for _, want := range []string{"正面脸部特写", "正面全身", "不得只画三视图而省略正脸特写"} {
+		if !strings.Contains(definition.DefaultContent, want) {
+			t.Fatalf("角色三视图模板缺少 %q，三视图必须和正脸特写同一张图输出", want)
+		}
 	}
 }

@@ -220,7 +220,7 @@ export function CanvasNodeToolbar({
     const isImage = node.type === CanvasNodeType.Image;
     const isVideo = node.type === CanvasNodeType.Video;
     const isAudio = node.type === CanvasNodeType.Audio;
-    const hasImage = isImage && Boolean(node.metadata?.content);
+    const hasImage = isImage && Boolean(node.metadata?.content || node.metadata?.storageKey);
     const copyImagePrompt = (target: CanvasNodeData) => {
         const prompt = target.metadata?.prompt?.trim();
         if (!prompt) {
@@ -493,7 +493,7 @@ function NodeDockMenuButton({ menuId, label, icon, tools, openMenuId, onOpenChan
     );
 }
 
-export function CanvasNodeInfoModal({ node, open, onClose, onMetadataChange, readOnly = false, onUnauthorized }: { node: CanvasNodeData | null; open: boolean; onClose: () => void; onMetadataChange?: (nodeId: string, metadata: Partial<CanvasNodeMetadata>) => void; readOnly?: boolean; onUnauthorized?: () => void }) {
+export function CanvasNodeInfoModal({ node, open, onClose, onMetadataChange }: { node: CanvasNodeData | null; open: boolean; onClose: () => void; onMetadataChange?: (nodeId: string, metadata: Partial<CanvasNodeMetadata>) => void }) {
     const theme = canvasThemes[useActiveTheme()];
     const [assetTags, setAssetTags] = useState<string[]>([]);
     const [assetTagInput, setAssetTagInput] = useState("");
@@ -574,7 +574,7 @@ export function CanvasNodeInfoModal({ node, open, onClose, onMetadataChange, rea
                                     <div className="canvas-node-inspector-options">
                                         {assetCategoryOptions.map((option) => {
                                             const active = assetCategory === option.value;
-                                            return <button key={option.value} type="button" disabled={readOnly} aria-pressed={active} onClick={() => saveAssetCategory(option.value)} className={active ? "is-active" : ""}>{option.label}</button>;
+                                            return <button key={option.value} type="button" aria-pressed={active} onClick={() => saveAssetCategory(option.value)} className={active ? "is-active" : ""}>{option.label}</button>;
                                         })}
                                     </div>
                                     <p className="canvas-node-inspector-help">生成后会按此分类进入项目资产；角色、场景和画风工作流会自动预填。</p>
@@ -614,30 +614,26 @@ export function CanvasNodeInfoModal({ node, open, onClose, onMetadataChange, rea
                                         </div>
                                         <em>{assetTags.length} 条</em>
                                     </div>
-                                    {readOnly ? (
-                                        <div className="canvas-node-inspector-notice">分享画布为只读，标签无法编辑。</div>
-                                    ) : (
-                                        <div className="canvas-node-inspector-tag-editor">
-                                            <Input
-                                                value={assetTagInput}
-                                                placeholder="例如：角色: 张三"
-                                                onChange={(event) => setAssetTagInput(event.target.value)}
-                                                onPressEnter={addAssetTag}
-                                            />
-                                            <Button type="primary" icon={<Plus className="size-4" />} disabled={!assetTagInput.trim()} onClick={addAssetTag}>
-                                                加入
-                                            </Button>
-                                        </div>
-                                    )}
+                                    <div className="canvas-node-inspector-tag-editor">
+                                        <Input
+                                            value={assetTagInput}
+                                            placeholder="例如：角色: 张三"
+                                            onChange={(event) => setAssetTagInput(event.target.value)}
+                                            onPressEnter={addAssetTag}
+                                        />
+                                        <Button type="primary" icon={<Plus className="size-4" />} disabled={!assetTagInput.trim()} onClick={addAssetTag}>
+                                            加入
+                                        </Button>
+                                    </div>
                                     <div className="canvas-node-inspector-tags">
                                         {assetTags.length ? (
                                             assetTags.map((tag) => (
-                                                <Tag key={tag} closable={!readOnly} onClose={() => (readOnly ? onUnauthorized?.() : removeAssetTag(tag))} className="!m-0 !rounded-lg !px-2 !py-1 !text-sm">
+                                                <Tag key={tag} closable onClose={() => removeAssetTag(tag)} className="!m-0 !rounded-lg !px-2 !py-1 !text-sm">
                                                     {tag}
                                                 </Tag>
                                             ))
                                         ) : (
-                                            <span className="canvas-node-inspector-empty-label">{readOnly ? "暂无标签" : "还没有标签，输入后点击“加入”或按 Enter。"}</span>
+                                            <span className="canvas-node-inspector-empty-label">还没有标签，输入后点击“加入”或按 Enter。</span>
                                         )}
                                     </div>
                                 </section>

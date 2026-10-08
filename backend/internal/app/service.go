@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"infinite-canvas/backend/internal/auth"
-	"infinite-canvas/backend/internal/canvas"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/platform"
@@ -63,7 +62,6 @@ type Service struct {
 	skills                   *skills.Service
 	prompts                  *prompts.Service
 	auth                     *auth.Service
-	canvas                   *canvas.Service
 }
 
 const taskWorkerConcurrency = 3
@@ -105,7 +103,6 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 	service.skills = skills.New(service.repo, service.dataDir, service.runWorkerLoop)
 	service.prompts = prompts.New(service.repo, promptAdminGate{svc: service})
 	service.auth = auth.New(service.repo, authHost{svc: service})
-	service.canvas = canvas.New(service.repo, canvasHost{svc: service})
 	service.platform = platform.New(service.repo, coordinator, platformHost{svc: service})
 	return service
 }
@@ -119,6 +116,7 @@ func (s *Service) StartWorker() {
 	s.taskWorker().start(ctx)
 	s.startResourceDeletionWorker(ctx)
 	s.startSkillSyncWorker(ctx)
+	s.startProductionReconciler(ctx)
 }
 
 func (s *Service) BeginDrain() { s.backgroundWorkers().BeginDrain() }

@@ -73,7 +73,7 @@ func TestSaveAdminChannelModelPersistsAndPublishesIcon(t *testing.T) {
 	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{
 		ModelKey: "gpt-test", DisplayName: "GPT Test", Icon: "OpenAI", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
 		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "gpt-test"),
-		Variants:       []ChannelModelVariantRequest{{Enabled: &enabled}}, Enabled: &enabled,
+		Variants:         []ChannelModelVariantRequest{{Enabled: &enabled}}, Enabled: &enabled,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +98,125 @@ func TestSaveAdminChannelModelPersistsAndPublishesIcon(t *testing.T) {
 	legacyPublic := publicChannel(channel, false, []model.ChannelModel{*saved})
 	if len(legacyPublic.ModelCosts) != 1 || legacyPublic.ModelCosts[0].Icon != "OpenAI" {
 		t.Fatalf("legacy public model costs = %#v", legacyPublic.ModelCosts)
+	}
+}
+
+func TestSaveAdminChannelModelBumpsCapabilityVersionWhenExecutionIdentityChanges(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-revision", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Revision", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	request := ChannelModelRequest{
+		ModelKey: "revision-text", ProviderModelKey: "provider-v1", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
+		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "revision-text"),
+		Variants:         []ChannelModelVariantRequest{{Enabled: &enabled}}, Enabled: &enabled,
+	}
+	created, err := svc.SaveAdminChannelModel(admin, channel.ID, "", request)
+	if err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+	if created.CapabilityVersion == 0 {
+		t.Fatalf("new model capability version = %d, want nonzero", created.CapabilityVersion)
+	}
+	firstRevision := created.CapabilityVersion
+	request.ProviderModelKey = "provider-v2"
+	updated, err := svc.SaveAdminChannelModel(admin, channel.ID, created.ID, request)
+	if err != nil {
+		t.Fatalf("update provider identity: %v", err)
+	}
+	if updated.CapabilityVersion <= firstRevision {
+		t.Fatalf("capability version = %d after provider change, want greater than %d", updated.CapabilityVersion, firstRevision)
+	}
+	stableVersion := updated.CapabilityVersion
+	unchanged, err := svc.SaveAdminChannelModel(admin, channel.ID, created.ID, request)
+	if err != nil {
+		t.Fatalf("save unchanged model: %v", err)
+	}
+	if unchanged.CapabilityVersion != stableVersion {
+		t.Fatalf("unchanged model version = %d, want stable %d", unchanged.CapabilityVersion, stableVersion)
+	}
+}
+
+func TestSaveAdminChannelModelObservedEvidenceDoesNotBumpCapabilityVersion(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-observed", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Observed", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	request := ChannelModelRequest{
+		ModelKey: "observed-text", ProviderModelKey: "provider-v1", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
+		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "observed-text"),
+		Variants:         []ChannelModelVariantRequest{{Enabled: &enabled}}, Enabled: &enabled,
+	}
+	created, err := svc.SaveAdminChannelModel(admin, channel.ID, "", request)
+	if err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+	version := created.CapabilityVersion
+	request.CapabilityConfig.Observed = []CapabilityObservation{{
+		Verdict: "supported", Feature: "generated_audio", Source: "api_call_log",
+		Details: map[string]any{"hasAudio": true, "durationSeconds": float64(8)},
+	}}
+	withAudio, err := svc.SaveAdminChannelModel(admin, channel.ID, created.ID, request)
+	if err != nil {
+		t.Fatalf("save successful audio observation: %v", err)
+	}
+	if withAudio.CapabilityVersion != version {
+		t.Fatalf("version after audio observation = %d, want unchanged %d", withAudio.CapabilityVersion, version)
+	}
+	request.CapabilityConfig.Observed = append(request.CapabilityConfig.Observed, CapabilityObservation{
+		Verdict: "unsupported", Feature: "generated_audio", Reason: "成功响应没有音轨", Source: "api_call_log",
+		Details: map[string]any{"hasAudio": false, "durationSeconds": float64(8)},
+	})
+	withSilent, err := svc.SaveAdminChannelModel(admin, channel.ID, created.ID, request)
+	if err != nil {
+		t.Fatalf("save successful silent observation: %v", err)
+	}
+	if withSilent.CapabilityVersion != version {
+		t.Fatalf("version after silent observation = %d, want unchanged %d", withSilent.CapabilityVersion, version)
+	}
+	stored, err := svc.repo.ChannelModelByID(channel.ID, created.ID)
+	if err != nil {
+		t.Fatalf("reload model: %v", err)
+	}
+	config, err := DecodeModelCapabilityConfig(stored.CapabilityConfigJSON)
+	if err != nil || len(config.Observed) != 2 {
+		t.Fatalf("decode observations: err=%v observed=%#v", err, config)
+	}
+	if config.Observed[0].Details["hasAudio"] != true || config.Observed[0].Details["durationSeconds"] != float64(8) || config.Observed[1].Details["hasAudio"] != false {
+		t.Fatalf("observation details did not round-trip: %#v", config.Observed)
+	}
+}
+
+func TestSaveAdminChannelModelBumpsVersionWhenCapabilityContractChanges(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "channel-contract", UserID: admin.ID, Scope: model.ChannelScopeSystem, Enabled: true, Name: "Contract", BaseURL: "https://example.com/v1", APIKey: "key", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	request := ChannelModelRequest{
+		ModelKey: "contract-text", ProviderModelKey: "provider-v1", Capability: "text", Protocol: string(model.ChannelInterfaceChatCompletion),
+		CapabilityConfig: DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "contract-text"),
+		Variants:         []ChannelModelVariantRequest{{Enabled: &enabled}}, Enabled: &enabled,
+	}
+	created, err := svc.SaveAdminChannelModel(admin, channel.ID, "", request)
+	if err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+	request.CapabilityConfig.Text.References.MaxImages++
+	updated, err := svc.SaveAdminChannelModel(admin, channel.ID, created.ID, request)
+	if err != nil {
+		t.Fatalf("save changed contract: %v", err)
+	}
+	if updated.CapabilityVersion <= created.CapabilityVersion {
+		t.Fatalf("version after contract change = %d, want greater than %d", updated.CapabilityVersion, created.CapabilityVersion)
 	}
 }
 

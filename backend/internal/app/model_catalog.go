@@ -35,18 +35,19 @@ type PublicChannelCatalog struct {
 
 // PublicChannelModel 公开的渠道模型信息（脱敏）
 type PublicChannelModel struct {
-	ID               string                      `json:"id"`
-	ModelKey         string                      `json:"modelKey"`
-	ChannelLabel     string                      `json:"channelLabel"`
-	Description      string                      `json:"description"`
-	DisplayName      string                      `json:"displayName"`
-	SortOrder        int                         `json:"sortOrder"`
-	Icon             string                      `json:"icon"`
-	Capability       string                      `json:"capability"`
-	Protocol         model.ChannelInterfaceType  `json:"protocol"`
-	CapabilityConfig map[string]any              `json:"capabilityConfig,omitempty"`
-	Variants         []PublicChannelModelVariant `json:"variants"`
-	Available        bool                        `json:"available"`
+	ID                string                      `json:"id"`
+	ModelKey          string                      `json:"modelKey"`
+	ChannelLabel      string                      `json:"channelLabel"`
+	Description       string                      `json:"description"`
+	DisplayName       string                      `json:"displayName"`
+	SortOrder         int                         `json:"sortOrder"`
+	Icon              string                      `json:"icon"`
+	Capability        string                      `json:"capability"`
+	Protocol          model.ChannelInterfaceType  `json:"protocol"`
+	CapabilityVersion int64                       `json:"capabilityVersion"`
+	CapabilityConfig  map[string]any              `json:"capabilityConfig,omitempty"`
+	Variants          []PublicChannelModelVariant `json:"variants"`
+	Available         bool                        `json:"available"`
 }
 
 // PublicChannelModelVariant 公开的渠道模型规格档（脱敏）
@@ -81,6 +82,9 @@ func (s *Service) publicSystemChannelCatalog(intent *ModelRequestIntent) ([]Publ
 
 	result := make([]PublicChannelCatalog, 0, len(channels))
 	for _, channel := range channels {
+		if requireAxonChannel(&channel) != nil {
+			continue
+		}
 		if !channel.Enabled {
 			continue
 		}
@@ -137,6 +141,9 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 	if cm == nil {
 		return PublicChannelModel{}, fmt.Errorf("渠道模型为空")
 	}
+	if cm.Protocol == "" {
+		return PublicChannelModel{}, fmt.Errorf("渠道模型缺少请求协议")
+	}
 	// 仓储层已预加载规格档；这里只发布当前启用的可执行档位。
 	variants := cm.Variants
 
@@ -166,18 +173,19 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 	}
 
 	return PublicChannelModel{
-		ID:               cm.ID,
-		ModelKey:         cm.ModelKey,
-		ChannelLabel:     cm.ChannelLabel,
-		Description:      cm.Description,
-		DisplayName:      cm.DisplayName,
-		SortOrder:        cm.SortOrder,
-		Icon:             cm.Icon,
-		Capability:       cm.Capability,
-		Protocol:         cm.Protocol,
-		CapabilityConfig: capabilityConfig,
-		Variants:         publicVariants,
-		Available:        cm.Enabled,
+		ID:                cm.ID,
+		ModelKey:          cm.ModelKey,
+		ChannelLabel:      cm.ChannelLabel,
+		Description:       cm.Description,
+		DisplayName:       cm.DisplayName,
+		SortOrder:         cm.SortOrder,
+		Icon:              cm.Icon,
+		Capability:        cm.Capability,
+		Protocol:          cm.Protocol,
+		CapabilityVersion: cm.CapabilityVersion,
+		CapabilityConfig:  capabilityConfig,
+		Variants:          publicVariants,
+		Available:         cm.Enabled,
 	}, nil
 }
 

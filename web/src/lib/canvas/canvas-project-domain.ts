@@ -2,7 +2,7 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { PromptTemplateOperation } from "@/lib/prompts";
 import { STORYBOARD_HEADER_HEIGHT, STORYBOARD_ROW_HEIGHT, storyboardTableHeight } from "@/lib/canvas/canvas-storyboard-layout";
 import { normalizeStoryboardAssetBindings } from "@/lib/canvas/canvas-storyboard-assets";
-import { bindingForConnectedNode, storyboardComposerContent, storyboardRowReferenceNodeIds } from "@/lib/canvas/canvas-storyboard-materializer";
+import { bindingForConnectedNode, storyboardComposerContent, storyboardRowReferenceNodeIds, storyboardVideoOperation, storyboardVideoPrompt } from "@/lib/canvas/canvas-storyboard-materializer";
 import type { CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import type { NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { isFrameNode } from "@/lib/canvas/canvas-frame";
@@ -250,7 +250,7 @@ export function normalizeConnection(firstNodeId: string, secondNodeId: string, n
     return { fromNodeId: first.id, toNodeId: second.id };
 }
 
-export function attachNodeToStoryboardRow(nodes: CanvasNodeData[], connection: Pick<CanvasConnection, "fromNodeId" | "toNodeId" | "fromHandleId" | "toHandleId">) {
+export function attachNodeToStoryboardRow(nodes: CanvasNodeData[], connection: Pick<CanvasConnection, "fromNodeId" | "toNodeId" | "fromHandleId" | "toHandleId">, connections: CanvasConnection[] = []) {
     const fromStoryboardHandle = connection.fromHandleId?.startsWith("row:") || connection.fromHandleId === "storyboard:context";
     const toStoryboardHandle = connection.toHandleId?.startsWith("row:") || connection.toHandleId === "storyboard:context";
     const scriptNodeId = fromStoryboardHandle ? connection.fromNodeId : toStoryboardHandle ? connection.toNodeId : null;
@@ -261,12 +261,12 @@ export function attachNodeToStoryboardRow(nodes: CanvasNodeData[], connection: P
     const scriptNode = nodes.find((node) => node.id === scriptNodeId && node.type === CanvasNodeType.Script);
     if (!scriptNodeId || !linkedNode || !scriptNode) return nodes;
     const row = rowId ? scriptNode.metadata?.storyboard?.rows.find((item) => item.id === rowId) : undefined;
-    const videoPrompt = row ? (row.videoMotionPrompt || row.plotDescription).trim() : "";
-    const videoComposerContent = row ? storyboardComposerContent(videoPrompt, storyboardRowReferenceNodeIds(scriptNode, row, nodes, [], false), nodes) : "";
+    const videoPrompt = row ? storyboardVideoPrompt(row) : "";
+    const videoComposerContent = row ? storyboardComposerContent(videoPrompt, storyboardRowReferenceNodeIds(scriptNode, row, nodes, connections, false), nodes) : "";
 
     return nodes.map((node) => {
         if (row && node.id === linkedNode.id && scriptNodeId === connection.fromNodeId && node.type === CanvasNodeType.Video) {
-            return { ...node, title: `镜头 ${row.shotNumber} · 视频`, metadata: { ...node.metadata, prompt: videoPrompt, composerContent: videoComposerContent, ...storyboardPromptTemplateMetadata(row, "video"), workflowKind: "shot" as const, workflowTitle: `镜头 ${row.shotNumber} 视频`, shotIndex: row.shotNumber, generationMode: "video" as const, videoEditOperation: node.metadata?.videoEditOperation || "text_to_video", seconds: String(row.durationSeconds) } };
+            return { ...node, title: `镜头 ${row.shotNumber} · 视频`, metadata: { ...node.metadata, prompt: videoPrompt, composerContent: videoComposerContent, ...storyboardPromptTemplateMetadata(row, "video"), workflowKind: "shot" as const, workflowTitle: `镜头 ${row.shotNumber} 视频`, shotIndex: row.shotNumber, generationMode: "video" as const, videoEditOperation: storyboardVideoOperation(row, node), seconds: String(row.durationSeconds) } };
         }
         if (node.id !== scriptNodeId || node.type !== CanvasNodeType.Script) return node;
         const storyboard = node.metadata?.storyboard;
@@ -278,7 +278,7 @@ export function attachNodeToStoryboardRow(nodes: CanvasNodeData[], connection: P
                 storyboard: {
                     rows: (storyboard?.rows || []).map((item) => item.id !== rowId ? item : scriptNodeId === connection.fromNodeId
                         ? { ...item, imageNodeId: linkedNode.type === CanvasNodeType.Image ? linkedNode.id : item.imageNodeId, videoNodeId: linkedNode.type === CanvasNodeType.Video ? linkedNode.id : item.videoNodeId }
-                        : binding && !(item.assetBindings || []).some((candidate) => candidate.nodeId === linkedNode.id)
+                        : binding && item.imageNodeId !== linkedNode.id && !(item.assetBindings || []).some((candidate) => candidate.nodeId === binding.nodeId && candidate.role === binding.role)
                           ? { ...item, assetBindings: [...(item.assetBindings || []), binding] }
                           : item),
                     visibleColumns: storyboard?.visibleColumns || ["shotNumber", "durationSeconds", "videoMotionPrompt", "dialogue", "assets"],

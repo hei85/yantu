@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = "Stop"
@@ -18,8 +18,8 @@ if (Test-Path -LiteralPath $pidFile) {
     $pids = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
     foreach ($name in @("backend", "web", "agent")) {
         $processId = [int]$pids.$name
-        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
-        if ($process) { Stop-ProcessTree $processId }
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId=$processId" -ErrorAction SilentlyContinue
+        if ($process -and ([string]$process.CommandLine).IndexOf($repoRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) { Stop-ProcessTree $processId }
     }
     Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
 }

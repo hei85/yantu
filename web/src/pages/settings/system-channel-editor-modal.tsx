@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ChannelHeadersEditor, validateChannelHeaders } from "@/components/channel-headers-editor";
 import { ModelEditorModal } from "@/components/model-editor-modal";
 import { createAdminChannel, updateAdminChannel } from "@/services/api/auth";
+import { AXON_BASE_URL } from "@/lib/distribution-policy";
 import { type ChannelHeader, type ModelChannel } from "@/stores/use-config-store";
 
 type Props = {
@@ -25,7 +26,7 @@ export function SystemChannelEditorModal({ channel, open, onClose, onSaved }: Pr
     // 弹窗内容会被销毁重建，initialValues 必须随每次打开重新计算。
     const initialValues = {
         name: channel?.name || "",
-        baseUrl: channel?.baseUrl || "",
+        baseUrl: AXON_BASE_URL,
         apiKey: "",
         enabled: channel?.enabled !== false,
     };
@@ -34,7 +35,7 @@ export function SystemChannelEditorModal({ channel, open, onClose, onSaved }: Pr
         if (!open) return;
         form.setFieldsValue({
             name: channel?.name || "",
-            baseUrl: channel?.baseUrl || "",
+            baseUrl: AXON_BASE_URL,
             apiKey: "",
             enabled: channel?.enabled !== false,
         });
@@ -62,7 +63,7 @@ export function SystemChannelEditorModal({ channel, open, onClose, onSaved }: Pr
         try {
             const payload = {
                 name: values.name.trim() || "未命名渠道",
-                baseUrl: String(values.baseUrl || "").trim().replace(/\/+$/u, ""),
+                baseUrl: AXON_BASE_URL,
                 headers,
                 enabled: values.enabled !== false,
                 ...(apiKey ? { apiKey } : {}),
@@ -108,7 +109,7 @@ export function SystemChannelEditorModal({ channel, open, onClose, onSaved }: Pr
                             <Input placeholder="例如：我的中转站" />
                         </Form.Item>
                         <Form.Item name="baseUrl" label="Base URL" className="mb-0" rules={[{ required: true, message: "请填写 Base URL" }]}>
-                            <Input inputMode="url" placeholder="https://api.example.com" />
+                            <Input readOnly />
                         </Form.Item>
                         <Form.Item
                             name="apiKey"

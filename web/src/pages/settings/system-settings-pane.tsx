@@ -2,12 +2,10 @@ import { App, ConfigProvider } from "antd";
 import { lazy, Suspense, type ReactNode } from "react";
 
 import { getIsolatedAdminAntTheme } from "@/pages/admin/theme/admin-ant-theme";
-import { AdminProvider } from "@/pages/admin/admin-context";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 const StoryboardPromptsPage = lazy(() => import("@/pages/admin/storyboard-prompts/storyboard-prompts-page"));
-const FeatureAvailabilityPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.FeatureAvailabilityPage })));
 const DrawingEngineSettingsPage = lazy(() => import("@/pages/admin/settings/drawing-engine-settings-page"));
 const ThirdPartySettingsPage = lazy(() => import("@/pages/admin/settings/libtv-settings-page"));
 
@@ -34,10 +32,6 @@ export function PromptTemplatesPane() {
     return <SystemSettingsPane><StoryboardPromptsPage /></SystemSettingsPane>;
 }
 
-export function FeatureAvailabilityPane() {
-    return <SystemSettingsPane><FeatureAvailabilityPage /></SystemSettingsPane>;
-}
-
 export function DrawingEnginePane() {
     return <SystemSettingsPane><DrawingEngineSettingsPage /></SystemSettingsPane>;
 }
@@ -45,38 +39,3 @@ export function DrawingEnginePane() {
 export function ThirdPartySettingsPane() {
     return <SystemSettingsPane><ThirdPartySettingsPage /></SystemSettingsPane>;
 }
-
-export function AppearanceSettingsPane() {
-    return <SystemSettingsPane><AppearanceSettingsPage /></SystemSettingsPane>;
-}
-
-export function StorageSettingsPane() {
-    return <SystemSettingsPane><StorageSettingsPage /></SystemSettingsPane>;
-}
-
-export function ResponseInterceptionPane() {
-    return <SystemSettingsPane><ResponseInterceptionSettingsPage /></SystemSettingsPane>;
-}
-
-export function RuntimePolicyPane() {
-    return <SystemSettingsPane><AdminProvider><RuntimePolicySettingsPage /></AdminProvider></SystemSettingsPane>;
-}
-
-export function SystemUpdatePane() {
-    return <SystemSettingsPane><SystemUpdatePage /></SystemSettingsPane>;
-}
-
-export function RequestLogsPane() {
-    return <SystemSettingsPane><LogsPage /></SystemSettingsPane>;
-}
-
-export function AnalyticsSettingsPane() {
-    return <SystemSettingsPane><AdminProvider><AnalyticsPage /></AdminProvider></SystemSettingsPane>;
-}
-const AnalyticsPage = lazy(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
-const AppearanceSettingsPage = lazy(() => import("@/pages/admin/settings/appearance-settings-page"));
-const StorageSettingsPage = lazy(() => import("@/pages/admin/settings/storage-settings-page"));
-const ResponseInterceptionSettingsPage = lazy(() => import("@/pages/admin/settings/response-interception-settings-page"));
-const RuntimePolicySettingsPage = lazy(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
-const SystemUpdatePage = lazy(() => import("@/pages/admin/settings/system-update-page"));
-const LogsPage = lazy(() => import("@/pages/admin/logs/logs-page"));

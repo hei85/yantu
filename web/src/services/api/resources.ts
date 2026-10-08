@@ -75,10 +75,8 @@ export type ResourceUploadMeta = {
 /**
  * 资源直传失败。
  *
- * `permanent` 是这条边界上唯一重要的信息：媒体直传失败后，调用方默认会把文件留在本机
- * IndexedDB，并由云端数据同步用同一幂等键重传（见 user-data-sync 的 uploadLocalStorageKey）。
- * 但鉴权失效、越权、请求本身不合法这几类失败重传多少次都是同样结果，把它们也归入
- * "稍后自动同步" 等于向用户撒谎，必须当场抛出。
+ * `permanent` 标记不会随重试自行恢复的授权、归属或请求错误，调用方据此决定是否将资源
+ * 保留在本机，或立即向用户报告失败。
  */
 export class ResourceUploadError extends Error {
     readonly status?: number;
@@ -299,6 +297,26 @@ function resourceCacheKey(id: string) {
     return `${getActiveUserScope()}:${id}`;
 }
 
+export type ResourceProbeReport = {
+    resourceId: string;
+    mediaType: string;
+    probe: {
+        durationMs: number;
+        fileSizeBytes: number;
+        videoStreams: number;
+        audioStreams: number;
+        subtitleStreams: number;
+        width: number;
+        height: number;
+        decoded: boolean;
+        videoFrameSamples?: Array<{ position: "start" | "middle" | "end"; timestampMs: number; decoded: boolean; imageBytes: number }>;
+        streams: Array<{ index: number; codecType: string; codecName: string; width?: number; height?: number; sampleRate?: string; channels?: number; duration?: string }>;
+    };
+};
+
+export function probeResource(id: string, fullDecode = false, signal?: AbortSignal) {
+    return http.get<ResourceProbeReport>(`/resources/${encodeURIComponent(id)}/probe`, { params: fullDecode ? { decode: "1" } : undefined, signal });
+}
 export function resourceFileUrl(id: string) {
     const base = String(apiBaseURL).replace(/\/+$/, "");
     return `${base}/resources/${encodeURIComponent(id)}/file?direct=1`;

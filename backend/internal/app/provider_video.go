@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/protocol"
 )
 
 func (s *Service) validateResolvedVideoCapability(input *canvasGenerationInput) error {
@@ -75,13 +77,22 @@ func runVideoTaskWithPolicy(ctx context.Context, input canvasGenerationInput, po
 	if isSeedanceVideoConfig(input.Config) {
 		return runSeedanceVideosTask(ctx, input, pollPolicy)
 	}
-	if len(input.ReferenceVideos) > 0 || len(input.ReferenceAudios) > 0 {
+	axonH3 := isHeihanAxonH3Video(input.Config.BaseURL, input.Config.Model)
+	if len(input.ReferenceVideos) > 0 || (len(input.ReferenceAudios) > 0 && !axonH3) {
 		return nil, errors.New("OpenAI 风格视频接口不支持参考视频或参考音频，请切换到 Seedance / Agent Plan 渠道")
 	}
 	id := resumedProviderRequestID(ctx)
 	var created map[string]interface{}
 	if id == "" && isGrokVideoConfig(input.Config) {
 		requestBody, err := grokVideoBody(input)
+		if err != nil {
+			return nil, err
+		}
+		if err := postJSON(ctx, input.Config, "/videos", requestBody, &created); err != nil {
+			return nil, err
+		}
+	} else if id == "" && axonH3 {
+		requestBody, err := axonH3VideoBody(input)
 		if err != nil {
 			return nil, err
 		}
@@ -97,13 +108,31 @@ func runVideoTaskWithPolicy(ctx context.Context, input canvasGenerationInput, po
 		if size := normalizeVideoSize(input.Config.Size); size != "" {
 			writeField(writer, "size", size)
 		}
+		if axonH3 {
+			// This relay's H3 adapter reads aspect_ratio to choose its distinct
+			// horizontal/vertical workflow resolution. `size` alone is ignored for
+			// orientation and the adapter otherwise defaults to vertical.
+			ratio, ratioErr := axonH3AspectRatio(input.Config.Size)
+			if ratioErr != nil {
+				return nil, ratioErr
+			}
+			writeField(writer, "aspect_ratio", ratio)
+		}
 		if resolution := videoResolutionNameRequest(input.VideoCapability, input.Config.VQuality); resolution != "" {
 			writeField(writer, "resolution_name", resolution)
 		}
 		writeField(writer, "preset", "normal")
 		if shouldSendNewAPIVideoImages(input) {
-			for _, image := range input.ReferenceImages {
-				if err := writeMediaPart(writer, "input_reference[]", image); err != nil {
+			imageReferences := input.ReferenceImages
+			if axonH3 && isAxonH3FirstLastModel(input.Config.Model) {
+				orderedReferences, err := orderedVideoFrameReferences(input)
+				if err != nil {
+					return nil, err
+				}
+				imageReferences = orderedReferences
+			}
+			for _, image := range imageReferences {
+				if err := writeMediaPart(writer, "input_reference", image); err != nil {
 					return nil, err
 				}
 			}
@@ -407,6 +436,181 @@ func shouldSendNewAPIVideoImages(input canvasGenerationInput) bool {
 	return strings.TrimSpace(operation) != "text_to_video"
 }
 
+func isHeihanAxonH3Video(baseURL, modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	canonical := strings.NewReplacer("_", "-", " ", "-").Replace(name)
+	knownAlias := canonical == "minimax-h3" || canonical == "minimax-h3-1" || canonical == "minimax-h3-max" || canonical == "minimax-h3-max-1"
+	if !strings.HasPrefix(name, "minimax_h3_") && !knownAlias {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	path := strings.ToLower(strings.TrimRight(parsed.Path, "/"))
+	return (host == "zh.heihan.dpdns.org" || host == "198.44.84.56") && (path == "" || path == "/v1")
+}
+
+// Axon's H3 /v1/videos relay needs aspect_ratio for orientation and URL/DataURL
+// fields for references. The standard OpenAI Videos plugin only sends size and a
+// multipart input_reference, so adapt this one relay without changing other
+// providers that may reject these extension fields.
+func applyAxonH3VideoCreateFields(input canvasGenerationInput, spec *protocol.RequestSpec) error {
+	if !isHeihanAxonH3Video(input.Config.BaseURL, input.Config.Model) || spec == nil {
+		return nil
+	}
+	fields, ok := spec.Body.(map[string]interface{})
+	if !ok {
+		return errors.New("Axon H3 视频请求字段无效")
+	}
+	ratio, err := axonH3AspectRatio(input.Config.Size)
+	if err != nil {
+		return err
+	}
+	fields["aspect_ratio"] = ratio
+	if shouldSendNewAPIVideoImages(input) {
+		imageReferences := input.ReferenceImages
+		if isAxonH3FirstLastModel(input.Config.Model) {
+			imageReferences, err = orderedVideoFrameReferences(input)
+			if err != nil {
+				return err
+			}
+		}
+		imageURLs, _, err := axonH3MediaValues(imageReferences, "image")
+		if err != nil {
+			return err
+		}
+		for index, imageURL := range imageURLs {
+			field := fmt.Sprintf("ref_image_%d", index)
+			if isAxonH3FirstLastModel(input.Config.Model) {
+				if index > 1 {
+					return errors.New("当前首尾帧模型最多支持 2 张参考图")
+				}
+				field = []string{"first_frame", "last_frame"}[index]
+			}
+			fields[field] = imageURL
+		}
+	}
+	audioURLs, inlineAudioBytes, err := axonH3MediaValues(input.ReferenceAudios, "audio")
+	if err != nil {
+		return err
+	}
+	var inlineImageBytes int64
+	if shouldSendNewAPIVideoImages(input) {
+		_, inlineImageBytes, err = axonH3MediaValues(input.ReferenceImages, "image")
+		if err != nil {
+			return err
+		}
+	}
+	if inlineImageBytes+inlineAudioBytes > axonH3MaxInlineTotalBytes {
+		return fmt.Errorf("Axon H3 内嵌参考素材总大小不能超过 %dMB", axonH3MaxInlineTotalBytes>>20)
+	}
+	for index, audioURL := range audioURLs {
+		fields[fmt.Sprintf("ref_audio_%d", index)] = audioURL
+	}
+	spec.Files = nil
+	spec.ContentType = "application/json"
+	return nil
+}
+
+func isAxonH3FirstLastModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasSuffix(model, "b99_002") || strings.HasSuffix(model, "lightx2v")
+}
+
+func axonH3VideoBody(input canvasGenerationInput) (map[string]interface{}, error) {
+	body := map[string]interface{}{
+		"model":   input.Config.Model,
+		"prompt":  newAPIVideoPromptText(input),
+		"seconds": defaultString(input.Config.VideoSeconds, "6"),
+		"preset":  "normal",
+	}
+	if size := normalizeVideoSize(input.Config.Size); size != "" {
+		body["size"] = size
+	}
+	if resolution := videoResolutionNameRequest(input.VideoCapability, input.Config.VQuality); resolution != "" {
+		body["resolution_name"] = resolution
+	}
+	spec := protocol.RequestSpec{Body: body}
+	if err := applyAxonH3VideoCreateFields(input, &spec); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+const (
+	axonH3MaxInlineMediaBytes int64 = 30 << 20
+	axonH3MaxInlineTotalBytes int64 = 50 << 20
+)
+
+// axonH3MediaValues matches AutoDL's H3 workflow UI: local files become
+// DataURLs in JSON workflow fields, while existing remote URLs pass through.
+// Keep this exception scoped to Axon H3; other providers keep their declared
+// public URL or multipart contracts.
+func axonH3MediaValues(media []providerMedia, kind string) ([]string, int64, error) {
+	values := make([]string, 0, len(media))
+	var inlineBytes int64
+	for _, item := range media {
+		value := firstNonEmpty(strings.TrimSpace(item.URL), strings.TrimSpace(item.DataURL))
+		if isPublicMediaURL(value) {
+			values = append(values, value)
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(value), "data:") {
+			return nil, 0, fmt.Errorf("Axon H3 参考%s需要公网 URL 或受支持的 DataURL", axonH3MediaLabel(kind))
+		}
+		mimeType, data, err := decodeProviderDataURL(value)
+		if err != nil || len(data) == 0 {
+			return nil, 0, fmt.Errorf("Axon H3 参考%s DataURL 无效", axonH3MediaLabel(kind))
+		}
+		if !axonH3AllowedMediaMIME(kind, mimeType) {
+			return nil, 0, fmt.Errorf("Axon H3 参考%s DataURL MIME 类型不受支持", axonH3MediaLabel(kind))
+		}
+		if int64(len(data)) > axonH3MaxInlineMediaBytes {
+			return nil, 0, fmt.Errorf("Axon H3 单个内嵌参考%s不能超过 %dMB", axonH3MediaLabel(kind), axonH3MaxInlineMediaBytes>>20)
+		}
+		inlineBytes += int64(len(data))
+		if inlineBytes > axonH3MaxInlineTotalBytes {
+			return nil, 0, fmt.Errorf("Axon H3 内嵌参考素材总大小不能超过 %dMB", axonH3MaxInlineTotalBytes>>20)
+		}
+		values = append(values, value)
+	}
+	return values, inlineBytes, nil
+}
+
+func axonH3AllowedMediaMIME(kind, mimeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "image":
+		switch strings.ToLower(strings.TrimSpace(mimeType)) {
+		case "image/jpeg", "image/png", "image/webp":
+			return true
+		}
+	case "audio":
+		switch strings.ToLower(strings.TrimSpace(mimeType)) {
+		case "audio/aac", "audio/flac", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav", "audio/x-wav":
+			return true
+		}
+	}
+	return false
+}
+
+func axonH3MediaLabel(kind string) string {
+	if strings.EqualFold(strings.TrimSpace(kind), "audio") {
+		return "音频"
+	}
+	return "图片"
+}
+
+func axonH3AspectRatio(size string) (string, error) {
+	for _, ratio := range []string{"16:9", "9:16", "1:1"} {
+		if videoRatioAllowed([]string{ratio}, size) {
+			return ratio, nil
+		}
+	}
+	return "", errors.New("Axon H3 视频需要明确的 16:9、9:16 或 1:1 画幅，请先选择支持的尺寸")
+}
+
 // 本地测试 helper 没有能力配置时保留历史协议字段；真实系统任务会携带已解析的模型能力。
 func videoCapabilitySupportsAudio(input canvasGenerationInput) bool {
 	return input.VideoCapability == nil || input.VideoCapability.GenerateAudio.Supported
@@ -516,6 +720,32 @@ func videoImageRoleOrDefault(input canvasGenerationInput, image providerMedia, f
 }
 
 func videoFrameImageURLs(input canvasGenerationInput, imageURLs []string) ([]string, error) {
+	indexes, err := videoFrameImageIndexes(input)
+	if err != nil || indexes == nil {
+		return nil, err
+	}
+	ordered := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		if index < len(imageURLs) {
+			ordered = append(ordered, imageURLs[index])
+		}
+	}
+	return ordered, nil
+}
+
+func orderedVideoFrameReferences(input canvasGenerationInput) ([]providerMedia, error) {
+	indexes, err := videoFrameImageIndexes(input)
+	if err != nil || indexes == nil {
+		return input.ReferenceImages, err
+	}
+	ordered := make([]providerMedia, 0, len(indexes))
+	for _, index := range indexes {
+		ordered = append(ordered, input.ReferenceImages[index])
+	}
+	return ordered, nil
+}
+
+func videoFrameImageIndexes(input canvasGenerationInput) ([]int, error) {
 	if metadataString(input.Metadata, "videoEditOperation") == "reference_to_video" {
 		return nil, nil
 	}
@@ -524,18 +754,18 @@ func videoFrameImageURLs(input canvasGenerationInput, imageURLs []string) ([]str
 	if startFrameID == "" && endFrameID == "" {
 		return nil, nil
 	}
-	// image_urls 按首帧、尾帧、普通参考图排序，保持 JSON 视频协议的结构化帧语义。
-	ordered := make([]string, 0, len(imageURLs))
-	used := make([]bool, len(imageURLs))
+	// 视频协议没有通用 role 字段时，至少按已标记的帧 ID 排列输入素材。
+	ordered := make([]int, 0, len(input.ReferenceImages))
+	used := make([]bool, len(input.ReferenceImages))
 	appendFrame := func(frameID string, label string) error {
 		if frameID == "" {
 			return nil
 		}
 		for index, image := range input.ReferenceImages {
-			if index >= len(imageURLs) || image.ID != frameID {
+			if image.ID != frameID {
 				continue
 			}
-			ordered = append(ordered, imageURLs[index])
+			ordered = append(ordered, index)
 			used[index] = true
 			return nil
 		}
@@ -547,9 +777,9 @@ func videoFrameImageURLs(input canvasGenerationInput, imageURLs []string) ([]str
 	if err := appendFrame(endFrameID, "尾帧"); err != nil {
 		return nil, err
 	}
-	for index, imageURL := range imageURLs {
+	for index := range input.ReferenceImages {
 		if !used[index] {
-			ordered = append(ordered, imageURL)
+			ordered = append(ordered, index)
 		}
 	}
 	return ordered, nil

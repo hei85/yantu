@@ -6,6 +6,7 @@ import { Button } from "antd";
 import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { modelCapabilityConfigFor, resolveVideoRatioValue, resolveVideoResolutionValue } from "@/lib/model-capabilities";
+import { VIDEO_RESOLUTION_DEFAULT_LABEL } from "@/lib/video-generation-options";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -28,7 +29,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
     const resolution = videoProfile ? resolveVideoResolutionValue(videoProfile, config.vquality) : "";
     const size = videoProfile ? resolveVideoRatioValue(videoProfile, config.size) : "";
     const summary = [
-        ...(resolutionSupported ? [videoResolutionLabel(resolution)] : []),
+        ...(resolutionSupported ? [videoResolutionLabel(resolution)] : videoProfile ? [`${VIDEO_RESOLUTION_DEFAULT_LABEL}分辨率`] : []),
         ...(sizeSupported ? [videoSizeLabel(size)] : []),
         videoSecondsLabel(config.videoSeconds),
     ].join(" · ");

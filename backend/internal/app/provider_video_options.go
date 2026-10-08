@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +148,12 @@ func normalizePixelSize(value string) string {
 }
 
 func normalizeVideoSize(value string) string {
+	return videoPixelSize(value, "720p")
+}
+
+// OpenAI's size field is a pixel size, while other video adapters use ratios.
+// Resolve dimensions here without changing the original logical ratio.
+func videoPixelSize(value, resolution string) string {
 	value = strings.TrimSpace(value)
 	if value == "" || value == "auto" {
 		return ""
@@ -153,10 +161,30 @@ func normalizeVideoSize(value string) string {
 	if strings.Contains(value, "x") {
 		return value
 	}
-	if value == "9:16" || value == "2:3" || value == "3:4" {
-		return "720x1280"
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return ""
 	}
-	return "1280x720"
+	w, ew := strconv.ParseFloat(parts[0], 64)
+	h, eh := strconv.ParseFloat(parts[1], 64)
+	if ew != nil || eh != nil || w <= 0 || h <= 0 || math.IsNaN(w) || math.IsNaN(h) || math.IsInf(w, 0) || math.IsInf(h, 0) {
+		return ""
+	}
+	shortEdge, err := strconv.Atoi(strings.TrimSuffix(strings.ToLower(normalizeVideoResolution(resolution)), "p"))
+	if err != nil || shortEdge < 64 || shortEdge > 16384 {
+		shortEdge = 720
+	}
+	ratio := w / h
+	width, height := shortEdge, shortEdge
+	if ratio >= 1 {
+		width = int(math.Round(float64(shortEdge)*ratio/2)) * 2
+	} else {
+		height = int(math.Round(float64(shortEdge)/ratio/2)) * 2
+	}
+	if width < 2 || height < 2 || width > 65536 || height > 65536 {
+		return ""
+	}
+	return fmt.Sprintf("%dx%d", width, height)
 }
 
 func normalizeVideoResolution(value string) string {
@@ -173,7 +201,7 @@ func normalizeVideoResolution(value string) string {
 	if strings.EqualFold(value, "2k") {
 		return "1440p"
 	}
-	if strings.HasSuffix(value, "p") {
+	if strings.HasSuffix(strings.ToLower(value), "p") {
 		return value
 	}
 	return value + "p"
@@ -191,6 +219,10 @@ func videoResolutionNameRequest(profile *VideoCapabilityConfig, value string) st
 		return ""
 	}
 	candidates := []string{requested, strings.ToLower(normalizeVideoResolution(requested))}
+	// Some relay models expose 736P as the nearest route for a standard 720P request.
+	if requested == "720" || requested == "720p" {
+		candidates = append(candidates, "736p")
+	}
 	if requested == "4k" {
 		candidates = append(candidates, "2160p")
 	}

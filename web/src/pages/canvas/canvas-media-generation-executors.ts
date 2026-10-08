@@ -4,7 +4,7 @@ import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { canGenerateMediaInPlace } from "@/lib/canvas/canvas-generation-layout";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { nextCanvasVersionLabel } from "@/lib/canvas/canvas-layout";
-import { buildAudioGenerationMetadata, buildVideoGenerationMetadata, generationReferenceUrls, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import { buildAudioGenerationMetadata, buildVideoGenerationMetadata, generationClientOperationIdForIndex, generationReferenceUrls, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -34,6 +34,7 @@ export async function executeVideoGeneration({
     skillMetadata,
     taskContext,
     retryContext,
+    clientOperationId,
 }: CanvasGenerationExecution) {
     const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
     const reuseSourceNode = canGenerateMediaInPlace(sourceNode, CanvasNodeType.Video);
@@ -100,6 +101,7 @@ export async function executeVideoGeneration({
                 projectId,
                 nodeId: videoId,
                 ...retryContext,
+                clientOperationId: generationClientOperationIdForIndex(retryContext?.clientOperationId || clientOperationId, 0, 1),
                 mode: "video",
                 prompt: effectivePrompt,
                 config: generationConfig,
@@ -148,6 +150,7 @@ export async function executeAudioGeneration({
     taskContext,
     skillMetadata,
     retryContext,
+    clientOperationId,
 }: CanvasGenerationExecution) {
     const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Audio];
     const isEmptyAudioNode = sourceNode?.type === CanvasNodeType.Audio && !sourceNode.metadata?.content;
@@ -176,6 +179,7 @@ export async function executeAudioGeneration({
                 projectId,
                 nodeId: audioId,
                 ...retryContext,
+                clientOperationId: generationClientOperationIdForIndex(retryContext?.clientOperationId || clientOperationId, 0, 1),
                 mode: "audio",
                 prompt: effectivePrompt,
                 config: generationConfig,

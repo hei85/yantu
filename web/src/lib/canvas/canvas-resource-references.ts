@@ -51,7 +51,14 @@ export function canvasResourceMentionToken(reference: CanvasResourceReference) {
 export function normalizeCanvasNodeMentionTokens(prompt: string, references: CanvasResourceReference[]) {
     return references.reduce((value, reference) => {
         if (!reference.nodeId || reference.assetId || reference.kind === "skill") return value;
-        return value.split(canvasNodeMentionToken(reference.nodeId)).join(`@${reference.label}`);
+        const token = canvasNodeMentionToken(reference.nodeId);
+        return value.split(token).map((part, index, parts) => {
+            if (index === parts.length - 1) return part;
+            const nextCharacter = parts[index + 1][0];
+            const numberedMediaLabel = /^(图片|视频|音频|文本)\d+$/u.test(reference.label);
+            const unambiguousAdjacentText = numberedMediaLabel && /^[\p{Script=Han}@]$/u.test(nextCharacter || "");
+            return `${part}@${reference.label}${!unambiguousAdjacentText && needsAutoMentionSeparator(nextCharacter) ? " " : ""}`;
+        }).join("");
     }, prompt);
 }
 
@@ -345,6 +352,7 @@ export function buildCanvasNodeMentionReferenceMap(nodes: CanvasNodeData[], conn
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const resourceInputsByTargetId = new Map<string, CanvasNodeData[]>();
     const configTargetBySourceId = new Map<string, string>();
+    const storyboardInputTargetIds = new Set<string>();
     for (const connection of connections) {
         const source = nodeById.get(connection.fromNodeId);
         const target = nodeById.get(connection.toNodeId);
@@ -357,13 +365,21 @@ export function buildCanvasNodeMentionReferenceMap(nodes: CanvasNodeData[], conn
         if (target.type === CanvasNodeType.Config && !configTargetBySourceId.has(source.id)) {
             configTargetBySourceId.set(source.id, target.id);
         }
+        if (source.type === CanvasNodeType.Script && connection.fromHandleId?.startsWith("row:")
+            && (target.type === CanvasNodeType.Video || target.type === CanvasNodeType.Config)) {
+            storyboardInputTargetIds.add(target.id);
+        }
     }
 
     const referencesByNodeId = new Map<string, CanvasResourceReference[]>();
     for (const node of targetNodes) {
         const configTargetId = configTargetBySourceId.get(node.id);
-        const configInputs = configTargetId ? (resourceInputsByTargetId.get(configTargetId) || []).filter((input) => input.id !== node.id) : [];
-        const ownInputs = resourceInputsByTargetId.get(node.id) || [];
+        const configInputs = configTargetId ? (storyboardInputTargetIds.has(configTargetId)
+            ? getContextResourceNodes(configTargetId, nodes, connections)
+            : resourceInputsByTargetId.get(configTargetId) || []).filter((input) => input.id !== node.id) : [];
+        const ownInputs = storyboardInputTargetIds.has(node.id)
+            ? getContextResourceNodes(node.id, nodes, connections)
+            : resourceInputsByTargetId.get(node.id) || [];
         const inputs = configInputs.length ? configInputs : ownInputs.filter((input) => input.id !== node.id);
         referencesByNodeId.set(node.id, labelResourceNodes(inputs, true));
     }
@@ -418,14 +434,40 @@ export function collectUpstreamVideoNodes(nodeId: string, nodes: CanvasNodeData[
 }
 
 /**
- * 该节点的直接上游素材节点（按连线取 fromNodeId，只保留构成素材的）。
+ * 图片取直接上游素材；视频的分镜行入边同时提供该行的资产和首帧。
  * 扩展节点经 CanvasNodeGraphContext 复用它，不要另写一份取上游的逻辑。
  */
 export function getContextResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return connections
-        .filter((connection) => connection.toNodeId === nodeId)
-        .map((connection) => nodes.find((node) => node.id === connection.fromNodeId))
-        .filter((node): node is CanvasNodeData => Boolean(node && isResourceNode(node)));
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const receiver = nodeById.get(nodeId);
+    const isVideoReceiver = receiver?.type === CanvasNodeType.Video || (receiver?.type === CanvasNodeType.Config
+        && connections.some((edge) => edge.toNodeId === nodeId && nodeById.get(edge.fromNodeId)?.type === CanvasNodeType.Video));
+    const result = new Map<string, CanvasNodeData>();
+    const add = (id?: string) => {
+        const node = id ? nodeById.get(id) : undefined;
+        if (node && isResourceNode(node) && id !== nodeId) result.set(node.id, node);
+    };
+    for (const connection of connections) {
+        if (connection.toNodeId !== nodeId) continue;
+        add(connection.fromNodeId);
+        const script = nodeById.get(connection.fromNodeId);
+        if (!isVideoReceiver || script?.type !== CanvasNodeType.Script || !connection.fromHandleId?.startsWith("row:")) continue;
+        const row = script.metadata?.storyboard?.rows?.find((item) => `row:${item.id}` === connection.fromHandleId);
+        if (!row || (connection.storyboardRowId && connection.storyboardRowId !== row.id)) continue;
+        for (const id of script.metadata?.storyboard?.referenceNodeIds || []) add(id);
+        for (const binding of row.assetBindings || []) add(binding.nodeId);
+        for (const character of row.characters || []) {
+            add(character.characterImageNodeId || undefined);
+            if (character.characterAssetId) for (const node of nodes) {
+                if (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId === character.characterAssetId) add(node.id);
+            }
+        }
+        for (const edge of connections) {
+            if (edge.toNodeId === script.id && edge.toHandleId === `row:${row.id}`) add(edge.fromNodeId);
+        }
+        add(row.imageNodeId);
+    }
+    return [...result.values()];
 }
 
 /**

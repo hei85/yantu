@@ -17,6 +17,7 @@ import (
 
 	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/handler"
+	"infinite-canvas/backend/internal/platform"
 	"infinite-canvas/backend/internal/repository"
 	"infinite-canvas/backend/internal/service"
 	"infinite-canvas/backend/internal/updaterclient"
@@ -33,6 +34,10 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	addr := env("CANVAS_BACKEND_ADDR", ":8080")
+	if err := platform.ValidatePortableNoLoginBindAddress(addr); err != nil {
+		return err
+	}
 	dataDir := env("CANVAS_BACKEND_DATA_DIR", "data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
@@ -67,7 +72,6 @@ func run(ctx context.Context) error {
 	}
 
 	repo := repository.New(db)
-	addr := env("CANVAS_BACKEND_ADDR", ":8080")
 	svc := service.New(repo, dataDir)
 	if updaterToken := strings.TrimSpace(os.Getenv("CANVAS_UPDATER_TOKEN")); updaterToken != "" {
 		svc.ConfigureUpdateManager(updaterclient.New(env("CANVAS_UPDATER_SOCKET", "/run/open-ai-canvas-updater/updater.sock"), updaterToken))
@@ -94,11 +98,11 @@ func run(ctx context.Context) error {
 	if summary, err := svc.MigrateLegacyStorage(); err != nil {
 		log.Printf("storage migration skipped after error: %v", err)
 	} else if summary.Backup != "" {
-		log.Printf("storage migration completed: tasks=%d assets=%d projects=%d backup=%s", summary.Tasks, summary.Assets, summary.Projects, summary.Backup)
+		log.Printf("storage migration completed: tasks=%d assets=%d backup=%s", summary.Tasks, summary.Assets, summary.Backup)
 	}
 	r := gin.New()
 	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		return fmt.Sprintf("%s - [%s] \"%s %s\" %d %s %s\n", param.ClientIP, param.TimeStamp.Format(time.RFC3339), param.Method, redactCanvasSharePath(param.Path), param.StatusCode, param.Latency, param.ErrorMessage)
+		return fmt.Sprintf("%s - [%s] \"%s %s\" %d %s %s\n", param.ClientIP, param.TimeStamp.Format(time.RFC3339), param.Method, param.Path, param.StatusCode, param.Latency, param.ErrorMessage)
 	}), gin.Recovery())
 	r.Use(handler.RequestCorrelationMiddleware())
 	corsMiddleware, err := cors()
@@ -161,18 +165,6 @@ func run(ctx context.Context) error {
 	}
 	log.Printf("backend stopped gracefully")
 	return nil
-}
-
-func redactCanvasSharePath(path string) string {
-	const prefix = "/api/public/canvas-shares/"
-	if !strings.HasPrefix(path, prefix) {
-		return path
-	}
-	remainder := strings.TrimPrefix(path, prefix)
-	if index := strings.IndexByte(remainder, '/'); index >= 0 {
-		return prefix + ":token" + remainder[index:]
-	}
-	return prefix + ":token"
 }
 
 func env(key string, fallback string) string {

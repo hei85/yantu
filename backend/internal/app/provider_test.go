@@ -73,6 +73,147 @@ func TestProviderMediaHydrationPolicyPrefersObjectURLs(t *testing.T) {
 	}
 }
 
+func TestNewAPIVideoReferencePolicyMatchesWireFormat(t *testing.T) {
+	standard := providerMediaHydrationPolicyFor(context.Background(), canvasGenerationInput{Config: providerConfig{
+		InterfaceType: string(model.ChannelInterfaceNewAPIVideo), BaseURL: "https://other-relay.example/v1", Model: "video-model",
+	}})
+	if standard.requireURL || standard.preferURL {
+		t.Fatalf("standard multipart video reference needs bytes, got %#v", standard)
+	}
+	axon := providerMediaHydrationPolicyFor(context.Background(), canvasGenerationInput{Config: providerConfig{
+		InterfaceType: string(model.ChannelInterfaceNewAPIVideo), BaseURL: "https://zh.heihan.dpdns.org/v1", Model: "minimax_h3_z0902",
+	}})
+	if axon.requireURL || !axon.preferURL || !axon.allowInlineDataURL {
+		t.Fatalf("Axon H3 workflow needs URL or inline DataURL references, got %#v", axon)
+	}
+}
+
+func TestAxonH3AspectRatioNormalizesPixelSize(t *testing.T) {
+	for input, want := range map[string]string{"16:9": "16:9", "1280x720": "16:9", "1308x736": "16:9", "720x1280": "9:16", "1024x1024": "1:1"} {
+		got, err := axonH3AspectRatio(input)
+		if err != nil || got != want {
+			t.Fatalf("axonH3AspectRatio(%q) = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	if _, err := axonH3AspectRatio("4:3"); err == nil {
+		t.Fatal("unsupported H3 ratio should be rejected")
+	}
+}
+
+func TestAxonH3DeclarativeVideoCreateUsesRelayFields(t *testing.T) {
+	input := canvasGenerationInput{
+		Config:          providerConfig{BaseURL: "https://zh.heihan.dpdns.org/v1", Model: "minimax_h3_image_audio_to_video_v2", Size: "16:9"},
+		ReferenceImages: []providerMedia{{URL: "https://media.example.com/frame.png"}},
+		ReferenceAudios: []providerMedia{{URL: "https://media.example.com/voice.wav"}},
+	}
+	spec := protocol.RequestSpec{Body: map[string]interface{}{"size": "16:9"}, Files: []protocol.RequestFilePart{{Name: "input_reference"}}}
+	if err := applyAxonH3VideoCreateFields(input, &spec); err != nil {
+		t.Fatal(err)
+	}
+	fields := spec.Body.(map[string]interface{})
+	for key, want := range map[string]string{
+		"aspect_ratio": "16:9", "ref_image_0": "https://media.example.com/frame.png", "ref_audio_0": "https://media.example.com/voice.wav",
+	} {
+		if fields[key] != want {
+			t.Fatalf("%s = %v, want %s", key, fields[key], want)
+		}
+	}
+	if len(spec.Files) != 0 {
+		t.Fatalf("Axon references must use JSON fields, got %d file parts", len(spec.Files))
+	}
+	if spec.ContentType != "application/json" {
+		t.Fatalf("Axon content type = %q, want application/json", spec.ContentType)
+	}
+
+	input.Config.BaseURL = "https://other-relay.example/v1"
+	standard := protocol.RequestSpec{Body: map[string]interface{}{"size": "16:9"}, Files: []protocol.RequestFilePart{{Name: "input_reference"}}}
+	if err := applyAxonH3VideoCreateFields(input, &standard); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := standard.Body.(map[string]interface{})["aspect_ratio"]; ok || len(standard.Files) != 1 {
+		t.Fatal("standard OpenAI Videos request was changed")
+	}
+}
+
+func TestAxonH3DeclarativeVideoCreateOrdersExplicitFramesByNodeID(t *testing.T) {
+	input := canvasGenerationInput{
+		Config: providerConfig{BaseURL: "https://zh.heihan.dpdns.org/v1", Model: "minimax_h3_b99_002", Size: "16:9"},
+		ReferenceImages: []providerMedia{
+			{ID: "end-frame", URL: "https://media.example.com/end.png"},
+			{ID: "start-frame", URL: "https://media.example.com/start.png"},
+		},
+		Metadata: map[string]interface{}{
+			"videoEditOperation":    "image_to_video",
+			"videoStartFrameNodeId": "start-frame",
+			"videoEndFrameNodeId":   "end-frame",
+		},
+	}
+	spec := protocol.RequestSpec{Body: map[string]interface{}{}}
+	if err := applyAxonH3VideoCreateFields(input, &spec); err != nil {
+		t.Fatal(err)
+	}
+	fields := spec.Body.(map[string]interface{})
+	if fields["first_frame"] != "https://media.example.com/start.png" || fields["last_frame"] != "https://media.example.com/end.png" {
+		t.Fatalf("frame fields = %#v; want start and end URLs assigned by node ID", fields)
+	}
+}
+
+func TestAxonH3MediaValuesAcceptsURLAndInlineImageAudio(t *testing.T) {
+	cases := []struct {
+		name string
+		item providerMedia
+		kind string
+		want string
+	}{
+		{"image URL", providerMedia{URL: "https://media.example.com/frame.png"}, "image", "https://media.example.com/frame.png"},
+		{"image DataURL", providerMedia{DataURL: "data:image/png;base64,aGVsbG8="}, "image", "data:image/png;base64,aGVsbG8="},
+		{"audio URL", providerMedia{URL: "https://media.example.com/voice.wav"}, "audio", "https://media.example.com/voice.wav"},
+		{"audio DataURL", providerMedia{DataURL: "data:audio/wav;base64,aGVsbG8="}, "audio", "data:audio/wav;base64,aGVsbG8="},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, err := axonH3MediaValues([]providerMedia{tc.item}, tc.kind)
+			if err != nil || len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("axonH3MediaValues() = %#v, %v; want one matching value", got, err)
+			}
+		})
+	}
+}
+
+func TestAxonH3MediaValuesRejectsInvalidOrOversizeDataURLWithoutEcho(t *testing.T) {
+	tooLarge := "data:image/png;base64," + strings.Repeat("A", int(axonH3MaxInlineMediaBytes/3*4+8))
+	for _, value := range []string{"data:text/plain;base64,aGVsbG8=", "data:image/png;base64,%%%", tooLarge} {
+		_, _, err := axonH3MediaValues([]providerMedia{{DataURL: value}}, "image")
+		if err == nil {
+			t.Fatal("invalid or oversize DataURL unexpectedly accepted")
+		}
+		if strings.Contains(err.Error(), "base64") || strings.Contains(err.Error(), "aGVsbG8") {
+			t.Fatalf("error echoed media payload: %v", err)
+		}
+	}
+}
+
+func TestAxonH3VideoResultDetailReadsCompletedArtifactURL(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/video/generations/video-1" {
+			t.Errorf("unexpected detail path: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":"success","data":{"status":"SUCCESS","result_url":"https://media.example.com/video.mp4"}}`))
+	}))
+	defer server.Close()
+	result, err := axonH3VideoResultDetail(context.Background(), providerConfig{BaseURL: server.URL, APIKey: "test-key"}, "video-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Videos) != 1 || result.Videos[0].URL != "https://media.example.com/video.mp4" {
+		t.Fatalf("unexpected artifact reference: %#v", result.Videos)
+	}
+}
+
 func TestProviderRequestErrorDetails(t *testing.T) {
 	tests := []struct {
 		name string
@@ -229,6 +370,32 @@ func TestRunVideoTaskUsesDeclarativeAgnesJSONProtocol(t *testing.T) {
 	wantPaths := "POST /v1/videos,GET /agnesapi?model_name=agnes-video-2.5&video_id=video-1,GET /video.mp4"
 	if got := strings.Join(paths, ","); got != wantPaths {
 		t.Fatalf("paths = %q, want %q", got, wantPaths)
+	}
+}
+
+func TestAgnesVideo25PayloadPreservesRequestedMaxDurationAndOutputShape(t *testing.T) {
+	body := officialVideoCreateBody(t, canvasGenerationInput{
+		Mode:   "video",
+		Prompt: "make the character cross the office lobby",
+		Config: providerConfig{
+			InterfaceType: "agnes-video",
+			Model:         "agnes-video-2.5",
+			VideoSeconds:  "12",
+			Size:          "9:16",
+			VQuality:      "2K",
+		},
+		ReferenceImages: []providerMedia{{URL: "https://media.example/character.png"}},
+	})
+	for key, want := range map[string]any{
+		"model":        "agnes-video-2.5",
+		"seconds":      "12",
+		"aspect_ratio": "9:16",
+		"size":         "2K",
+		"first_frame":  "https://media.example/character.png",
+	} {
+		if body[key] != want {
+			t.Errorf("payload[%q] = %#v, want %#v", key, body[key], want)
+		}
 	}
 }
 
@@ -921,6 +1088,12 @@ func TestProviderUserFacingErrorMessageClassifiesRejectedRequestBodies(t *testin
 			name:       "moderation rejection",
 			statusCode: http.StatusBadRequest,
 			body:       `{"error":{"message":"request blocked by content policy, secret-trace"}}`,
+			want:       "安全审核",
+		},
+		{
+			name:       "stable moderation error code",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"code":"sensitive_words_detected","message":"restricted by safety guidelines, secret-trace"}}`,
 			want:       "安全审核",
 		},
 		{
@@ -1849,6 +2022,8 @@ func TestRunVideoTaskRetriesDownloadWithoutRepolling(t *testing.T) {
 func TestRunVideoTaskSendsOnlyDeclaredResolutionName(t *testing.T) {
 	tests := []struct {
 		name           string
+		interfaceType  string
+		model          string
 		resolutions    []string
 		quality        string
 		withoutProfile bool
@@ -1858,12 +2033,15 @@ func TestRunVideoTaskSendsOnlyDeclaredResolutionName(t *testing.T) {
 		{name: "auto never invents 720p", resolutions: []string{"720p", "1080p"}, quality: "auto"},
 		{name: "legacy auto never invents 720p", quality: "auto", withoutProfile: true},
 		{name: "missing profile explicit 720 never invents resolution", quality: "720", withoutProfile: true},
+		{name: "relay resolves 720 to its declared nearby 736P tier", resolutions: []string{"736P"}, quality: "720", want: "736P"},
+		{name: "Axon relay sends requested landscape dimensions and its declared nearby 736P tier", interfaceType: "axon-video-tasks", model: "minimax_h3_b99_001", resolutions: []string{"736P"}, quality: "720", want: "736P"},
 		{name: "declared HD resolution", resolutions: []string{"1080p"}, quality: "1080", want: "1080p"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 			var got string
+			var gotSize string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.Method + " " + r.URL.Path {
 				case "POST /v1/videos":
@@ -1871,6 +2049,7 @@ func TestRunVideoTaskSendsOnlyDeclaredResolutionName(t *testing.T) {
 						t.Fatalf("ParseMultipartForm() error = %v", err)
 					}
 					got = r.FormValue("resolution_name")
+					gotSize = r.FormValue("size")
 					_, _ = w.Write([]byte(`{"id":"video-resolution","status":"queued"}`))
 				case "GET /v1/videos/video-resolution":
 					_, _ = w.Write([]byte(`{"id":"video-resolution","status":"completed"}`))
@@ -1889,9 +2068,13 @@ func TestRunVideoTaskSendsOnlyDeclaredResolutionName(t *testing.T) {
 			if test.withoutProfile {
 				profile = nil
 			}
+			model := test.model
+			if model == "" {
+				model = "public-video"
+			}
 			_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 				Prompt:          "synthetic prompt",
-				Config:          providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "public-video", VideoSeconds: "8", Size: "16:9", VQuality: test.quality},
+				Config:          providerConfig{InterfaceType: test.interfaceType, BaseURL: server.URL + "/v1", APIKey: "test-key", Model: model, VideoSeconds: "8", Size: "16:9", VQuality: test.quality},
 				VideoCapability: profile,
 			})
 			if err != nil {
@@ -1900,7 +2083,74 @@ func TestRunVideoTaskSendsOnlyDeclaredResolutionName(t *testing.T) {
 			if got != test.want {
 				t.Fatalf("resolution_name = %q; want %q", got, test.want)
 			}
+			if gotSize != "1280x720" {
+				t.Fatalf("size = %q; want the requested 16:9 dimensions 1280x720", gotSize)
+			}
 		})
+	}
+}
+
+func TestRunVideoTaskAxonRelayKeepsExplicitDurationAndFirstFrameReference(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	var (
+		gotModel       string
+		gotSeconds     string
+		gotSize        string
+		gotResolution  string
+		gotPreset      string
+		referenceCount int
+		referenceName  string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/videos":
+			if err := r.ParseMultipartForm(8 << 20); err != nil {
+				t.Fatalf("ParseMultipartForm() error = %v", err)
+			}
+			gotModel = r.FormValue("model")
+			gotSeconds = r.FormValue("seconds")
+			gotSize = r.FormValue("size")
+			gotResolution = r.FormValue("resolution_name")
+			gotPreset = r.FormValue("preset")
+			files := r.MultipartForm.File["input_reference"]
+			referenceCount = len(files)
+			if len(files) == 1 {
+				referenceName = files[0].Filename
+			}
+			_, _ = w.Write([]byte(`{"id":"axon-video-1","status":"queued"}`))
+		case "GET /v1/videos/axon-video-1":
+			_, _ = w.Write([]byte(`{"id":"axon-video-1","status":"completed"}`))
+		case "GET /v1/videos/axon-video-1/content":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	// 与真实中继一致：13 秒横屏、736P 档位，并携带首帧参考图。
+	profile := DefaultModelCapabilityConfigForModel("axon-video-tasks", "minimax_h3_b99_001").Video
+	// 与当前中转站目录一致：该模型只声明 736P 档（没有 720P）。
+	profile.Resolutions = []string{"736P"}
+	profile.DefaultResolution = ""
+	_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
+		Prompt:          "13 second landscape shot",
+		Config:          providerConfig{InterfaceType: "axon-video-tasks", BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "minimax_h3_b99_001", VideoSeconds: "13", Size: "16:9", VQuality: "736P"},
+		ReferenceImages: []providerMedia{{ID: "first-frame", MimeType: "image/png", DataURL: testReferenceImageDataURL}},
+		VideoCapability: profile,
+	})
+	if err != nil {
+		t.Fatalf("runVideoTask() error = %v", err)
+	}
+	if gotModel != "minimax_h3_b99_001" || gotSeconds != "13" || gotSize != "1280x720" || gotResolution != "736P" || gotPreset != "normal" {
+		t.Fatalf("multipart payload = model %q seconds %q size %q resolution %q preset %q", gotModel, gotSeconds, gotSize, gotResolution, gotPreset)
+	}
+	if referenceCount != 1 {
+		t.Fatalf("input_reference parts = %d, want exactly one first-frame image", referenceCount)
+	}
+	if !strings.Contains(referenceName, "first-frame") {
+		t.Fatalf("input_reference filename = %q, want a name derived from the first-frame media id", referenceName)
 	}
 }
 
@@ -2400,6 +2650,7 @@ func TestProtocolRequestRestoresDeclaredVideoResolutionEnum(t *testing.T) {
 		want        string
 	}{
 		{name: "lowercase suffix", quality: "480", resolutions: []string{"480p", "720p"}, want: "480p"},
+		{name: "relay nearest 736P tier for 720 request", quality: "720", resolutions: []string{"736P"}, want: "736P"},
 		{name: "provider casing", quality: "1080", resolutions: []string{"720P", "1080P"}, want: "1080P"},
 		{name: "opaque enum", quality: "768p竖", resolutions: []string{"768p竖", "768p横"}, want: "768p竖"},
 		{name: "unmatched custom value", quality: "native", resolutions: []string{"720p"}, want: "native"},
@@ -2698,6 +2949,9 @@ func TestNewAPIChannel2PluginSendsDeclaredResolution(t *testing.T) {
 	if body["resolution"] != "1440p" {
 		t.Fatalf("resolution = %#v, want 1440p", body["resolution"])
 	}
+	if body["aspect_ratio"] != "16:9" || body["seconds"] != "6" {
+		t.Fatalf("video shape = %#v/%#v, want 16:9/6", body["aspect_ratio"], body["seconds"])
+	}
 }
 
 func TestNewAPIChannel2PluginSendsAllReferenceImages(t *testing.T) {
@@ -2936,7 +3190,7 @@ func TestRunMiniMaxVideoTaskCreatesPollsAndDownloads(t *testing.T) {
 			if len(content) > 0 {
 				first, _ = content[0].(map[string]any)
 			}
-			if body["model"] != "MiniMax-H3" || body["resolution"] != "768P" || body["duration"] != float64(5) || body["ratio"] != "16:9" || first["text"] != "make it move" {
+			if body["model"] != "MiniMax-H3" || body["resolution"] != "768P" || body["duration"] != float64(13) || body["ratio"] != "16:9" || first["text"] != "make it move" {
 				t.Errorf("body = %#v", body)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -2956,7 +3210,7 @@ func TestRunMiniMaxVideoTaskCreatesPollsAndDownloads(t *testing.T) {
 	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Mode:   "video",
 		Prompt: "make it move",
-		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "5", VQuality: "768P", Size: "16:9"},
+		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "13", VQuality: "768P", Size: "16:9"},
 	})
 	if err != nil {
 		t.Fatalf("runVideoTask() error = %v", err)

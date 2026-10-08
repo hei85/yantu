@@ -40,6 +40,18 @@ export function resolveVideoImageReferences(images: ReferenceImage[], options?: 
     }));
 }
 
+/**
+ * Positional video APIs have no per-image role field. Keep explicitly selected
+ * start/end frames first in the URL array, followed by ordinary references.
+ */
+export function orderVideoImageReferences(images: ReferenceImage[], options?: RequestOptions) {
+    const priority: Record<VideoImageRole, number> = { first_frame: 0, last_frame: 1, reference_image: 2 };
+    return resolveVideoImageReferences(images, options)
+        .map((item, index) => ({ ...item, index }))
+        .sort((left, right) => priority[left.role] - priority[right.role] || left.index - right.index)
+        .map(({ image }) => image);
+}
+
 export function hasExplicitVideoFrames(options?: RequestOptions) {
     return options?.videoEditOperation !== "reference_to_video" && Boolean(options?.videoStartFrameNodeId || options?.videoEndFrameNodeId);
 }

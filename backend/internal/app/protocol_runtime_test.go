@@ -28,7 +28,11 @@ func TestPluginViewIncludesDocumentationForEveryOfficialProtocol(t *testing.T) {
 	for _, plugin := range plugins {
 		pluginsByID[plugin.Manifest.ID] = plugin
 	}
-	packages, err := filepath.Glob(filepath.Join("..", "..", "..", "plugin-packages", "*.yingce-plugin"))
+	officialDir, err := officialPluginPackageDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	packages, err := filepath.Glob(filepath.Join(officialDir, "*.yingce-plugin"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +80,11 @@ func TestPluginViewIncludesDocumentationForEveryOfficialProtocol(t *testing.T) {
 }
 
 func TestPluginRuntimeRefreshesExistingOfficialPackageDocumentation(t *testing.T) {
-	packagePath := filepath.Join("..", "..", "..", "plugin-packages", "openai-images.yingce-plugin")
+	officialDir, err := officialPluginPackageDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagePath := filepath.Join(officialDir, "openai-images.yingce-plugin")
 	packageData, err := os.ReadFile(packagePath)
 	if err != nil {
 		t.Fatal(err)

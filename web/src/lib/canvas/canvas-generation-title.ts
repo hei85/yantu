@@ -1,10 +1,14 @@
-import type { CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 const COPY_SUFFIX = /(_copy\d+|\s+Copy)$/i;
 const VERSION_SUFFIX = /\s*·\s*([A-Z])\s*$/;
 
 export function buildImageGenerationNodeTitle(prompt: string, sourceNode?: CanvasNodeData, outputIndex?: number, outputCount = 1) {
-    let title = prompt.trim().slice(0, 32) || "Generated Image";
+    const sourceTitle = sourceNode?.title.trim() || "";
+    const hasNamedImage = sourceNode?.type === CanvasNodeType.Image && sourceTitle
+        && !/^(Image|Generated Image|图片|空图片节点)$/i.test(sourceTitle);
+    // 镜头编号与明确命名属于画布结构，生成或重试不能用提示词开头覆盖。
+    let title = hasNamedImage ? sourceTitle : prompt.trim().slice(0, 32) || "Generated Image";
     if (sourceNode) {
         const sourceTitleWithoutVersion = sourceNode.title.replace(VERSION_SUFFIX, "");
         const copySuffix = sourceTitleWithoutVersion.match(COPY_SUFFIX)?.[1] || "";

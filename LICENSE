@@ -1,22 +1,36 @@
-MIT License
+衍图自有新增部分源代码可见许可
+LicenseRef-Yantu-Source-Available
+Copyright (c) 2026 hei85. All rights reserved.
 
-Copyright (c) 2026 basketikun
-Copyright (c) 2026 ddcat and Open AI Canvas contributors
+一、适用范围
+本许可仅适用于 hei85 依法拥有著作权、尚未以其他许可公开授权的
+新增代码、修改、文档、技能及插件内容。带有
+SPDX-License-Identifier: LicenseRef-Yantu-Source-Available 的文件明确
+适用本许可；其他文件只就符合前述条件的新增部分适用本许可。
+既有 MIT 代码、此前已按 MIT 发布的内容、第三方代码和独立许可证
+所覆盖的内容不受本许可限制，其原许可继续有效。
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+二、允许的行为
+你可以查看、下载和在自己的设备上原样使用上述自有新增内容，
+包括为原样运行而安装依赖、编译、打包，并设置软件提供的正常配置。
+须保留著作权、来源及许可声明。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+三、需要另行授权的行为
+修改、制作衍生版本、向他人再发布、再分发或再许可上述自有新增
+内容（包括源代码和编译产物），须事先取得 hei85 的书面授权。
+这些限制不得用来限制原许可证已授予的第三方或既有 MIT 权利。
+依法不可排除的权利不受影响。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+四、第三方及历史版本
+仓库历史中已按 MIT 发布的内容继续适用当时的 MIT 许可。
+上游 MIT 全文保存在 licenses/MIT-upstream.txt；来源见 NOTICE 和
+THIRD_PARTY_NOTICES.md。依赖、模型、官方指南、商标和素材的权利
+由各自权利人持有，本许可不授予超出其原授权范围的权利。
+
+五、无担保及终止
+本内容按“原样”提供，不附带适销性、特定用途适用性、不侵权或
+生成结果质量的保证。在法律允许的范围内，权利人不对使用本内容
+引起的损失负责。违反本许可时，对自有新增内容的授权自动终止。
+
+授权联系：通过 https://github.com/hei85/yantu 的 Issue 联系 hei85。
+这是具有使用限制的源码公开许可，不是 OSI 意义的开源许可证。

@@ -1,6 +1,5 @@
 import { http } from "./request";
 import type { CanvasOperation } from "@/lib/canvas/canvas-operation-contract";
-import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CreateTaskInput, GenerationTask } from "./task-center";
 
 export type CreationStatus = "idle" | "running" | "waiting_answer" | "waiting_proposal" | "waiting_canvas" | "waiting_confirmation" | "waiting_task" | "paused" | "completed" | "cancelled";
@@ -35,6 +34,4 @@ export const creationRuns = {
     approve: (id: string, input: CreationGuard & { submissionIds: string[] }, signal?: AbortSignal) => http.post<{ submissions: CreationSubmission[] }>(`${path(id)}/submissions/approve`, input, { signal }),
     refreshQuote: (id: string, input: CreationGuard & { submissionId: string }, signal?: AbortSignal) => http.post<CreationSubmission>(`${path(id)}/submissions/refresh`, input, { signal }),
     execute: (id: string, input: CreationGuard & { submissionId: string }, signal?: AbortSignal) => http.post<GenerationTask>(`${path(id)}/execute`, input, { signal }) ,
-    canvasSnapshot: (id: string, signal?: AbortSignal) => http.get<{ document: CanvasProject; snapshotHash: string }>(`${path(id)}/canvas-snapshot`, { signal }),
-    commitCanvas: (id: string, input: CreationGuard & { expectedSnapshotHash: string; document: CanvasProject }, signal?: AbortSignal) => http.post<{ snapshotHash: string }>(`${path(id)}/canvas-commit`, input, { signal }),
 };;

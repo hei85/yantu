@@ -104,9 +104,6 @@ func (r *Repository) SaveCreationSubmission(item *model.CreationSubmission) erro
 func (r *Repository) RevokeCreationSubmissions(runID string) error {
 	return r.db.Model(&model.CreationSubmission{}).Where("run_id = ? AND task_id IS NULL AND revoked_at IS NULL", runID).Update("revoked_at", time.Now()).Error
 }
-func (r *Repository) CreateCreationCanvas(canvas *model.CanvasProject) error {
-	return r.UpsertCanvasProject(canvas)
-}
 
 // CreationConfigSignature 捕获服务端模型配置版本，确保方案确认与执行使用同一份配置。
 func (r *Repository) CreationConfigSignature(task *model.Task, channelID, modelKey string) (string, error) {

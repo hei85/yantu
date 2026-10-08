@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
+// 2026-09-26：改动本文件用于触发前端整页 reload，使页面重新拉取模型能力目录（reference_to_video）。
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
 

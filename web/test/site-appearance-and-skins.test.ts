@@ -35,8 +35,8 @@ describe("site appearance and editable skin library", () => {
         expect(copy.locked).toBe(false);
         expect(copy.tokens).not.toBe(DEFAULT_CLASSIC_SKIN.tokens);
         expect(copy.tokens.light).not.toBe(DEFAULT_CLASSIC_SKIN.tokens.light);
-        expect(Object.keys(copy.tokens.light)).toHaveLength(50);
-        expect(SKIN_COLOR_GROUPS.flatMap((group) => group.fields)).toHaveLength(50);
+        expect(Object.keys(copy.tokens.light)).toHaveLength(45);
+        expect(SKIN_COLOR_GROUPS.flatMap((group) => group.fields)).toHaveLength(45);
         expect(SKIN_COMPONENT_NUMBER_FIELDS).toHaveLength(16);
     });
 

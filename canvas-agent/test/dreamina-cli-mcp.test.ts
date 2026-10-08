@@ -651,10 +651,8 @@ test("Dreamina MCP tool guidance exposes only current generation operations", ()
     }
     assert.match(tool.inputSchema?.resolutionType?.description ?? "", /automatic image resolution/i);
     assert.match(tool.inputSchema?.resolutionType?.description ?? "", /omit resolutionType/i);
-    assert.match(AGENT_PROMPT, /即使用户.*Dreamina/i);
-    assert.match(AGENT_PROMPT, /canvas_generate_image/);
-    assert.match(AGENT_PROMPT, /quality=auto/i);
-    assert.match(AGENT_PROMPT, /禁止.*dreamina_cli/i);
+    // MCP Agent 行为规则已按用户要求清空，等待重新设定；这里只确认规则没有被悄悄加回来。
+    assert.equal(AGENT_PROMPT, "");
 });
 
 test("Dreamina MCP rejects cancellation before dispatch without contacting Runtime", async () => {

@@ -15,8 +15,9 @@ import { GenerationToolCard, type GenerationToolStatus } from "@/components/ai/g
 import { WorkingDots, WorkingGlow } from "@/components/ai/working-indicator";
 import { MessageReasoning } from "@/components/ai/message-reasoning";
 import { creationResultAssetIds } from "@/lib/canvas/canvas-asset-handoff";
-import { generationErrorMessage } from "@/lib/generation-error";
-import { formatVideoResolutionLabel as videoResolutionLabel } from "@/lib/video-generation-options";
+import { CONTENT_MODERATION_ERROR_CODE, generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
+import { isHeihanAxonH3Video } from "@/lib/model-protocols";
+import { formatVideoResolutionLabel as videoResolutionLabel, inferredVideoResolutionNeedsVerification, videoOutputMismatchHint, VIDEO_RESOLUTION_DEFAULT_HINT, VIDEO_RESOLUTION_DEFAULT_LABEL, VIDEO_RESOLUTION_INFERRED_HINT } from "@/lib/video-generation-options";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { CachedResourceImage } from "@/components/cached-resource-image";
 import { CanvasImagePreview } from "@/components/canvas/canvas-image-preview";
@@ -34,6 +35,7 @@ import { modelCapabilityConfigFor, normalizeVideoValue, videoDurationOptions, ty
 import { mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
 import type { Skill } from "@/services/api/skills";
 import { resolveResourceUrl } from "@/services/api/resources";
+import { queryGenerationTask } from "@/services/api/task-center";
 import { modelOptionName, resolveModelChannel, type AiConfig } from "@/stores/use-config-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -205,6 +207,17 @@ export function CreationWorkspaceToolbar({ shots, onJumpToShot, onNewConversatio
 
 export function CreationMessageView({ item, shotNumber, onRetryFailure, onCreateVariant, onEditUserMessage, onContinueCanvas, openingCanvas }: { item: CreationMessage; shotNumber: number; onRetryFailure: () => void; onCreateVariant: () => void; onEditUserMessage: (text: string) => void; onContinueCanvas: (ids?: string[]) => void; openingCanvas: boolean }) {
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
+    const [diagnostic, setDiagnostic] = useState<{ taskId: string; errorCode?: string }>();
+    const failedTaskId = item.status === "error" ? item.taskIds?.[0] : undefined;
+    useEffect(() => {
+        if (!failedTaskId) return;
+        const controller = new AbortController();
+        void queryGenerationTask(failedTaskId, { signal: controller.signal })
+            .then((task) => setDiagnostic({ taskId: failedTaskId, errorCode: task.errorCode }))
+            .catch(() => {});
+        return () => controller.abort();
+    }, [failedTaskId]);
+    const diagnosticCode = diagnostic?.taskId === failedTaskId ? diagnostic?.errorCode : undefined;
     if (item.role === "user") return <CreationUserMessage item={item} shotNumber={shotNumber} onEditUserMessage={onEditUserMessage} />;
     const mode = item.mode || "text";
     const stateLabel = item.status === "pending" ? "生成中" : item.status === "cancelled" ? "已停止" : item.status === "error" ? "生成失败" : "";
@@ -216,8 +229,8 @@ export function CreationMessageView({ item, shotNumber, onRetryFailure, onCreate
         );
     const toolStatus: GenerationToolStatus = item.status === "pending" ? "running" : item.status === "error" ? "error" : item.status === "cancelled" ? "cancelled" : "completed";
     return <article className={`creation-assistant-message is-${mode}`}>
-        {mode === "text" ? <><div className="creation-message-heading">{heading}</div>{item.reasoning ? <div className="creation-message-reasoning-wrap"><MessageReasoning reasoning={item.reasoning} isStreaming={item.status === "streaming"} /></div> : null}<div className="creation-message-content">{item.content ? <AIMessageMarkdown isStreaming={item.status === "streaming"}>{item.content}</AIMessageMarkdown> : <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><WorkingDots dotSize={5} gap={2} /><span>正在生成…</span></span>}</div></> : <GenerationToolCard status={toolStatus} heading={heading}><MediaResult item={item} onRetryFailure={onRetryFailure} onCreateVariant={onCreateVariant} onContinueCanvas={onContinueCanvas} openingCanvas={openingCanvas} /></GenerationToolCard>}
-        {item.error && mode === "text" ? <div className="creation-message-error"><span>{generationErrorMessage(item.error)}</span><button type="button" onClick={onRetryFailure}><RefreshCw />重新生成</button></div> : null}
+        {mode === "text" ? <><div className="creation-message-heading">{heading}</div>{item.reasoning ? <div className="creation-message-reasoning-wrap"><MessageReasoning reasoning={item.reasoning} isStreaming={item.status === "streaming"} /></div> : null}<div className="creation-message-content">{item.content ? <AIMessageMarkdown isStreaming={item.status === "streaming"}>{item.content}</AIMessageMarkdown> : <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><WorkingDots dotSize={5} gap={2} /><span>正在生成…</span></span>}</div></> : <GenerationToolCard status={toolStatus} heading={heading}><MediaResult item={item} diagnosticCode={diagnosticCode} onRetryFailure={onRetryFailure} onCreateVariant={onCreateVariant} onContinueCanvas={onContinueCanvas} openingCanvas={openingCanvas} /></GenerationToolCard>}
+        {item.error && mode === "text" ? <div className="creation-message-error"><span>{generationErrorMessage({ error: item.error, errorCode: diagnosticCode })}</span><button type="button" onClick={onRetryFailure}><RefreshCw />重新生成</button></div> : null}
     </article>;
 }
 
@@ -245,15 +258,16 @@ function CreationUserMessage({ item, shotNumber, onEditUserMessage }: { item: Cr
     </article>;
 }
 
-function MediaResult({ item, onRetryFailure, onCreateVariant, onContinueCanvas, openingCanvas }: { item: CreationMessage; onRetryFailure: () => void; onCreateVariant: () => void; onContinueCanvas: (ids?: string[]) => void; openingCanvas: boolean }) {
+function MediaResult({ item, diagnosticCode, onRetryFailure, onCreateVariant, onContinueCanvas, openingCanvas }: { item: CreationMessage; diagnosticCode?: string; onRetryFailure: () => void; onCreateVariant: () => void; onContinueCanvas: (ids?: string[]) => void; openingCanvas: boolean }) {
     const [previewUrl, setPreviewUrl] = useState("");
     const [previewType, setPreviewType] = useState<"image" | "video">("image");
     const assets = useAssetStore((state) => state.assets);
     const resultUrls = item.resultUrls || [];
+    const moderationRejected = diagnosticCode === CONTENT_MODERATION_ERROR_CODE || isContentModerationError(item.error);
     const resultAssetIds = resultUrls.length ? creationResultAssetIds(assets, { messageId: item.id, taskIds: item.taskIds || [], resultUrls }) : [];
     const canContinueWithResults = resultUrls.length > 0 && resultAssetIds.length === resultUrls.length;
     if (item.status === "pending") return <CreationMediaPending mode={item.mode || "image"} ratio={item.settings?.ratio} />;
-    if ((item.status === "error" || item.status === "cancelled") && !resultUrls.length) return <div className="creation-media-error"><span>{item.status === "cancelled" ? item.content || "已停止" : generationErrorMessage(item.error || "生成失败")}</span><button type="button" onClick={onRetryFailure}><RefreshCw />重新生成</button></div>;
+    if ((item.status === "error" || item.status === "cancelled") && !resultUrls.length) return <div className="creation-media-error"><span>{item.status === "cancelled" ? item.content || "已停止" : generationErrorMessage({ error: item.error || "生成失败", errorCode: diagnosticCode })}</span>{!moderationRejected ? <button type="button" onClick={onRetryFailure}><RefreshCw />重新生成</button> : null}</div>;
     if (!resultUrls.length) return <div className="creation-media-empty">没有返回可预览结果 <button type="button" onClick={onRetryFailure}>重试</button></div>;
     const isVideo = item.mode === "video";
     return <div className="creation-media-result">
@@ -380,10 +394,10 @@ export function CreationComposer(props: ComposerProps) {
             ? "描述画面、人物、场景、构图与风格"
             : "描述镜头内容、运动、光线与节奏";
     const emptyPlaceholder = "输入你的镜头、画面或故事。也可以添加参考图开始创作";
-    const imageReferencesSupported = props.imageProfile.references.maxImages > 0;
-    const referencesSupported = props.mode === "image" ? imageReferencesSupported : props.mode !== "video" || props.videoProfile.operations.includes("image_to_video");
-    const canAddMoreReferences = referencesSupported && props.attachments.length < props.maxReferences;
-    const addReferenceLabel = interactionBusy ? (props.referenceReplacementBusy ? "正在替换参考图" : "生成中暂不能添加参考内容") : canAddMoreReferences ? "添加更多参考内容" : `已达到当前模型的参考内容上限（${props.maxReferences} 个）`;
+    const canAddMoreReferences = props.attachments.length < props.maxReferences;
+    const addReferenceLabel = interactionBusy
+        ? (props.referenceReplacementBusy ? "正在替换参考图" : "生成中暂不能添加参考内容")
+        : canAddMoreReferences ? "添加参考内容" : `当前最多可添加 ${props.maxReferences} 个参考内容；仍可上传素材，替换前请移除已有参考内容`;
     const referenceCounts = useMemo(() => props.attachments.reduce((counts, attachment) => {
         const kind = creationAttachmentKind(attachment);
         counts[kind] += 1;
@@ -490,7 +504,7 @@ export function CreationComposer(props: ComposerProps) {
         <div className="creation-chat-writing-surface">
             <div className="creation-chat-editor">
                 <CanvasResourceMentionTextarea ref={props.composerFocusRef} value={props.prompt} references={props.references} mentionMenuWidth={400} sendOnEnter onFocus={props.onPromptFocus} onChange={props.setPrompt} onSubmit={props.onSubmit} containerClassName="creation-chat-mention-container" className="creation-chat-mention-editor creation-scrollbar" style={{ color: "var(--creation-text)" }} placeholder={props.placeholderOverride || (props.variant === "empty" ? emptyPlaceholder : placeholder)} aria-label="创作提示词，可使用 @ 引用当前参考内容或技能；回车发送，Shift+回车换行" spellCheck disabled={interactionBusy} activeDropReferenceId={dropTargetReferenceId} onReferenceFilesDrop={(reference, files) => { const target = props.references.find((item) => item.id === reference.id); if (target?.attachmentId) props.onReplaceReferenceFiles(target.attachmentId, files); }} />
-                {props.attachments.length || referencesSupported ? <div className={`creation-reference-panel${trackState.isExpanded ? " is-expanded" : ""}`} aria-busy={interactionBusy}>
+                <div className={`creation-reference-panel${trackState.isExpanded ? " is-expanded" : ""}`} aria-busy={interactionBusy}>
                     {trackState.isExpanded ? <div className="creation-reference-panel-header">
                         <div className="creation-reference-filter-tabs" role="group" aria-label="筛选参考内容">
                             {([
@@ -547,13 +561,13 @@ export function CreationComposer(props: ComposerProps) {
                                     <CreationAttachmentThumbnail item={item} onPreview={previewAttachment} onRemove={props.onRemoveAttachment} />
                                 </Reorder.Item>)}
                                 {!visibleAttachments.length && props.attachments.length ? <li className="creation-reference-filter-empty">该类型暂无参考内容</li> : null}
-                                {referencesSupported ? <li className="creation-reference-add-slot"><Tooltip title={addReferenceLabel}><button type="button" className="creation-reference-add-button" onClick={props.onOpenLibrary} disabled={interactionBusy || !canAddMoreReferences} aria-label={addReferenceLabel}><Plus aria-hidden="true" /><span>参考内容</span></button></Tooltip></li> : null}
+                                <li className="creation-reference-add-slot"><Tooltip title={addReferenceLabel}><button type="button" className="creation-reference-add-button" onClick={props.onOpenLibrary} disabled={interactionBusy} aria-label={addReferenceLabel}><Plus aria-hidden="true" /><span>参考内容</span></button></Tooltip></li>
                             </Reorder.Group>
                             {trackState.canScrollRight ? <button type="button" className="creation-reference-track-button is-right" onClick={() => scrollAttachmentTrack(1)} aria-label="向右浏览参考内容" title="向右浏览参考内容"><ChevronRight aria-hidden="true" /></button> : null}
                             {!trackState.isExpanded && props.attachments.length ? <Tooltip title="查看全部"><button type="button" className="creation-reference-panel-expand" onClick={() => setReferencePanelExpanded(true)} aria-label={`查看全部 ${props.attachments.length} 个参考内容`} aria-expanded="false"><Maximize2 aria-hidden="true" /></button></Tooltip> : null}
                         </div>
                     </div>
-                </div> : null}
+                </div>
             </div>
         </div>
         <footer className="creation-chat-dock">
@@ -662,6 +676,8 @@ function ModePicker({ mode, onModeChange }: { mode: CreationMode; onModeChange: 
 
 function GenerationSettingsMenu(props: ComposerProps) {
     const [open, setOpen] = useState(false);
+    const capability = modelCapabilityConfigFor(props.config, props.model);
+    const outputMismatch = props.mode === "video" ? videoOutputMismatchHint(props.videoQuality, capability.observed) : "";
     const activeQualityOptions = props.imageProfile.quality.values.map((value) => qualityOptions.find((item) => item.value === value) || { value, label: value.toUpperCase(), description: "模型支持的质量/分辨率" });
     const qualityLabel = activeQualityOptions.find((item) => item.value === props.quality)?.label || qualityOptions.find((item) => item.value === props.quality)?.label || props.quality || "自动";
     // 尺寸/比例/分辨率选项取同显示名分组内全部模型的并集，路由模型只决定发送参数。
@@ -685,15 +701,18 @@ function GenerationSettingsMenu(props: ComposerProps) {
         ...(props.imageProfile.maxOutputs > 1 ? [props.count] : []),
     ].join(" · ");
     const videoRatioSupported = props.mode === "video" && ratios.length > 0;
-    const summary = props.mode === "video" ? [...(videoRatioSupported ? [props.ratio] : []), ...(videoResolutionSupported ? [videoResolutionLabel(props.videoQuality)] : [])].join(" · ") : imageSummary;
+    const summary = props.mode === "video" ? [...(videoRatioSupported ? [props.ratio] : []), videoResolutionSupported ? videoResolutionLabel(props.videoQuality) : `${VIDEO_RESOLUTION_DEFAULT_LABEL}分辨率`].join(" · ") : imageSummary;
     const panel = <div className="creation-parameter-menu">
         {props.mode === "image" ? <ImageSizePicker profile={mergedProfile} size={props.ratio} quality={props.quality} onChange={(size, quality) => { props.setRatio(size); if (quality) props.setQuality(quality); }} /> : videoRatioSupported ? <SettingSection title="画幅" value={props.ratio}><div className="creation-choice-grid is-ratio">{ratios.map((value) => <button key={value} type="button" aria-pressed={value === props.ratio} className={value === props.ratio ? "is-selected" : ""} onClick={() => props.setRatio(value)}><span className="creation-ratio-preview"><span style={ratioPreviewStyle(value)} /></span><span>{value}</span></button>)}</div></SettingSection> : null}
         {props.mode === "image" && referenceImageSizeValue ? <button type="button" className="creation-custom-trigger" onClick={selectReferenceImageSize}>使用参考图尺寸 · {referenceImageSizeLabel}</button> : null}
-        {props.mode === "video" ? (videoResolutionSupported ? <SettingSection title="清晰度" value={videoResolutionLabel(props.videoQuality)}><div className="creation-choice-grid is-resolution">{resolutions.map((option) => <button key={option.value} type="button" aria-pressed={option.value === props.videoQuality} className={option.value === props.videoQuality ? "is-selected" : ""} onClick={() => props.setVideoQuality(option.value)}>{option.label}</button>)}</div></SettingSection> : null) : <>
+        {props.mode === "video" ? (videoResolutionSupported ? <SettingSection title="分辨率" value={videoResolutionLabel(props.videoQuality)}><div className="creation-choice-grid is-resolution">{resolutions.map((option) => <button key={option.value} type="button" aria-pressed={option.value === props.videoQuality} className={option.value === props.videoQuality ? "is-selected" : ""} onClick={() => props.setVideoQuality(option.value)}>{option.label}</button>)}</div></SettingSection> : <SettingSection title="分辨率" value={VIDEO_RESOLUTION_DEFAULT_LABEL}><p className="px-3 pb-2 text-xs leading-5 text-foreground/60">{VIDEO_RESOLUTION_DEFAULT_HINT}</p></SettingSection>) : <>
 
             {props.imageProfile.quality.supported && !imageResolutionUsesQuality(mergedProfile) ? <SettingSection title={activeQualityOptions.some((item) => item.value === "1k" || item.value === "2k") ? "分辨率" : "图片质量"} value={qualityLabel}><div className="creation-choice-grid is-quality">{activeQualityOptions.map((option) => <button key={option.value} type="button" aria-pressed={option.value === props.quality} className={option.value === props.quality ? "is-selected" : ""} onClick={() => props.setQuality(option.value)}><span>{option.label}</span><small>{option.description}</small></button>)}</div></SettingSection> : null}
             {props.imageProfile.maxOutputs > 1 ? <SettingSection title="生成数量" value={`${props.count} 张`}><div className="creation-parameter-content"><div className="creation-choice-grid is-count">{countOptions.filter((option) => Number(option) <= props.imageProfile.maxOutputs).map((option) => <button key={option} type="button" aria-pressed={option === props.count} className={option === props.count ? "is-selected" : ""} onClick={() => props.setCount(option)}>{option}</button>)}</div><label className="creation-custom-value"><span>自定义</span><input inputMode="numeric" pattern="[0-9]*" value={props.count} onChange={(event) => props.setCount(String(Math.max(1, Math.min(props.imageProfile.maxOutputs, Number(event.target.value) || 1))))} aria-label={`生成数量，范围 1 到 ${props.imageProfile.maxOutputs}`} /><em>张</em></label></div></SettingSection> : null}
         </>}
+        {props.mode === "video" && isHeihanAxonH3Video(resolveModelChannel(props.config, props.model).baseUrl, modelOptionName(props.model)) ? <p className="px-3 pb-2 text-xs leading-5 text-foreground/60">此中转站的 H3 工作流没有独立的“生成声音”开关。成片是否带原声由上游工作流决定，生成后可查看视频音轨。</p> : null}
+        {outputMismatch ? <p className="px-3 pb-2 text-xs leading-5 text-foreground/60">{outputMismatch}</p> : null}
+        {props.mode === "video" && inferredVideoResolutionNeedsVerification(props.videoProfile, capability.observed) ? <p className="px-3 pb-2 text-xs leading-5 text-foreground/60">{VIDEO_RESOLUTION_INFERRED_HINT}</p> : null}
     </div>;
     return <Popover open={open} onOpenChange={setOpen} trigger="click" placement="bottom" arrow={false} classNames={{ root: "creation-control-popover", container: "creation-control-popover-surface", content: "creation-control-popover-content" }} content={panel}>
         <button type="button" className="creation-chat-control" aria-label={`生成设置：${summary}`}><SlidersHorizontal /><span>{summary}</span><ChevronDown className={open ? "is-open" : ""} /></button>

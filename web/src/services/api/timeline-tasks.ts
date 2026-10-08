@@ -34,9 +34,22 @@ export async function createTimelineTranscriptionTask(
 // timeline 直接传 TimelineProject；后端使用同名字段构建渲染输入，未知字段由后端边界忽略。
 // 任务完成后由任务中心读取 ResultJSON，并按 TimelineRenderResult 解包。
 
+export type TimelineRenderOutput = {
+    width?: number;
+    height?: number;
+    fpsNumerator?: number;
+    fpsDenominator?: number;
+    sampleRate?: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    crf?: number;
+    preset?: string;
+};
+
 export type TimelineRenderCreateRequest = {
     projectId: string;
     timeline: TimelineProject;
+    output?: TimelineRenderOutput;
 };
 
 export type TimelineRenderResult = {
@@ -45,6 +58,8 @@ export type TimelineRenderResult = {
     size?: number;
     durationMs?: number;
     subtitleSrt?: string;
+    probe?: { durationMs?: number; videoStreams?: number; audioStreams?: number; subtitleStreams?: number; width?: number; height?: number; decoded?: boolean };
+    output?: TimelineRenderOutput;
 };
 
 export async function createTimelineRenderTask(

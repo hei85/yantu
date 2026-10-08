@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { createDirectorTransaction } from "../src/lib/canvas/director/director-gesture-transaction";
-import { isDirectorOutputSnapshotCurrent, mergeDirectorOutputPreview, shouldReinitializeDirectorSession, upsertDirectorSceneById } from "../src/lib/canvas/director/director-session";
+import { isDirectorOutputSnapshotCurrent, mergeDirectorOutputPreview, shouldAdoptExternalDirectorScene, shouldReinitializeDirectorSession, upsertDirectorSceneById } from "../src/lib/canvas/director/director-session";
 import { createDirectorScene } from "../src/lib/canvas/director/director-scene";
 import type { DirectorScene } from "../src/types/director";
 
@@ -36,6 +36,17 @@ describe("会话初始化判定：只认 scene id（A1 回归）", () => {
             rebuilds.push(nextSceneId);
         });
         expect(rebuilds).toEqual(["s1", "s2"]);
+    });
+});
+
+describe("同场景 canonical 外部更新", () => {
+    test("adopts an external update over an unchanged draft", () => {
+        expect(shouldAdoptExternalDirectorScene({ sameScene: true, draftMatchesPrevious: true, incomingChanged: true, gestureActive: false })).toBe(true);
+    });
+
+    test("preserves a dirty draft and an active gesture", () => {
+        expect(shouldAdoptExternalDirectorScene({ sameScene: true, draftMatchesPrevious: false, incomingChanged: true, gestureActive: false })).toBe(false);
+        expect(shouldAdoptExternalDirectorScene({ sameScene: true, draftMatchesPrevious: true, incomingChanged: true, gestureActive: true })).toBe(false);
     });
 });
 

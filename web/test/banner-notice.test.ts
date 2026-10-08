@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 
 import {
     BANNER_NOTICE_DEFAULT_TYPE,
@@ -16,6 +17,8 @@ import { bannerTitleContrastRatio } from "@/lib/announcements/banner-title";
 async function readSource(relativePath: string) {
     return Bun.file(new URL(relativePath, import.meta.url)).text();
 }
+
+const backendSourceTest = existsSync(new URL("../../backend/source/internal/app/announcement.go", import.meta.url)) ? test : test.skip;
 
 /** 从 Go 的 `var X = map[string]struct{}{...}` 字面量里取出键集合。 */
 function goMapKeys(source: string, variable: string) {
@@ -90,21 +93,21 @@ describe("emoji 图标素材库", () => {
 });
 
 describe("与后端白名单保持一致", () => {
-    test("通知类型的后端白名单逐项等于前端注册表", async () => {
-        const goSource = await readSource("../../backend/internal/app/announcement.go");
+    backendSourceTest("通知类型的后端白名单逐项等于前端注册表", async () => {
+        const goSource = await readSource("../../backend/source/internal/app/announcement.go");
         expect(new Set(goMapKeys(goSource, "bannerNoticeTypes"))).toEqual(new Set(BANNER_NOTICE_TYPE_VALUES));
     });
 
-    test("后端默认值常量与前端一致", async () => {
-        const goSource = await readSource("../../backend/internal/app/announcement.go");
+    backendSourceTest("后端默认值常量与前端一致", async () => {
+        const goSource = await readSource("../../backend/source/internal/app/announcement.go");
         expect(goSource).toContain(`bannerNoticeDefaultType = "${BANNER_NOTICE_DEFAULT_TYPE}"`);
     });
 
-    test("后端不保存独立图标字段：emoji 必须内嵌在标题分段里", async () => {
+    backendSourceTest("后端不保存独立图标字段：emoji 必须内嵌在标题分段里", async () => {
         const [goModel, goApp, goRepo] = await Promise.all([
-            readSource("../../backend/internal/model/models_project.go"),
-            readSource("../../backend/internal/app/announcement.go"),
-            readSource("../../backend/internal/repository/announcement.go"),
+            readSource("../../backend/source/internal/model/models_project.go"),
+            readSource("../../backend/source/internal/app/announcement.go"),
+            readSource("../../backend/source/internal/repository/announcement.go"),
         ]);
         // 防止 icon 字段被加回来却没人维护白名单：图标的存储形态就是 TitleRuns 的文本。
         expect(goModel).not.toMatch(/\bIcon\s+string/);

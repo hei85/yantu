@@ -7,6 +7,13 @@ type VideoPreview = NonNullable<CanvasNodeMetadata["videoPreview"]>;
 
 const previewRequests = new Map<string, Promise<VideoPreview | null>>();
 
+export const CANVAS_VIDEO_PREVIEW_MAX_ATTEMPTS = 3;
+
+export function canvasVideoPreviewRetryDelay(attempt: number) {
+    if (attempt >= CANVAS_VIDEO_PREVIEW_MAX_ATTEMPTS) return undefined;
+    return Math.min(10000, 2000 * 2 ** Math.max(0, attempt - 1));
+}
+
 export function hydrateCanvasVideoPreview(node: CanvasNodeData, signal?: AbortSignal) {
     const sourceKey = node.metadata?.storageKey || node.metadata?.content || "";
     if (!sourceKey) return Promise.resolve(null);
@@ -15,14 +22,15 @@ export function hydrateCanvasVideoPreview(node: CanvasNodeData, signal?: AbortSi
     if (existing) return existing;
 
     const request = generateCanvasVideoPreview(node, signal)
-        .then((preview) => {
-            if (!preview) previewRequests.delete(requestKey);
-            return preview;
-        })
         .catch((error: unknown) => {
-            previewRequests.delete(requestKey);
             if (error instanceof DOMException && error.name === "AbortError") throw error;
+            console.warn("视频封面生成失败，原视频仍可播放", { nodeId: node.id, error });
             return null;
+        })
+        .finally(() => {
+            // Deduplicate only live work. A completed cover can later expire
+            // or be deleted; returning that stale result prevents recovery.
+            if (previewRequests.get(requestKey) === request) previewRequests.delete(requestKey);
         });
     previewRequests.set(requestKey, request);
     return request;

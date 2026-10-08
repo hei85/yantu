@@ -142,39 +142,60 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 		return nil, err
 	}
 	// 使用服务端保存的渠道密钥和请求头访问上游，避免敏感配置再次经过浏览器。
-	models, err := s.FetchChannelModels(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
+	catalog, err := s.FetchChannelModelCatalog(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
 	if err != nil {
 		return nil, err
+	}
+	models := make([]string, 0, len(catalog))
+	for _, entry := range catalog {
+		models = append(models, entry.ID)
 	}
 	// 只按当前未删除记录去重；普通手动删除的模型仍可重新拉取，已合并进模型家族的 SKU 除外。
 	existing, err := s.repo.ChannelModels(channelID, true)
 	if err != nil {
 		return nil, err
 	}
-	known := make(map[string]struct{}, len(existing))
-	for _, item := range existing {
-		known[channelModelCatalogKey(item.ModelKey)] = struct{}{}
+	known := make(map[string]*model.ChannelModel, len(existing)*2)
+	for index := range existing {
+		item := &existing[index]
+		known[channelModelCatalogKey(item.ModelKey)] = item
+		if providerKey := channelModelCatalogKey(item.ProviderModelKey); providerKey != "" {
+			known[providerKey] = item
+		}
 	}
 	retired := retiredChannelModelKeys(channel.RetiredModelsJSON)
-	missing := make([]model.ChannelModel, 0, len(models))
-	for _, name := range models {
-		name = strings.TrimPrefix(strings.TrimSpace(name), "models/")
+	missing := make([]model.ChannelModel, 0, len(catalog))
+	metadataUpdated := false
+	for _, entry := range catalog {
+		name := strings.TrimPrefix(strings.TrimSpace(entry.ID), "models/")
 		key := channelModelCatalogKey(name)
-		if _, ok := known[key]; ok || retired[key] {
+		if item, ok := known[key]; ok {
+			updated, updateErr := mergeChannelModelCatalogMetadata(item, entry, channel.APIFormat)
+			if updateErr != nil {
+				return nil, updateErr
+			}
+			if updated {
+				if err := s.repo.SaveChannelModel(item); err != nil {
+					return nil, err
+				}
+				metadataUpdated = true
+			}
 			continue
 		}
-		// 自动发现不能绕过定价边界；新模型由管理员定价后再手动启用。
+		if retired[key] {
+			continue
+		}
 		modelID, idErr := s.repo.NextPrefixedID("MODEL")
 		if idErr != nil {
 			return nil, idErr
 		}
-		missing = append(missing, model.ChannelModel{ID: modelID, ChannelID: channelID, ModelKey: name, ProviderModelKey: name, DisplayName: name, Enabled: false})
+		missing = append(missing, discoveredChannelModelFromCatalog(modelID, channelID, entry, channel.APIFormat))
 	}
 	added, err := s.repo.CreateMissingChannelModels(missing)
 	if err != nil {
 		return nil, err
 	}
-	if added > 0 {
+	if added > 0 || metadataUpdated {
 		s.invalidateRouteCatalog()
 	}
 	return &AdminChannelModelFetchResult{Models: models, Added: added}, nil
@@ -188,6 +209,23 @@ func (s *Service) PreviewAdminChannelModels(ctx context.Context, actor *model.Us
 	return s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
 }
 
+// PreviewAdminChannelModelCatalog uses the saved channel credential to read the
+// upstream capability and endpoint metadata without returning that credential.
+func (s *Service) PreviewAdminChannelModelCatalog(ctx context.Context, actor *model.User, channelID string) ([]ChannelModelCatalogItem, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	channel, err := s.adminSystemChannel(channelID)
+	if err != nil {
+		return nil, err
+	}
+	headers, err := ParseOutboundHeadersJSON(channel.HeadersJSON)
+	if err != nil {
+		return nil, err
+	}
+	return s.FetchChannelModelCatalog(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers})
+}
+
 // ImportAdminChannelModels 只导入管理员明确选择、且仍存在于上游目录中的模型。
 func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.User, channelID string, selected []string) (*AdminChannelModelFetchResult, error) {
 	if err := s.RequireAdmin(actor); err != nil {
@@ -197,7 +235,7 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	if err != nil {
 		return nil, err
 	}
-	models, err := s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
+	catalog, err := s.PreviewAdminChannelModelCatalog(ctx, actor, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -207,11 +245,11 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	if len(selected) > 500 {
 		return nil, BadAuthRequest("单次最多导入 500 个模型")
 	}
-	available := make(map[string]string, len(models))
-	for _, name := range models {
-		available[channelModelCatalogKey(name)] = name
+	available := make(map[string]ChannelModelCatalogItem, len(catalog))
+	for _, entry := range catalog {
+		available[channelModelCatalogKey(entry.ID)] = entry
 	}
-	chosen := make([]string, 0, len(selected))
+	chosen := make([]ChannelModelCatalogItem, 0, len(selected))
 	seen := make(map[string]struct{}, len(selected))
 	for _, rawName := range selected {
 		name := strings.TrimPrefix(strings.TrimSpace(rawName), "models/")
@@ -237,33 +275,51 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	if err != nil {
 		return nil, err
 	}
-	known := make(map[string]struct{}, len(existing))
-	for _, item := range existing {
+	known := make(map[string]*model.ChannelModel, len(existing)*2)
+	for index := range existing {
+		item := &existing[index]
 		providerKey := firstNonEmpty(item.ProviderModelKey, item.ModelKey)
-		known[channelModelCatalogKey(providerKey)] = struct{}{}
+		known[channelModelCatalogKey(providerKey)] = item
+		known[channelModelCatalogKey(item.ModelKey)] = item
 	}
 	retired := retiredChannelModelKeys(channel.RetiredModelsJSON)
 	missing := make([]model.ChannelModel, 0, len(chosen))
-	for _, name := range chosen {
+	chosenNames := make([]string, 0, len(chosen))
+	metadataUpdated := false
+	for _, entry := range chosen {
+		name := entry.ID
+		chosenNames = append(chosenNames, name)
 		key := channelModelCatalogKey(name)
-		if _, ok := known[key]; ok || retired[key] {
+		if item, ok := known[key]; ok {
+			updated, updateErr := mergeChannelModelCatalogMetadata(item, entry, channel.APIFormat)
+			if updateErr != nil {
+				return nil, updateErr
+			}
+			if updated {
+				if err := s.repo.SaveChannelModel(item); err != nil {
+					return nil, err
+				}
+				metadataUpdated = true
+			}
+			continue
+		}
+		if retired[key] {
 			continue
 		}
 		modelID, idErr := s.repo.NextPrefixedID("MODEL")
 		if idErr != nil {
 			return nil, idErr
 		}
-		missing = append(missing, model.ChannelModel{ID: modelID, ChannelID: channelID, ModelKey: name, DisplayName: name, Enabled: false})
-		known[key] = struct{}{}
+		missing = append(missing, discoveredChannelModelFromCatalog(modelID, channelID, entry, channel.APIFormat))
 	}
 	added, err := s.repo.CreateMissingChannelModels(missing)
 	if err != nil {
 		return nil, err
 	}
-	if added > 0 {
+	if added > 0 || metadataUpdated {
 		s.invalidateRouteCatalog()
 	}
-	return &AdminChannelModelFetchResult{Models: chosen, Added: added}, nil
+	return &AdminChannelModelFetchResult{Models: chosenNames, Added: added}, nil
 }
 
 func (s *Service) fetchAdminChannelModelCatalog(ctx context.Context, actor *model.User, channelID string) ([]string, error) {
@@ -284,6 +340,9 @@ func (s *Service) fetchAdminChannelModelCatalog(ctx context.Context, actor *mode
 
 func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id string, req ChannelModelRequest) (*model.ChannelModel, error) {
 	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	if err := s.validateAxonModelEdit(channelID, id, req); err != nil {
 		return nil, err
 	}
 	channelLabel := strings.TrimSpace(req.ChannelLabel)
@@ -310,7 +369,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	if conflict != nil && conflict.ID != strings.TrimSpace(id) {
 		return nil, BadAuthRequest("该渠道已存在模型 " + modelKey + "，请直接编辑已有模型")
 	}
-	if capability == "text" || capability == "image" || capability == "video" {
+	if hasModelCapabilityConfig(capability) {
 		if _, err := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig); err != nil {
 			return nil, err
 		}
@@ -325,12 +384,22 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	}
 	item := &model.ChannelModel{ID: modelID, ChannelID: channelID, Enabled: true}
 	previousProviderModelKey := ""
+	previousModelKey := ""
+	previousCapability := ""
+	previousProtocol := model.ChannelInterfaceType("")
+	previousCapabilityVersion := int64(0)
+	previousCapabilityConfigJSON := ""
 	if id != "" {
 		item, err = s.repo.ChannelModelByID(channelID, id)
 		if err != nil {
 			return nil, err
 		}
 		previousProviderModelKey = strings.TrimPrefix(strings.TrimSpace(item.ProviderModelKey), "models/")
+		previousModelKey = item.ModelKey
+		previousCapability = item.Capability
+		previousProtocol = item.Protocol
+		previousCapabilityVersion = item.CapabilityVersion
+		previousCapabilityConfigJSON = item.CapabilityConfigJSON
 	}
 	// 模型级上游键重命名时，与旧值相同的档位键属于“跟随模型默认”的隐式固化，必须级联跟随；
 	// 否则任务请求会继续把旧上游键发给供应商。管理员显式配置的其他上游 SKU 不受影响。
@@ -352,7 +421,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	item.Icon = strings.TrimSpace(req.Icon)
 	item.Capability = capability
 	item.Protocol = protocol
-	if capability == "text" || capability == "image" || capability == "video" {
+	if hasModelCapabilityConfig(capability) {
 		capabilityConfig, normalizeErr := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig)
 		if normalizeErr != nil {
 			return nil, normalizeErr
@@ -361,13 +430,22 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		if encodeErr != nil {
 			return nil, encodeErr
 		}
-		if item.CapabilityConfigJSON != string(encoded) {
+		previousContract, previousContractErr := normalizedCapabilityContractJSON(previousCapability, string(previousProtocol), previousProviderModelKey, previousCapabilityConfigJSON)
+		currentContract := *capabilityConfig
+		currentContract.Observed = nil
+		currentEncoded, currentEncodeErr := json.Marshal(currentContract)
+		if currentEncodeErr != nil {
+			return nil, currentEncodeErr
+		}
+		if previousContractErr != nil || previousContract != string(currentEncoded) {
 			item.CapabilityVersion++
 		}
 		item.CapabilityConfigJSON = string(encoded)
 	} else {
 		item.CapabilityConfigJSON = ""
-		item.CapabilityVersion = 0
+	}
+	if item.CapabilityVersion == previousCapabilityVersion && (previousModelKey != modelKey || previousCapability != capability || previousProtocol != protocol || previousProviderModelKey != providerModelKey) {
+		item.CapabilityVersion++
 	}
 	if req.Enabled != nil {
 		item.Enabled = *req.Enabled
@@ -388,6 +466,26 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		return nil, err
 	}
 	return item, nil
+}
+
+func normalizedCapabilityContractJSON(capability string, protocol string, modelName string, raw string) (string, error) {
+	if !hasModelCapabilityConfig(capability) {
+		return "", nil
+	}
+	config, err := DecodeModelCapabilityConfig(raw)
+	if err != nil {
+		return "", err
+	}
+	normalized, err := NormalizeModelCapabilityConfigForModel(capability, protocol, modelName, config)
+	if err != nil {
+		return "", err
+	}
+	normalized.Observed = nil
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func validateChannelModelVariantCapabilities(variants []model.ChannelModelVariant, rawCapabilityConfig string, capability string) error {
@@ -590,7 +688,7 @@ func (s *Service) TestAdminChannelModel(ctx context.Context, actor *model.User, 
 	if err != nil {
 		return nil, err
 	}
-	if capability == "text" || capability == "image" || capability == "video" {
+	if hasModelCapabilityConfig(capability) {
 		if _, err := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig); err != nil {
 			return nil, err
 		}
@@ -761,6 +859,11 @@ func normalizeChannelModelContractWithRegistry(registry *protocol.Registry, chan
 	if capability == "" {
 		return "", "", "", "", BadAuthRequest("请选择模型能力")
 	}
+	// A broken imported model must be possible to disable without inventing a
+	// request protocol. It cannot be enabled or tested until a valid one is set.
+	if strings.TrimSpace(req.Protocol) == "" && req.Enabled != nil && !*req.Enabled {
+		return modelKey, providerModelKey, capability, "", nil
+	}
 	adapter, ok := registry.Resolve(strings.TrimSpace(req.Protocol))
 	if !ok || !adapter.Metadata().Enabled || adapter.Metadata().UnavailableReason != "" {
 		return "", "", "", "", BadAuthRequest("请选择有效的模型请求协议")
@@ -849,6 +952,21 @@ func normalizeAdminChannelModelDeleteIDs(values []string) ([]string, error) {
 }
 
 func (s *Service) syncInitialChannelModels(channel *model.ModelChannel, names []string) error {
+	if len(names) > 0 {
+		known, err := s.repo.ChannelModels(channel.ID, true)
+		if err != nil {
+			return err
+		}
+		allowed := map[string]bool{}
+		for _, item := range known {
+			allowed[item.ModelKey] = true
+		}
+		for _, name := range names {
+			if !allowed[name] {
+				return Forbidden("新模型必须从 Axon 目录导入")
+			}
+		}
+	}
 	existing, err := s.repo.ChannelModels(channel.ID, true)
 	if err != nil {
 		return err

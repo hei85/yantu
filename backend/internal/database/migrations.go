@@ -1,16 +1,32 @@
 package database
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"infinite-canvas/backend/internal/model"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 28
+// 31：ProductionAttempt 增加 ReservedCostMicros 预留金额列（增量迁移，不重建表）。
+// 32：ProductionRun 持久化不可被调用方缩短的交付合同。
+// 33：制作步骤、生成任务保存稳定分镜行与分段追踪身份。
+// 34：制作步骤保存重做成本估算，并为计划替换步骤保留 superseded 历史。
+// 35：制作步骤和生成任务持久保存分镜音轨 ID。
+const CurrentSchemaVersion int64 = 36
+const productionRuntimeChecksum = "sha256:production-runtime-v29-20260923"
+const taskClientOperationChecksum = "sha256:task-client-operation-v30-20260923"
+const productionBudgetChecksum = "sha256:production-budget-v31-20260923"
+const productionDeliveryContractChecksum = "sha256:production-delivery-contract-v32-20260923"
+const productionStoryboardTraceChecksum = "sha256:production-row-segment-capability-trace-v33-20260923"
+const productionPlanInvalidationChecksum = "sha256:production-plan-cost-invalidation-v34-20260923"
+const productionAudioTrackTraceChecksum = "sha256:production-audio-track-trace-v35-20260923"
+const productionAudioModeVoiceVersionChecksum = "sha256:production-audio-mode-voice-version-v36-20260925"
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -76,14 +92,162 @@ var schemaMigrations = []migration{
 	{version: 22, name: "banner_announcement_notice_type", checksum: "sha256:banner-announcement-notice-type-v22-20260917", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BannerAnnouncement{})
 	}},
-	{version: 23, name: "canvas_revision_history", checksum: "sha256:canvas-revision-history-v23-20260918", apply: func(tx *gorm.DB) error {
-		return tx.AutoMigrate(&model.CanvasProject{}, &model.CanvasSnapshot{}, &model.CanvasSnapshotResource{})
-	}},
+	{version: 23, name: "canvas_revision_history", checksum: "sha256:canvas-revision-history-v23-20260918", apply: migrationNoop},
 	{version: 24, name: "channel_model_label", checksum: "sha256:channel-model-label-v24", apply: migrateChannelModelLabel},
 	{version: 25, name: "video_token_formula_snapshot", checksum: "sha256:video-token-formula-snapshot-v25", apply: migrationNoop},
 	{version: 26, name: "channel_model_description", checksum: "sha256:channel-model-description-v26", apply: migrateChannelModelDescription},
 	{version: 27, name: "channel_credit_cost", checksum: "sha256:channel-credit-cost-v27", apply: migrationNoop},
 	{version: 28, name: "creation_confirmation_status", checksum: creationConfirmationStatusChecksum, apply: migrateCreationConfirmationStatus},
+	{version: 29, name: "production_runtime", checksum: productionRuntimeChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProductionRun{}, &model.ProductionStep{}, &model.ProductionAttempt{}, &model.ProductionRunEvent{})
+	}},
+	{version: 30, name: "task_client_operation", checksum: taskClientOperationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.Task{})
+	}},
+	{version: 31, name: "production_budget_reservation", checksum: productionBudgetChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProductionAttempt{})
+	}},
+	{version: 32, name: "production_delivery_contract", checksum: productionDeliveryContractChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProductionRun{})
+	}},
+	{version: 33, name: "production_storyboard_trace", checksum: productionStoryboardTraceChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProductionStep{}, &model.Task{})
+	}},
+	{version: 34, name: "production_plan_invalidation", checksum: productionPlanInvalidationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProductionStep{})
+	}},
+	{version: 35, name: "production_audio_track_trace", checksum: productionAudioTrackTraceChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProductionStep{}, &model.Task{})
+	}},
+	{version: 36, name: "production_audio_mode_voice_version", checksum: productionAudioModeVoiceVersionChecksum, apply: migrateProductionAudioModeVoiceVersion},
+}
+
+func migrateProductionAudioModeVoiceVersion(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.ProductionRun{}, &model.VoiceProfile{}, &model.VoiceProfileVersion{}, &model.CharacterVoiceBinding{}); err != nil {
+		return err
+	}
+	if err := backfillLegacyCharacterVoiceVersions(tx); err != nil {
+		return err
+	}
+	var runs []model.ProductionRun
+	if err := tx.Where("audio_mode = '' OR audio_mode IS NULL").Find(&runs).Error; err != nil {
+		return err
+	}
+	for _, run := range runs {
+		var plan map[string]any
+		if strings.TrimSpace(run.PlanJSON) != "" {
+			if err := json.Unmarshal([]byte(run.PlanJSON), &plan); err != nil {
+				return fmt.Errorf("parse production run %s plan during audio migration: %w", run.ID, err)
+			}
+		}
+		manifest, _ := plan["executionManifest"].(map[string]any)
+		mode := model.ProductionAudioModeNative
+		if manifest != nil {
+			policy := strings.ToLower(strings.TrimSpace(fmt.Sprint(manifest["audioPolicy"])))
+			declaredMode := strings.ToUpper(strings.TrimSpace(fmt.Sprint(manifest["audioMode"])))
+			keys, _ := manifest["audioStepKeys"].([]any)
+			bindings, _ := manifest["audioTrackBindings"].([]any)
+			if policy == "independent" || declaredMode == model.ProductionAudioModeRebuild || len(keys) > 0 || len(bindings) > 0 {
+				mode = model.ProductionAudioModeRebuild
+				manifest["audioPolicy"] = "independent"
+			} else {
+				manifest["audioPolicy"] = "native"
+			}
+			manifest["audioMode"] = mode
+			plan["executionManifest"] = manifest
+		}
+		encoded := run.PlanJSON
+		if plan != nil {
+			data, err := json.Marshal(plan)
+			if err != nil {
+				return err
+			}
+			encoded = string(data)
+		}
+		if err := tx.Model(&model.ProductionRun{}).Where("id = ?", run.ID).Updates(map[string]any{"audio_mode": mode, "plan_json": encoded}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func backfillLegacyCharacterVoiceVersions(tx *gorm.DB) error {
+	var bindings []model.CharacterVoiceBinding
+	if err := tx.Where("(voice_version_id = '' OR voice_version_id IS NULL) AND voice_profile_id <> ''").Find(&bindings).Error; err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		var profile model.VoiceProfile
+		if err := tx.First(&profile, "id = ?", binding.VoiceProfileID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		var assetVersion model.AssetVersion
+		if err := tx.First(&assetVersion, "id = ?", binding.AssetVersionID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		if strings.TrimSpace(assetVersion.AssetID) == "" {
+			continue
+		}
+
+		var voiceVersion model.VoiceProfileVersion
+		err := tx.Where("voice_profile_id = ? AND character_asset_id = ?", profile.ID, assetVersion.AssetID).
+			Order("version desc").First(&voiceVersion).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var latestVersion int
+			if err := tx.Model(&model.VoiceProfileVersion{}).Where("voice_profile_id = ?", profile.ID).
+				Select("COALESCE(MAX(version), 0)").Scan(&latestVersion).Error; err != nil {
+				return err
+			}
+			strategy := "standard_tts"
+			voiceID := strings.TrimSpace(profile.VoiceKey)
+			referenceAudioID := ""
+			referenceAuthorized := false
+			status := "ready"
+			voiceModel := ""
+			if profile.Provider == "user_upload" {
+				strategy = "voice_reference"
+				voiceID = ""
+				referenceAudioID = strings.TrimSpace(profile.SampleResourceID)
+				status = "requires_authorization"
+			} else if profile.Provider == "voice_design" {
+				strategy = "voice_design"
+				if raw := strings.TrimSpace(profile.CompatibleModelsJSON); raw != "" {
+					var compatibleModels []string
+					if err := json.Unmarshal([]byte(raw), &compatibleModels); err != nil {
+						return fmt.Errorf("parse compatible models for legacy voice profile %s: %w", profile.ID, err)
+					}
+					if len(compatibleModels) == 1 {
+						voiceModel = strings.TrimSpace(compatibleModels[0])
+					}
+				}
+			}
+			if profile.Status != "active" {
+				status = "unavailable"
+			}
+			voiceVersion = model.VoiceProfileVersion{
+				ID: uuid.NewString(), VoiceProfileID: profile.ID, CharacterAssetID: assetVersion.AssetID,
+				Version: latestVersion + 1, VoiceStrategy: strategy, VoiceModel: voiceModel, VoiceID: voiceID,
+				ReferenceAudioResourceID: referenceAudioID, ReferenceAudioAuthorized: referenceAuthorized,
+				Tone: profile.Timbre, Language: profile.Language, SpeakingRate: 1, Status: status, CreatedAt: time.Now(),
+			}
+			if err := tx.Create(&voiceVersion).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&model.CharacterVoiceBinding{}).Where("id = ?", binding.ID).Update("voice_version_id", voiceVersion.ID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateCreationConfirmationStatus 把历史创作状态 waiting_payment 迁移为 waiting_confirmation。
@@ -233,9 +397,7 @@ func migrateSchemaV6(tx *gorm.DB) error {
 }
 
 func migrateSchemaV7(tx *gorm.DB) error {
-	if err := tx.AutoMigrate(&model.Asset{}, &model.AssetFolder{}); err != nil {
-		return fmt.Errorf("创建个人素材分类并扩展素材目录字段：%w", err)
-	}
+	// Personal cloud asset folders are no longer part of the application schema.
 	return nil
 }
 

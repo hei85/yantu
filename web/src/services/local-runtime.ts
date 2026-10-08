@@ -1,7 +1,7 @@
 import { LocalRuntimeClientError } from "@/services/local-runtime-session";
 
-export type LocalRuntimeModuleId = "canvas-agent" | "dreamina" | "portrait-clearance" | "depth-estimation" | "lineart-estimation" | "pose-estimation";
-export type LocalRuntimeScope = "runtime:status" | "runtime:revoke" | "canvas:connect" | "dreamina:status" | "dreamina:login" | "dreamina:logout" | "dreamina:run" | "dreamina:models" | "dreamina:generate" | "portrait:status" | "portrait:model" | "portrait:run" | "portrait:read" | "depth:status" | "depth:run" | "lineart:status" | "lineart:run" | "pose:status" | "pose:run";
+export type LocalRuntimeModuleId = "canvas-agent" | "dreamina" | "portrait-clearance" | "depth-estimation" | "lineart-estimation" | "pose-estimation" | "cutout-estimation";
+export type LocalRuntimeScope = "runtime:status" | "runtime:revoke" | "canvas:connect" | "dreamina:status" | "dreamina:login" | "dreamina:logout" | "dreamina:run" | "dreamina:models" | "dreamina:generate" | "portrait:status" | "portrait:model" | "portrait:run" | "portrait:read" | "depth:status" | "depth:run" | "lineart:status" | "lineart:run" | "pose:status" | "pose:run" | "cutout:status" | "cutout:run";
 
 export type LocalRuntimeModuleDescriptor = {
     id: LocalRuntimeModuleId;
@@ -31,6 +31,7 @@ const MODULE_SCOPES: Record<LocalRuntimeModuleId, ReadonlySet<LocalRuntimeScope>
     "depth-estimation": new Set(["depth:status", "depth:run"]),
     "lineart-estimation": new Set(["lineart:status", "lineart:run"]),
     "pose-estimation": new Set(["pose:status", "pose:run"]),
+    "cutout-estimation": new Set(["cutout:status", "cutout:run"]),
 };
 
 export async function readLocalRuntimeStatus(client: LocalRuntimeTransport, signal?: AbortSignal): Promise<LocalRuntimeStatus> {
@@ -139,7 +140,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isModuleId(value: unknown): value is LocalRuntimeModuleId {
-    return value === "canvas-agent" || value === "dreamina" || value === "portrait-clearance" || value === "depth-estimation" || value === "lineart-estimation" || value === "pose-estimation";
+    return value === "canvas-agent" || value === "dreamina" || value === "portrait-clearance" || value === "depth-estimation" || value === "lineart-estimation" || value === "pose-estimation" || value === "cutout-estimation";
 }
 
 function invalidResponse(status: number) {

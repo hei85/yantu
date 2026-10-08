@@ -1,6 +1,7 @@
 import { http } from "@/services/api/request";
 import { normalizeAssetCategory, type AssetCategory } from "@/lib/asset-category";
 import type { GenerationTask } from "@/services/api/task-center";
+import type { Asset } from "@/stores/use-asset-store";
 
 
 export type Project = {
@@ -18,14 +19,6 @@ export type Project = {
     defaultVideoModel?: string;
     status: "active" | "archived" | string;
     revision: number;
-    createdAt: string;
-    updatedAt: string;
-};
-
-export type ProjectCanvas = {
-    id: string;
-    projectId?: string;
-    title: string;
     createdAt: string;
     updatedAt: string;
 };
@@ -102,14 +95,31 @@ export type VoiceProfile = {
     status: string;
 };
 
+export type VoiceProfileVersion = {
+    id: string;
+    version: number;
+    voiceStrategy: "standard_tts" | "voice_design" | "voice_reference" | string;
+    voiceModel?: string;
+    voiceId?: string;
+    referenceAudioResourceId?: string;
+    referenceAudioAuthorized: boolean;
+    tone?: string;
+    emotionStyle?: string;
+    speakingRate: number;
+    language?: string;
+    accent?: string;
+    capabilityRevision?: string;
+    status: string;
+};
+
 export type CharacterCardSummary = {
     versionId: string;
     version: number;
     definition: Record<string, unknown>;
     representations: CharacterRepresentation[];
-    voice?: { profile: VoiceProfile; instructions: string };
+    voice?: { characterId: string; profile: VoiceProfile; voiceVersion: VoiceProfileVersion; instructions: string };
     visualStatus: "missing" | "partial" | "ready" | string;
-    voiceStatus: "missing" | "ready" | "unavailable" | string;
+    voiceStatus: "missing" | "ready" | "awaiting_model_capability" | "unavailable" | string;
 };
 
 export type ProjectCharacterDetail = {
@@ -248,7 +258,6 @@ export type ProjectListPage = {
 export type ProjectDetail = {
     project: Project;
     units: ProjectUnit[];
-    canvases: ProjectCanvas[];
     canvasUnitLinks: CanvasUnitLink[];
     unitCanvasCounts?: Record<string, number>;
     assets: ProjectAsset[];
@@ -302,15 +311,6 @@ export type ProjectUnitWorkspace = {
     tasks: GenerationTask[];
 };
 
-export type ProjectCanvasPage = {
-    canvases: ProjectCanvas[];
-    canvasUnitLinks: CanvasUnitLink[];
-    page: number;
-    pageSize: number;
-    total: number;
-    hasMore: boolean;
-};
-
 export type ProjectAssetPage = {
     assets: ProjectAsset[];
     categoryCounts: Record<string, number>;
@@ -355,8 +355,8 @@ export function getProjectUnitWorkspace(projectId: string, unitId: string) {
     return http.get<ProjectUnitWorkspace>(`/projects/${encodeURIComponent(projectId)}/units/${encodeURIComponent(unitId)}/workspace`);
 }
 
-export function listProjectCanvases(projectId: string, page = 1, pageSize = 40) {
-    return http.get<ProjectCanvasPage>(`/projects/${encodeURIComponent(projectId)}/canvases`, { params: { page, pageSize } });
+export function listProjectCanvasLinks(projectId: string) {
+    return http.get<{ links: CanvasUnitLink[] }>(`/projects/${encodeURIComponent(projectId)}/canvas-links`);
 }
 
 export function listProjectAssetsPage(projectId: string, options: { page?: number; pageSize?: number; category?: string; mediaType?: string; status?: string; folderId?: string; query?: string } = {}) {
@@ -416,7 +416,6 @@ function normalizeProjectDetail(detail: ProjectDetail): ProjectDetail {
     return {
         ...detail,
         units: Array.isArray(detail.units) ? detail.units : [],
-        canvases: Array.isArray(detail.canvases) ? detail.canvases : [],
         canvasUnitLinks: Array.isArray(detail.canvasUnitLinks) ? detail.canvasUnitLinks : [],
         unitCanvasCounts: detail.unitCanvasCounts || {},
         assets,
@@ -467,7 +466,7 @@ export function deleteProjectUnit(projectId: string, unitId: string) {
     return http.delete<{ id: string }>(`/projects/${encodeURIComponent(projectId)}/units/${encodeURIComponent(unitId)}`);
 }
 
-export function linkCanvasUnit(projectId: string, input: { canvasId: string; unitId: string; role?: string }) {
+export function linkCanvasUnit(projectId: string, input: { canvasId: string; unitId?: string; role?: string }) {
     return http.post<{ link: { id: string; projectId: string; canvasId: string; unitId: string; role: string } }>(`/projects/${encodeURIComponent(projectId)}/canvas-links`, input);
 }
 
@@ -476,10 +475,10 @@ export function unlinkCanvasUnit(projectId: string, canvasId: string, unitId: st
 }
 
 export function unlinkCanvasProject(projectId: string, canvasId: string) {
-    return http.delete<{ canvasId: string }>(`/projects/${encodeURIComponent(projectId)}/canvases/${encodeURIComponent(canvasId)}`);
+    return http.delete<{ canvasId: string }>(`/projects/${encodeURIComponent(projectId)}/canvas-links/${encodeURIComponent(canvasId)}`);
 }
 
-export function linkProjectAsset(projectId: string, input: { assetId: string; category: AssetCategory; folderId?: string; title?: string; source?: "uploaded" | "canvas" }, signal?: AbortSignal) {
+export function linkProjectAsset(projectId: string, input: { assetId: string; category: AssetCategory; folderId?: string; title?: string; source?: "uploaded" | "canvas"; assetPayload?: Asset }, signal?: AbortSignal) {
     return http.post<{ asset: ProjectAsset }>(`/projects/${encodeURIComponent(projectId)}/assets`, input, { signal });
 }
 
@@ -535,7 +534,7 @@ export function replaceProjectCharacterRepresentations(projectId: string, assetI
     return http.put<ProjectCharacterDetail>(`/projects/${encodeURIComponent(projectId)}/characters/${encodeURIComponent(assetId)}/representations`, { representations });
 }
 
-export function bindProjectCharacterVoice(projectId: string, assetId: string, input: { voiceProfileId?: string; sampleResourceId?: string; voiceName?: string; instructions?: string }) {
+export function bindProjectCharacterVoice(projectId: string, assetId: string, input: { voiceProfileId?: string; sampleResourceId?: string; voiceName?: string; voiceStrategy?: "standard_tts" | "voice_design" | "voice_reference"; voiceModel?: string; voiceId?: string; tone?: string; emotionStyle?: string; speakingRate?: number; language?: string; accent?: string; capabilityRevision?: string; referenceAudioAuthorized?: boolean; instructions?: string }) {
     return http.put<ProjectCharacterDetail>(`/projects/${encodeURIComponent(projectId)}/characters/${encodeURIComponent(assetId)}/voice`, input);
 }
 

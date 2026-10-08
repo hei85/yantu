@@ -7,7 +7,7 @@ import { CanvasNodeType } from "@/types/canvas";
 const config = { imageModel: "image-model", videoModel: "video-model", audioModel: "audio-model" } as never;
 const snapshot: CanvasSnapshot = { projectId: "p", title: "空画布", nodes: [], connections: [], selectedNodeIds: [], viewport: { x: 0, y: 0, k: 1 } };
 
-describe("cloud canvas agent workflow builder", () => {
+describe("canvas agent workflow builder", () => {
     it("creates semantic media nodes, non-overlapping layout and real edges", () => {
         const ops = buildCanvasWorkflowOps({
             title: "搞笑修仙小说流水线",

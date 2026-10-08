@@ -1,4 +1,4 @@
-import { Check, Clapperboard, CloudUpload, Download, FileText, Frame, Image as ImageIcon, MoreHorizontal, Music2, Pencil, Plus, Settings2, Sparkles, Trash2, Video, X } from "lucide-react";
+import { Check, Clapperboard, Download, FileText, Frame, Image as ImageIcon, MoreHorizontal, Music2, Pencil, Plus, Settings2, Sparkles, Trash2, Video, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { App, Dropdown, Input } from "antd";
@@ -12,8 +12,7 @@ import { resolveBackendApiUrl } from "@/stores/use-config-store";
 import { CachedResourceImage } from "@/components/cached-resource-image";
 import { MediaPlaceholder } from "@/components/ui/product/media-placeholder";
 import { cn } from "@/lib/utils";
-import { useSyncProgressStore } from "@/stores/use-sync-progress-store";
-import { hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { flushCanvasStorePersistence } from "@/stores/canvas/use-canvas-store";
 
 type ProjectPreviewMedia = { node: CanvasNodeData; url: string; storageKey?: string };
 const projectPreviewMediaCache = new WeakMap<CanvasNodeData[], { first?: ProjectPreviewMedia; latest?: ProjectPreviewMedia }>();
@@ -46,19 +45,10 @@ export function CanvasProjectCard({ project, projectName, variant = "library", r
     const editing = editingId === project.id;
     const selected = selectedIds.includes(project.id);
     const open = () => navigate(`/canvas/${project.id}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`);
-    const saveTitle = async () => {
+    const saveTitle = () => {
         stopEditing();
-        if (!hasRemoteUserDataSyncSession()) {
-            renameProject(project.id, editingTitle);
-            return;
-        }
-        try {
-            await loadCanvasProjectForEditing(project.id);
-            renameProject(project.id, editingTitle);
-            await saveRemoteUserDataNow(project.id);
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "重命名失败");
-        }
+        renameProject(project.id, editingTitle);
+        void flushCanvasStorePersistence().catch((error) => message.error(error instanceof Error ? error.message : "本机保存失败"));
     };
 
     const compact = variant === "recent";
@@ -156,8 +146,6 @@ export function CanvasProjectCard({ project, projectName, variant = "library", r
 }
 
 export function ProjectPreview({ project, preferLatestImage = false }: { project: Pick<CanvasProject, "id" | "nodes">; preferLatestImage?: boolean }) {
-    const syncProgress = useSyncProgressStore((state) => state.syncingProjects[project.id]);
-    const isSyncing = Boolean(syncProgress && (syncProgress.phase === "uploading" || syncProgress.phase === "saving"));
     const media = projectPreviewMedia(project.nodes, preferLatestImage);
 
     const content = media ? (
@@ -193,37 +181,6 @@ export function ProjectPreview({ project, preferLatestImage = false }: { project
     return (
         <div className="relative size-full overflow-hidden">
             {content}
-            {isSyncing && syncProgress ? (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-stone-950/75 p-3 text-center backdrop-blur-sm transition-all duration-300 pointer-events-none select-none" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-1.5 text-amber-400">
-                        <CloudUpload className="size-4 animate-bounce" />
-                        <span className="text-xs font-medium tracking-wide">云端同步中</span>
-                    </div>
-                    <div className="w-full max-w-[150px] space-y-1">
-                        {syncProgress.total > 0 ? (
-                            <>
-                                <div className="flex items-center justify-between text-[10px] text-white/80">
-                                    <span>媒体上传</span>
-                                    <span className="font-mono text-amber-300">
-                                        {syncProgress.completed}/{syncProgress.total}
-                                    </span>
-                                </div>
-                                <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all duration-200"
-                                        style={{
-                                            width: `${Math.max(8, Math.round((syncProgress.completed / syncProgress.total) * 100))}%`,
-                                        }}
-                                    />
-                                </div>
-                            </>
-                        ) : (
-                            <div className="text-[10px] text-white/80">正在写入云端结构...</div>
-                        )}
-                        <div className="text-[9px] text-white/60">请勿关闭或刷新浏览器</div>
-                    </div>
-                </div>
-            ) : null}
         </div>
     );
 }

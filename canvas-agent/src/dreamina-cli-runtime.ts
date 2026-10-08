@@ -494,10 +494,10 @@ export class DreaminaCliRuntime {
     async dispose() {
         this.disposed = true;
         this.queryShutdown.abort();
+        for (const task of this.asyncTasks.values()) task.controller.abort();
         await Promise.allSettled([...this.queueHeartbeats.keys()].map((key) => this.stopQueueHeartbeat(key)));
         await this.failOwnedQueuedTasksOnDispose();
         await this.reconciler.dispose();
-        for (const task of this.asyncTasks.values()) task.controller.abort();
         await Promise.allSettled([...this.asyncTasks.values()].map(async (task) => {
             const pending: Promise<unknown>[] = [];
             if (task.starting) pending.push(task.starting);
@@ -1047,6 +1047,7 @@ export class DreaminaCliRuntime {
     }
 
     private promoteQueueHead(expectedKey?: string) {
+        if (this.disposed) return;
         while (this.queue.length) {
             const nextKey = this.queue[0]!;
             if (expectedKey && nextKey !== expectedKey) return;

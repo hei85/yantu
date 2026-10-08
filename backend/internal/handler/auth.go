@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
+	"infinite-canvas/backend/internal/platform"
 	"infinite-canvas/backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +31,10 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		ok(c, settings)
 	})
 	r.POST("/auth/register", func(c *gin.Context) {
+		if platform.PortableNoLoginEnabled() {
+			fail(c, http.StatusForbidden, errors.New("便携免登录模式不支持注册"))
+			return
+		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 		var req service.RegisterRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -48,6 +54,10 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		ok(c, gin.H{"user": result.User})
 	})
 	r.POST("/auth/login", func(c *gin.Context) {
+		if platform.PortableNoLoginEnabled() {
+			fail(c, http.StatusForbidden, errors.New("便携免登录模式不支持登录"))
+			return
+		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 		var req service.LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -768,7 +778,7 @@ func shortSystemProxyPath(rawPath string) (string, string, bool) {
 // as a channel request when a business route returns 404.
 func isReservedAPIPathPrefix(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "admin", "agent", "ai", "announcements", "banner-announcements", "assets", "auth", "canvas-projects", "channels", "diagnostics", "features", "files", "model-catalog", "models", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "user-data", "voice-profiles":
+	case "admin", "agent", "ai", "announcements", "banner-announcements", "auth", "channels", "diagnostics", "features", "files", "model-catalog", "models", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "voice-profiles":
 		return true
 	default:
 		return false
@@ -815,6 +825,18 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 			}
 			protocol = model.ChannelInterfaceMiniMaxVideo
 			capability = "video"
+		} else if c.Request.Method == http.MethodGet && systemAsyncAudioTaskPath.MatchString(path) && modelName == "" {
+			supported, supportErr := svc.SystemChannelHasProtocol(channel.ID, model.ChannelInterfaceAsyncAudio)
+			if supportErr != nil {
+				failService(c, supportErr)
+				return
+			}
+			if !supported {
+				fail(c, http.StatusForbidden, errors.New("当前系统渠道未授权异步音频协议"))
+				return
+			}
+			protocol = model.ChannelInterfaceAsyncAudio
+			capability = "audio"
 		} else {
 			var modelErr error
 			channelModel, modelErr = svc.SystemChannelModel(channel.ID, modelName)
@@ -970,6 +992,11 @@ func apiCallLog(user *model.User, channel *model.ModelChannel, capability string
 func logSystemProxyCall(svc *service.Service, log model.ApiCallLog, responseBody []byte) error {
 	log.ResponseBody = service.SanitizeAPICallPayload(responseBody, "")
 	svc.EnrichAPICallLog(&log, responseBody)
+	if log.Status == model.ApiCallStatusFailed {
+		// 上游明确说“不接受参考图/文本”时，立刻把结论写回模型能力声明，
+		// 下一次规划与 MCP 就会自动绕开；学习失败不影响中继结果。
+		svc.LearnChannelCapabilityFromUpstreamFailure(log.ChannelID, log.Model, string(responseBody), "api_call_log")
+	}
 	return svc.LogAPICall(log)
 }
 
@@ -985,6 +1012,12 @@ func readPayloadModel(body []byte) string {
 }
 
 func currentUser(c *gin.Context, svc *service.Service) (*model.User, error) {
+	if platform.PortableNoLoginEnabled() {
+		if !platform.IsLoopbackRemoteAddr(c.Request.RemoteAddr) {
+			return nil, kernel.Unauthorized("便携免登录模式只允许本机访问")
+		}
+		return svc.PortableAdminUser()
+	}
 	return svc.CurrentUser(sessionCookie(c))
 }
 

@@ -34,10 +34,20 @@ type ReplaceCharacterRepresentationsRequest struct {
 }
 
 type BindCharacterVoiceRequest struct {
-	VoiceProfileID   string `json:"voiceProfileId"`
-	SampleResourceID string `json:"sampleResourceId"`
-	VoiceName        string `json:"voiceName"`
-	Instructions     string `json:"instructions"`
+	VoiceProfileID           string  `json:"voiceProfileId"`
+	SampleResourceID         string  `json:"sampleResourceId"`
+	VoiceName                string  `json:"voiceName"`
+	VoiceStrategy            string  `json:"voiceStrategy"`
+	VoiceModel               string  `json:"voiceModel"`
+	VoiceID                  string  `json:"voiceId"`
+	Tone                     string  `json:"tone"`
+	EmotionStyle             string  `json:"emotionStyle"`
+	SpeakingRate             float64 `json:"speakingRate"`
+	Language                 string  `json:"language"`
+	Accent                   string  `json:"accent"`
+	CapabilityRevision       string  `json:"capabilityRevision"`
+	ReferenceAudioAuthorized bool    `json:"referenceAudioAuthorized"`
+	Instructions             string  `json:"instructions"`
 }
 
 type CharacterRepresentationSummary struct {
@@ -60,8 +70,27 @@ type VoiceProfileSummary struct {
 }
 
 type CharacterVoiceSummary struct {
-	Profile      VoiceProfileSummary `json:"profile"`
-	Instructions string              `json:"instructions"`
+	CharacterID  string                     `json:"characterId"`
+	Profile      VoiceProfileSummary        `json:"profile"`
+	VoiceVersion VoiceProfileVersionSummary `json:"voiceVersion"`
+	Instructions string                     `json:"instructions"`
+}
+
+type VoiceProfileVersionSummary struct {
+	ID                       string  `json:"id"`
+	Version                  int     `json:"version"`
+	VoiceStrategy            string  `json:"voiceStrategy"`
+	VoiceModel               string  `json:"voiceModel,omitempty"`
+	VoiceID                  string  `json:"voiceId,omitempty"`
+	ReferenceAudioResourceID string  `json:"referenceAudioResourceId,omitempty"`
+	ReferenceAudioAuthorized bool    `json:"referenceAudioAuthorized"`
+	Tone                     string  `json:"tone,omitempty"`
+	EmotionStyle             string  `json:"emotionStyle,omitempty"`
+	SpeakingRate             float64 `json:"speakingRate"`
+	Language                 string  `json:"language,omitempty"`
+	Accent                   string  `json:"accent,omitempty"`
+	CapabilityRevision       string  `json:"capabilityRevision,omitempty"`
+	Status                   string  `json:"status"`
 }
 
 type characterTurnaroundTaskInput struct {
@@ -341,6 +370,17 @@ func (s *Service) BindProjectCharacterVoice(userID string, projectID string, ass
 		}
 		return ProjectCharacterDetail{}, BadAuthRequest("角色资产不可用")
 	}
+	strategy := strings.TrimSpace(req.VoiceStrategy)
+	if strategy == "" {
+		if strings.TrimSpace(req.SampleResourceID) != "" {
+			strategy = "voice_reference"
+		} else {
+			strategy = "standard_tts"
+		}
+	}
+	if strategy != "standard_tts" && strategy != "voice_design" && strategy != "voice_reference" {
+		return ProjectCharacterDetail{}, BadAuthRequest("voiceStrategy 只支持 standard_tts、voice_design 或 voice_reference")
+	}
 	var profile *model.VoiceProfile
 	sampleResourceID := strings.TrimSpace(req.SampleResourceID)
 	if sampleResourceID != "" {
@@ -363,16 +403,91 @@ func (s *Service) BindProjectCharacterVoice(userID string, projectID string, ass
 				return ProjectCharacterDetail{}, err
 			}
 		}
-	} else {
+	} else if strings.TrimSpace(req.VoiceProfileID) != "" {
 		profile, err = s.repo.VoiceProfileForUser(userID, strings.TrimSpace(req.VoiceProfileID))
 		if err != nil || profile == nil || profile.Status != "active" {
 			return ProjectCharacterDetail{}, BadAuthRequest("选择的声音素材不可用")
 		}
+	} else if strategy == "voice_design" {
+		voiceID := strings.TrimSpace(req.VoiceID)
+		voiceName := strings.TrimSpace(req.VoiceName)
+		voiceModel := strings.TrimSpace(req.VoiceModel)
+		if voiceID == "" || voiceName == "" || voiceModel == "" || len(voiceID) > 160 || len(voiceName) > 160 {
+			return ProjectCharacterDetail{}, BadAuthRequest("voice_design 必须提供上游已创建的 voiceId、音色名称和音频模型；衍图不会虚构上游音色")
+		}
+		profile, err = s.repo.VoiceProfileByProviderKey(userID, "voice_design", voiceID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return ProjectCharacterDetail{}, err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			profile = &model.VoiceProfile{
+				ID: newID(), UserID: userID, Name: voiceName, Provider: "voice_design", VoiceKey: voiceID,
+				Language: strings.TrimSpace(req.Language), Timbre: strings.TrimSpace(req.Tone),
+				CompatibleModelsJSON: mapJSON([]string{voiceModel}), Status: "active", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			}
+			if err := s.repo.CreateVoiceProfile(profile); err != nil {
+				return ProjectCharacterDetail{}, err
+			}
+		}
+	} else {
+		return ProjectCharacterDetail{}, BadAuthRequest("standard_tts 必须选择一个模型声音档案")
 	}
 	if profile == nil || strings.TrimSpace(profile.ID) == "" {
 		return ProjectCharacterDetail{}, BadAuthRequest("声音素材不可用，请重新选择")
 	}
-	binding := &model.CharacterVoiceBinding{ID: newID(), VoiceProfileID: profile.ID, Instructions: strings.TrimSpace(req.Instructions), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if strategy == "voice_reference" && (sampleResourceID == "" || !req.ReferenceAudioAuthorized) {
+		return ProjectCharacterDetail{}, BadAuthRequest("使用参考声音前必须绑定音频样本并确认具有合法使用权")
+	}
+	if strategy != "voice_reference" && sampleResourceID != "" {
+		return ProjectCharacterDetail{}, BadAuthRequest("只有 voice_reference 策略可以绑定参考音频")
+	}
+	rate := req.SpeakingRate
+	if rate == 0 {
+		rate = 1
+	}
+	if rate < 0.5 || rate > 2 {
+		return ProjectCharacterDetail{}, BadAuthRequest("speakingRate 必须在 0.5 到 2 之间")
+	}
+	voiceModel := strings.TrimSpace(req.VoiceModel)
+	capabilityRevision := strings.TrimSpace(req.CapabilityRevision)
+	if voiceModel != "" {
+		capability, modelRevision, modelErr := s.audioModelCapabilityForVoice(voiceModel)
+		if modelErr != nil {
+			return ProjectCharacterDetail{}, modelErr
+		}
+		if capabilityRevision != "" && capabilityRevision != modelRevision {
+			return ProjectCharacterDetail{}, BadAuthRequest("音频模型能力版本已变化，请重新选择模型")
+		}
+		feature := "tts"
+		if strategy == "voice_design" {
+			feature = "voiceDesign"
+		} else if strategy == "voice_reference" {
+			feature = "voiceReference"
+		}
+		if capability.TTS != "configured" || feature != "tts" && capabilityStatusForStrategy(capability, feature) != "configured" {
+			return ProjectCharacterDetail{}, BadAuthRequest("所选音频模型能力目录未配置当前声音策略")
+		}
+		if strategy == "voice_design" && capability.VoiceIDParameter == "" || strategy == "voice_reference" && capability.ReferenceAudioParameter == "" {
+			return ProjectCharacterDetail{}, BadAuthRequest("当前音频模型缺少所需的 voice ID / 参考音频上游字段映射")
+		}
+		capabilityRevision = modelRevision
+	}
+	voiceID := strings.TrimSpace(req.VoiceID)
+	if strategy == "standard_tts" && voiceID == "" {
+		voiceID = profile.VoiceKey
+	}
+	if strategy == "voice_design" && voiceID == "" {
+		return ProjectCharacterDetail{}, BadAuthRequest("voice_design 必须绑定上游已创建并可复用的 voiceId")
+	}
+	voiceVersion := &model.VoiceProfileVersion{
+		ID: newID(), VoiceProfileID: profile.ID, CharacterAssetID: asset.ID, VoiceStrategy: strategy,
+		VoiceModel: voiceModel, VoiceID: voiceID, ReferenceAudioResourceID: sampleResourceID,
+		ReferenceAudioAuthorized: strategy == "voice_reference" && req.ReferenceAudioAuthorized,
+		Tone:                     strings.TrimSpace(req.Tone), EmotionStyle: strings.TrimSpace(req.EmotionStyle), SpeakingRate: rate,
+		Language: strings.TrimSpace(req.Language), Accent: strings.TrimSpace(req.Accent), CapabilityRevision: capabilityRevision,
+		Status: "ready", CreatedAt: time.Now(),
+	}
+	binding := &model.CharacterVoiceBinding{ID: newID(), VoiceProfileID: profile.ID, VoiceProfileVersion: voiceVersion, Instructions: strings.TrimSpace(req.Instructions), CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if _, err := s.createNextCharacterVersion(projectID, asset, asset.Title, "", nil, binding, false); err != nil {
 		return ProjectCharacterDetail{}, err
 	}
@@ -463,7 +578,7 @@ func (s *Service) prepareNextCharacterVersion(asset *model.Asset, name string, d
 	if voice == nil && !dropVoice {
 		currentVoice, voiceErr := s.repo.CharacterVoiceBinding(current.ID)
 		if voiceErr == nil && currentVoice != nil {
-			voice = &model.CharacterVoiceBinding{ID: newID(), AssetVersionID: next.ID, VoiceProfileID: currentVoice.VoiceProfileID, Instructions: currentVoice.Instructions, CreatedAt: now, UpdatedAt: now}
+			voice = &model.CharacterVoiceBinding{ID: newID(), AssetVersionID: next.ID, VoiceProfileID: currentVoice.VoiceProfileID, VoiceVersionID: currentVoice.VoiceVersionID, Instructions: currentVoice.Instructions, CreatedAt: now, UpdatedAt: now}
 		} else if voiceErr == nil {
 			return model.Asset{}, model.AssetVersion{}, nil, nil, BadAuthRequest("角色声音绑定数据不完整")
 		} else if !errors.Is(voiceErr, gorm.ErrRecordNotFound) {
@@ -534,8 +649,16 @@ func (s *Service) characterCard(userID string, asset *model.Asset) (CharacterCar
 	if bindingErr == nil && binding != nil {
 		profile, profileErr := s.repo.VoiceProfileForUser(userID, binding.VoiceProfileID)
 		if profileErr == nil && profile != nil && profile.Status == "active" {
-			voice = &CharacterVoiceSummary{Profile: voiceProfileSummary(*profile), Instructions: binding.Instructions}
-			voiceStatus = "ready"
+			voiceVersion, versionErr := s.repo.VoiceProfileVersion(binding.VoiceVersionID)
+			if versionErr != nil && !errors.Is(versionErr, gorm.ErrRecordNotFound) {
+				return CharacterCardSummary{}, versionErr
+			}
+			if versionErr == nil && voiceVersion != nil && voiceVersion.CharacterAssetID == asset.ID {
+				voice = &CharacterVoiceSummary{CharacterID: asset.ID, Profile: voiceProfileSummary(*profile), VoiceVersion: voiceProfileVersionSummary(*voiceVersion), Instructions: binding.Instructions}
+				voiceStatus = voiceVersion.Status
+			} else {
+				voiceStatus = "unavailable"
+			}
 		} else {
 			voiceStatus = "unavailable"
 		}
@@ -573,6 +696,69 @@ func voiceProfileSummary(profile model.VoiceProfile) VoiceProfileSummary {
 	compatible := []string{}
 	_ = json.Unmarshal([]byte(profile.CompatibleModelsJSON), &compatible)
 	return VoiceProfileSummary{ID: profile.ID, Name: profile.Name, Provider: profile.Provider, VoiceKey: profile.VoiceKey, Language: profile.Language, Timbre: profile.Timbre, SampleResourceID: profile.SampleResourceID, CompatibleModels: compatible, Status: profile.Status}
+}
+
+func voiceProfileVersionSummary(version model.VoiceProfileVersion) VoiceProfileVersionSummary {
+	return VoiceProfileVersionSummary{
+		ID: version.ID, Version: version.Version, VoiceStrategy: version.VoiceStrategy, VoiceModel: version.VoiceModel,
+		VoiceID: version.VoiceID, ReferenceAudioResourceID: version.ReferenceAudioResourceID, ReferenceAudioAuthorized: version.ReferenceAudioAuthorized, Tone: version.Tone,
+		EmotionStyle: version.EmotionStyle, SpeakingRate: version.SpeakingRate, Language: version.Language,
+		Accent: version.Accent, CapabilityRevision: version.CapabilityRevision, Status: version.Status,
+	}
+}
+
+func capabilityStatusForStrategy(capability *AudioCapabilityConfig, name string) string {
+	if capability == nil {
+		return "unknown"
+	}
+	switch name {
+	case "voiceDesign":
+		return capability.VoiceDesign
+	case "voiceReference":
+		return capability.VoiceReference
+	default:
+		return "unknown"
+	}
+}
+
+func (s *Service) audioModelCapabilityForVoice(selection string) (*AudioCapabilityConfig, string, error) {
+	channelID, modelKey, found := strings.Cut(strings.TrimSpace(selection), "::")
+	if !found || channelID == "" || modelKey == "" {
+		return nil, "", BadAuthRequest("voiceModel 必须是当前 film_list_models 返回的渠道模型")
+	}
+	channels, err := s.repo.SystemChannels(true)
+	if err != nil {
+		return nil, "", err
+	}
+	channelEnabled := false
+	for _, channel := range channels {
+		if channel.ID == channelID && channel.Enabled {
+			channelEnabled = true
+			break
+		}
+	}
+	if !channelEnabled {
+		return nil, "", BadAuthRequest("voiceModel 不在当前启用的系统能力目录中")
+	}
+	models, err := s.repo.ChannelModels(channelID, false)
+	if err != nil {
+		return nil, "", err
+	}
+	for index := range models {
+		candidate := &models[index]
+		if candidate.ModelKey != modelKey || !candidate.Enabled || normalizeCapability(candidate.Capability) != "audio" {
+			continue
+		}
+		config, configErr := normalizedChannelModelCapability(candidate)
+		if configErr != nil {
+			return nil, "", configErr
+		}
+		if config == nil || config.Audio == nil {
+			return nil, "", BadAuthRequest("voiceModel 缺少音频能力合同")
+		}
+		return config.Audio, channelModelCapabilityRevision(*candidate), nil
+	}
+	return nil, "", BadAuthRequest("voiceModel 不在当前已启用的音频模型目录中")
 }
 
 func validCharacterRepresentationRole(role string) bool {

@@ -81,7 +81,7 @@ export default function ProjectsPage() {
                     content: "请在上方“AI 模型”中选择一个已配置的文本模型，或先到设置中完成模型渠道配置。",
                     okText: "去设置",
                     cancelText: "取消",
-                    onOk: () => navigate(settingsPath("models")),
+                    onOk: () => navigate(settingsPath("quick")),
                 });
             } else {
                 message.error(`模型 ${textModel} 未在文本模型列表中，请重新选择`);

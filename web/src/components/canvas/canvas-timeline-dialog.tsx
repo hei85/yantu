@@ -488,19 +488,31 @@ export function CanvasTimelineDialog({
         const videoClips = draft.clips.filter((clip) => clip.kind === "video");
         if (!videoClips.length) throw new Error("时间线没有视频片段，无法导出");
         const sources: TimelineRenderSource[] = [];
-        for (const clip of videoClips) {
+        const renderClips = draft.clips.filter((clip) => clip.kind === "video"
+            || (clip.kind === "audio" && draft.tracks.some((track) => track.id === clip.trackId && track.visible !== false && !track.muted))
+            || ((clip.kind === "text" || clip.kind === "image") && draft.tracks.some((track) => track.id === clip.trackId && track.visible !== false)));
+        for (const clip of renderClips) {
             const sourceNode = nodes.find((item) => item.id === clip.nodeId);
             const media = clip.directMedia;
+            if (clip.kind === "text") {
+                const text = clip.text ?? media?.content ?? media?.dataUrl ?? sourceNode?.metadata?.content ?? "";
+                if (!text.trim()) throw new Error(`文字片段 ${clip.id} 缺少文本内容`);
+                sources.push({ nodeId: clip.nodeId, clipId: clip.id, fileName: `text-${sources.length}.txt`, durationMs: clip.durationMs, text });
+                continue;
+            }
             if (!sourceNode && !media) continue;
+            const isImage = clip.kind === "image";
             sources.push({
                 nodeId: clip.nodeId,
-                fileName: "input-" + sources.length + ".mp4",
-                durationMs: clip.sourceDurationMs || clip.durationMs,
-                storageKey: sourceNode?.metadata?.storageKey || media?.storageKey,
-                url: sourceNode?.metadata?.content || media?.url || undefined,
+                clipId: clip.id,
+                fileName: "input-" + sources.length + (clip.kind === "audio" ? ".audio" : isImage ? ".image" : ".mp4"),
+                durationMs: media?.durationMs || sourceNode?.metadata?.durationMs || clip.sourceDurationMs || clip.durationMs,
+                storageKey: media?.storageKey || sourceNode?.metadata?.storageKey,
+                url: media?.dataUrl || media?.content || media?.url || sourceNode?.metadata?.content || undefined,
+                mimeType: media?.mimeType || sourceNode?.metadata?.mimeType,
             });
         }
-        if (!sources.length) throw new Error("找不到可导出的视频素材，请确认视频节点包含媒体");
+        if (!sources.some((source) => videoClips.some((clip) => clip.id === source.clipId))) throw new Error("找不到可导出的视频素材，请确认视频节点包含媒体");
         setExporting(true);
         setExportPercent(0);
         setExportDetail("准备导出");
@@ -784,7 +796,7 @@ export function CanvasTimelineDialog({
                     </div>
                 </div>
 
-                <CanvasTimelinePreview clips={draft.clips} nodes={nodes} playheadMs={playheadMs} playing={previewPlaying} theme={theme} onTogglePlay={() => setPreviewPlaying((value) => !value)} onPlayheadChange={setPlayheadMs} />
+                <CanvasTimelinePreview clips={draft.clips} tracks={draft.tracks} nodes={nodes} playheadMs={playheadMs} playing={previewPlaying} theme={theme} onTogglePlay={() => setPreviewPlaying((value) => !value)} onPlayheadChange={setPlayheadMs} />
 
                 <div className="flex min-h-0 flex-1">
                     <div className="flex w-44 shrink-0 flex-col border-r" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>

@@ -86,12 +86,6 @@ func (r *Repository) ResourceReferenceSnapshot(userID string, excludingAssetID s
 	if len(resourceIDs) == 0 {
 		return snapshot, nil
 	}
-	history, err := r.CanvasHistoryResourceReferences(resourceIDs)
-	if err != nil {
-		return snapshot, err
-	}
-	snapshot.Direct = append(snapshot.Direct, history...)
-
 	var assets []model.Asset
 	assetQuery := r.db.Where("user_id = ? AND id <> ?", userID, excludingAssetID)
 	if err := assetQuery.Find(&assets).Error; err != nil {
@@ -99,14 +93,6 @@ func (r *Repository) ResourceReferenceSnapshot(userID string, excludingAssetID s
 	}
 	for _, asset := range assets {
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, Title: asset.Title, PrimaryJSON: asset.PayloadJSON})
-	}
-
-	var canvases []model.CanvasProject
-	if err := r.db.Where("user_id = ?", userID).Find(&canvases).Error; err != nil {
-		return snapshot, err
-	}
-	for _, canvas := range canvases {
-		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "画布", ID: canvas.ID, Title: canvas.Title, PrimaryJSON: canvas.PayloadJSON})
 	}
 
 	var tasks []model.Task
@@ -327,9 +313,6 @@ func (r *Repository) AssetBusinessReferences(userID string, assetID string) ([]R
 
 func (r *Repository) DeleteAssetAndResources(userID string, assetID string, resourceIDs []string, deletionJobs []model.ResourceDeletionJob) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := New(tx).RequireNoCanvasHistoryReferences(resourceIDs); err != nil {
-			return err
-		}
 		versionIDs := tx.Model(&model.AssetVersion{}).Select("id").Where("asset_id = ?", assetID)
 		if err := tx.Where("asset_version_id IN (?)", versionIDs).Delete(&model.ShotAssetReference{}).Error; err != nil {
 			return err

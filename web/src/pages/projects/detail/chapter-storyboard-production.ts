@@ -12,11 +12,13 @@ export type ChapterStoryboardAsset = {
     prompt: string;
     characterAssetId?: string;
     characterVersionId?: string;
+    voiceVersionId?: string;
 };
 
 export type ChapterStoryboardCharacter = {
     assetId?: string;
     versionId?: string;
+    voiceVersionId?: string;
     name: string;
     definition: Record<string, unknown>;
 };
@@ -41,7 +43,7 @@ export function chapterStoryboardCharacters(detail: ProjectDetail, unitId?: stri
     const confirmed = detail.assets.flatMap((asset): ChapterStoryboardCharacter[] => {
         const card = asset.character;
         if (asset.category !== "character" || !card?.versionId) return [];
-        return [{ assetId: asset.id, versionId: card.versionId, name: asset.title, definition: card.definition || {} }];
+        return [{ assetId: asset.id, versionId: card.versionId, voiceVersionId: card.voice?.voiceVersion.id, name: asset.title, definition: card.definition || {} }];
     });
     const seenNames = new Set(confirmed.map((character) => normalizeCharacterName(character.name)));
     const pending = detail.assetCandidates.flatMap((candidate): ChapterStoryboardCharacter[] => {
@@ -69,7 +71,7 @@ export function chapterStoryboardAssets(detail: ProjectDetail): ChapterStoryboar
             category: asset.category || undefined,
             tags: [],
             prompt: assetPrompt(asset.previewText, asset.character?.definition, asset.title),
-            ...(type === "character" ? { characterAssetId: asset.id, characterVersionId } : {}),
+            ...(type === "character" ? { characterAssetId: asset.id, characterId: asset.id, characterVersionId, voiceVersionId: asset.character?.voice?.voiceVersion.id } : {}),
         }];
     }).slice(0, 60);
 }

@@ -1,12 +1,14 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { Check, ChevronDown, ChevronLeft, Coins } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, Coins, Info } from "lucide-react";
 import { Popover } from "antd";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { modelCapabilityConfigFor, videoDurationOptions } from "@/lib/model-capabilities";
-import { compatibleModelInGroup, configuredModelDisplayName, modelCompatibilityError, resolveCompatibleModel, type ModelRequirements } from "@/lib/model-selection";
-import { groupModelsForPicker, isDirectSystemModel, modelChannelLabel } from "@/lib/model-picker-groups";
+import { configuredModelDisplayName, resolveCompatibleModel, type ModelRequirements } from "@/lib/model-selection";
+import { groupModelsForPicker, isDirectSystemModel, modelChannelLabel, resolveModelPickerOption } from "@/lib/model-picker-groups";
 import { cn } from "@/lib/utils";
+import { stripVideoDialogueSummary, videoDialogueSummary } from "@/lib/video-dialogue-observations";
+import { VIDEO_RESOLUTION_DEFAULT_LABEL } from "@/lib/video-generation-options";
 import { modelDisplayName, modelIcon, modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -27,6 +29,7 @@ type ModelPickerProps = {
     variant?: "default" | "creation";
     requirements?: ModelRequirements;
     showConfiguredModelName?: boolean;
+    popoverPlacement?: "topLeft" | "bottomLeft";
 };
 
 export function ModelPicker({
@@ -44,6 +47,7 @@ export function ModelPicker({
     variant = "creation",
     requirements,
     showConfiguredModelName = false,
+    popoverPlacement = "bottomLeft",
 }: ModelPickerProps) {
     const pickerId = useId();
     // 双保险：即使 store merge 写出非法 theme，这里也兜底到 dark，避免 "reading 'node'" 崩溃
@@ -57,6 +61,8 @@ export function ModelPicker({
     const triggerRef = useRef<HTMLButtonElement>(null);
     const options = useMemo(() => Array.from(new Set(selectableModelsByCapability(config, capability).filter(Boolean))), [capability, config]);
     const optionGroups = useMemo(() => groupModelsForPicker(config, options), [config, options]);
+    const largestGroupSize = optionGroups.reduce((largest, group) => Math.max(largest, group.models.length), 0);
+    const pickerHeight = Math.min(440, Math.max(260, 130 + Math.max(optionGroups.length, largestGroupSize) * 72));
     const storedCurrent = value?.trim() || "";
     // 参数档位会在选中模型后由调用方归一到其能力配置，不能因为旧模型留下的参数而禁止切换。
     const selectionRequirements = requirements ? { ...requirements, videoSeconds: undefined, imageSize: undefined, options: undefined } : undefined;
@@ -101,7 +107,8 @@ export function ModelPicker({
         if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
         if (nextOpen) {
             setPreviewedModel(current || options[0] || "");
-            setActiveGroupKey(null);
+            // A single channel needs no separate channel-selection step.
+            setActiveGroupKey(optionGroups.length === 1 ? optionGroups[0].key : null);
         }
         setOpen(nextOpen);
     };
@@ -152,6 +159,7 @@ export function ModelPicker({
                     background: theme.node.panel,
                     color: theme.node.text,
                     "--canvas-model-picker-trigger-width": triggerWidth ? String(triggerWidth) + "px" : undefined,
+                    "--canvas-model-picker-height": `${pickerHeight}px`,
                 } as CSSProperties
             }
             role="listbox"
@@ -187,15 +195,20 @@ export function ModelPicker({
                     </div>
                     {optionGroups.filter((group) => group.key === activeGroupKey).map((group) => <section key={group.key} className="canvas-model-picker-group canvas-model-picker-model-pane min-w-0 overflow-hidden">
                         <div className="canvas-model-picker-secondary-head">
-                            <button type="button" className="canvas-model-picker-back" onClick={() => { setActiveGroupKey(null); focusMenuOption(); }} aria-label="返回模型列表"><ChevronLeft /></button>
+                            {optionGroups.length > 1 ? <button type="button" className="canvas-model-picker-back" onClick={() => { setActiveGroupKey(null); focusMenuOption(); }} aria-label="返回模型列表"><ChevronLeft /></button> : null}
                             <span><strong>{group.label}</strong>{group.scope ? <small>{group.scope}</small> : null}</span>
                         </div>
                         <div className="grid min-w-0 gap-1">
                             {group.models.map((modelGroup) => {
                                 const selected = modelGroup.models.includes(current);
-                                const model = compatibleModelInGroup(config, modelGroup.models, selectionRequirements, selected ? current : undefined);
-                                const displayModel = model || (selected ? current : modelGroup.models[0]);
-                                const disabledReason = model ? "" : modelCompatibilityError(config, modelGroup.models[0], selectionRequirements) || "当前输入不符合该模型能力";
+                                // 不可用模型必须带具体原因，否则用户只会看到“点不动的暗按钮”。
+                                const { model, displayModel, disabledReason } = resolveModelPickerOption({
+                                    config,
+                                    models: modelGroup.models,
+                                    requirements: selectionRequirements,
+                                    current,
+                                    selected,
+                                });
                                 return (
                                     <button
                                         key={modelGroup.key}
@@ -235,6 +248,14 @@ export function ModelPicker({
                                 );
                             })}
                         </div>
+                        <div
+                            className="sticky bottom-0 z-[2] mt-2 flex items-start gap-1.5 border-t border-[var(--workspace-border)] px-2 py-2 text-[var(--fs-tiny)]"
+                            style={{ background: theme.node.panel, color: theme.node.muted }}
+                            role="note"
+                        >
+                            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                            <span>灰色模型需先满足名称下方的条件；需要参考图时，先点「+ 参考内容」添加。</span>
+                        </div>
                     </section>)}
                 </div>
             ) : (
@@ -259,9 +280,10 @@ export function ModelPicker({
         <div className={cn(fullWidth ? "w-full min-w-0" : "w-fit max-w-full")} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
             <Popover
                 open={open}
-                onOpenChange={setPickerOpen}
-                trigger="click"
-                placement="bottomLeft"
+                trigger={[]}
+                // 创建页统一以触发按钮下沿为首选锚点；AntD 仅在视口空间不足时整体翻到上方。
+                // 两层内容保持同一尺寸，因此切换到渠道详情时不会重新翻转或偏移。
+                placement={creationVariant ? "bottomLeft" : popoverPlacement}
                 arrow={false}
                 content={content}
                 classNames={{
@@ -278,6 +300,7 @@ export function ModelPicker({
                     aria-expanded={open}
                     aria-label={placeholder}
                     title={current ? pickerModelOptionLabel(config, current, showConfiguredModelName) : placeholder}
+                    onClick={() => setPickerOpen(!open)}
                     onKeyDown={handleTriggerKeyDown}
                 >
                     <span className="canvas-model-picker-label flex min-w-0 items-center gap-1.5">
@@ -331,24 +354,26 @@ function ModelLabel({
     const videoProfile = capability === "video" ? modelCapabilityConfigFor(config, model).video : undefined;
     // 视频模型把「时长 · 支持尺寸」放在描述最前面：模型名里写死的尺寸（如 736P）容易让人
     // 以为整条渠道只支持那一种分辨率，而这一行是被截断的，放后面会被看漏。
-    const videoSpecs = videoProfile?.resolutions.length
-        ? `${formatDurationSummary(videoProfile)} · ${videoProfile.resolutions.map((item) => item.toUpperCase()).join("/")}`
+    const videoSpecs = videoProfile
+        ? `${formatDurationSummary(videoProfile)} · ${videoProfile.resolutions.length ? videoProfile.resolutions.map((item) => item.toUpperCase()).join("/") : `分辨率：${VIDEO_RESOLUTION_DEFAULT_LABEL}`}`
         : "";
-    const fallbackSummary = logicalCost?.description?.trim() || (isDirectSystemModel(config, model) ? "" : logicalSpec ? logicalCapabilitySummary(logicalSpec) : meta.description);
+    const modelDescription = logicalCost?.description?.trim() || (isDirectSystemModel(config, model) ? "" : logicalSpec ? logicalCapabilitySummary(logicalSpec) : meta.description);
     // 小字开头固定写上模型型号（发送给上游的真实 ID），避免同一渠道里多个版本只靠中文改名区分。
     const modelId = modelOptionName(model);
-    const specsAndSummary = [videoSpecs, fallbackSummary].filter(Boolean).join("｜");
-    const capabilitySummary = disabledReason || [modelId, specsAndSummary].filter(Boolean).join(" · ");
+    const dialogueSummary = capability === "video" ? videoDialogueSummary(logicalCost?.capabilityConfig?.observed, modelDescription) : "";
+    const fallbackSummary = stripVideoDialogueSummary(modelDescription, dialogueSummary);
+    const specsAndSummary = [videoSpecs, dialogueSummary, fallbackSummary].filter(Boolean).join("｜");
+    const capabilitySummary = [disabledReason || modelId, specsAndSummary].filter(Boolean).join(" · ");
     return (
         <span className="flex w-full min-w-0 items-center gap-1.5 overflow-hidden py-0">
             <span className="grid size-6 shrink-0 place-items-center rounded-md" style={{ background: theme.toolbar.itemHover }}>
                 <ModelIcon config={config} model={model} />
             </span>
-            <span className="min-w-44 flex-1 overflow-hidden">
+            <span className="min-w-44 flex-1">
                 <span className="block min-w-0 truncate text-[var(--fs-label)] font-medium leading-none">{label || pickerModelDisplayName(config, model, showConfiguredModelName)}</span>
                 {/* 视频模型常驻显示“时长 · 支持尺寸”，不依赖悬停，避免只看模型名就误判分辨率。 */}
-                <span className={cn("canvas-model-picker-description mt-1 block truncate text-[var(--fs-tiny)]", (showDescription || videoSpecs) && "is-visible")} style={{ color: theme.node.muted }} title={capabilitySummary}>
-                    {disabledReason ? disabledReason : (
+                <span className={cn("canvas-model-picker-description mt-1 block whitespace-normal text-[var(--fs-tiny)]", (showDescription || videoSpecs || disabledReason) && "is-visible")} style={{ color: theme.node.muted }} title={capabilitySummary}>
+                    {disabledReason ? <>{disabledReason}{dialogueSummary ? ` · ${dialogueSummary}` : ""}</> : (
                         <>
                             <span className="canvas-model-picker-model-id">{modelId}</span>
                             {specsAndSummary ? ` · ${specsAndSummary}` : null}

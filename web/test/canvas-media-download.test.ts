@@ -43,8 +43,9 @@ describe("canvas media download", () => {
 });
 
 describe("generated image title", () => {
-    test("普通节点继续使用提示词摘要", () => {
-        expect(buildImageGenerationNodeTitle("一座云层中的未来城市", mediaNode({ title: "原图" }))).toBe("一座云层中的未来城市");
+    test("已命名节点保留名称，未命名节点使用提示词摘要", () => {
+        expect(buildImageGenerationNodeTitle("一座云层中的未来城市", mediaNode({ title: "原图" }))).toBe("原图");
+        expect(buildImageGenerationNodeTitle("一座云层中的未来城市", mediaNode({ title: "图片" }))).toBe("一座云层中的未来城市");
     });
 
     test("快捷键复制节点生成后保留 copy 序号", () => {

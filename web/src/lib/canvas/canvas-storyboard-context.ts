@@ -9,7 +9,9 @@ export type StoryboardGenerationContext = {
     };
     characters: Array<{
         assetId: string;
+        characterId: string;
         versionId: string;
+        voiceVersionId?: string;
         name: string;
         definition: Record<string, unknown>;
     }>;
@@ -36,12 +38,17 @@ export function resolveStoryboardGenerationContext(nodes: CanvasNodeData[]): Sto
             prompt: stylePrompt,
             profileJson: styleNode.metadata?.styleProfileJson,
         },
-        characters: characterNodes.map((node) => ({
-            assetId: node.metadata!.characterAssetId!.trim(),
-            versionId: node.metadata!.characterVersionId!.trim(),
-            name: (node.metadata?.characterName || node.title).trim(),
-            definition: node.metadata?.characterDefinition || { prompt: node.metadata?.characterPrompt || "" },
-        })),
+        characters: characterNodes.map((node) => {
+            const voiceVersionId = node.metadata?.characterVoiceVersionId?.trim();
+            return {
+                assetId: node.metadata!.characterAssetId!.trim(),
+                characterId: node.metadata!.characterAssetId!.trim(),
+                versionId: node.metadata!.characterVersionId!.trim(),
+                ...(voiceVersionId ? { voiceVersionId } : {}),
+                name: (node.metadata?.characterName || node.title).trim(),
+                definition: node.metadata?.characterDefinition || { prompt: node.metadata?.characterPrompt || "" },
+            };
+        }),
     };
 }
 

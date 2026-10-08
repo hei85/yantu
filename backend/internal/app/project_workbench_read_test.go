@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
@@ -19,9 +18,9 @@ func newProjectWorkbenchReadTestService(t *testing.T) (*Service, *gorm.DB) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&model.Project{}, &model.ProjectUnit{}, &model.CanvasProject{}, &model.CanvasUnitLink{},
+		&model.Project{}, &model.ProjectUnit{}, &model.CanvasUnitLink{},
 		&model.Asset{}, &model.AssetVersion{}, &model.AssetRepresentation{}, &model.ProjectAssetLink{}, &model.ProjectAssetCandidate{},
-		&model.CharacterVoiceBinding{}, &model.VoiceProfile{},
+		&model.CharacterVoiceBinding{}, &model.VoiceProfile{}, &model.VoiceProfileVersion{},
 		&model.Shot{}, &model.ShotRevision{}, &model.ShotArtifact{}, &model.ShotAssetReference{},
 		&model.WorkflowInstance{}, &model.WorkflowStepInstance{}, &model.Task{},
 	); err != nil {
@@ -47,7 +46,8 @@ func TestProjectUnitWorkspaceResolvesHistoricalVisualAndCurrentCharacterVoice(t 
 		&model.AssetRepresentation{ID: "representation-v1", TaskID: "visual-v1", AssetVersionID: "character-v1", ResourceID: "character-image-v1", MediaType: "image/png", Role: "primary"},
 		&model.AssetRepresentation{ID: "representation-v2", TaskID: "visual-v2", AssetVersionID: "character-v2", ResourceID: "character-image-v2", MediaType: "image/png", Role: "primary"},
 		&model.VoiceProfile{ID: "voice-1", UserID: "user-1", Name: "张天昊声音", Provider: "custom", VoiceKey: "voice-1", Language: "普通话", Timbre: "青年男声", SampleResourceID: "voice-sample-1", Status: "active", CompatibleModelsJSON: `[]`},
-		&model.CharacterVoiceBinding{ID: "binding-1", AssetVersionID: "character-v2", VoiceProfileID: "voice-1", Instructions: "内心独白语气"},
+		&model.VoiceProfileVersion{ID: "voice-version-1", VoiceProfileID: "voice-1", CharacterAssetID: "character-1", Version: 1, VoiceStrategy: "standard_tts", VoiceID: "voice-1", Status: "ready"},
+		&model.CharacterVoiceBinding{ID: "binding-1", AssetVersionID: "character-v2", VoiceProfileID: "voice-1", VoiceVersionID: "voice-version-1", Instructions: "内心独白语气"},
 		&model.Shot{ID: "shot-1", ProjectID: project.ID, UnitID: unit.ID, Position: 0},
 		&model.ShotAssetReference{ID: "reference-1", ShotID: "shot-1", AssetVersionID: "character-v1", Role: "reference", Status: "linked"},
 	}
@@ -192,33 +192,28 @@ func TestProjectUnitWorkspaceIsolatesShotsAndBoundAssetsByUnit(t *testing.T) {
 	}
 }
 
-func TestProjectCanvasesPageReturnsLinksOnlyForCurrentPage(t *testing.T) {
+func TestProjectCanvasLinksContainLocalCanvasMetadata(t *testing.T) {
 	service, db := newProjectWorkbenchReadTestService(t)
 	project := seedWorkbenchProject(t, db)
 	if err := db.Create(&model.ProjectUnit{ID: "unit-1", ProjectID: project.ID, Title: "第一章"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
 	for index := 0; index < 5; index++ {
 		canvasID := fmt.Sprintf("canvas-%d", index)
-		if err := db.Create(&model.CanvasProject{ID: canvasID, UserID: "user-1", ProjectID: project.ID, Title: canvasID, UpdatedAt: now.Add(time.Duration(index) * time.Minute)}).Error; err != nil {
-			t.Fatal(err)
-		}
 		if err := db.Create(&model.CanvasUnitLink{ID: "link-" + canvasID, ProjectID: project.ID, CanvasID: canvasID, UnitID: "unit-1"}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	page, err := service.ProjectCanvasesPage("user-1", project.ID, 2, 2)
+	links, err := service.ProjectCanvasLinks("user-1", project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 5 || len(page.Canvases) != 2 || len(page.CanvasUnitLinks) != 2 || !page.HasMore {
-		t.Fatalf("unexpected canvas page: %+v", page)
+	if len(links) != 5 {
+		t.Fatalf("project canvas metadata links = %d, want 5", len(links))
 	}
-	pageIDs := map[string]bool{page.Canvases[0].ID: true, page.Canvases[1].ID: true}
-	for _, link := range page.CanvasUnitLinks {
-		if !pageIDs[link.CanvasID] {
-			t.Fatalf("link %s does not belong to the current canvas page", link.CanvasID)
+	for _, link := range links {
+		if link.ProjectID != project.ID || link.UnitID != "unit-1" {
+			t.Fatalf("unexpected project canvas metadata: %+v", link)
 		}
 	}
 	units, err := service.ProjectUnitSummaries("user-1", project.ID)

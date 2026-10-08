@@ -269,8 +269,8 @@ export function CanvasVideoSegmentDialog({ node, nodes, connections, open, mode,
                                         : "当前配置中没有支持参考视频的视频模型，请先到设置里配置 Seedance / Agent Plan / NewAPI 渠道。"}
                                 </span>
                                 {!hasEligibleModels ? (
-                                    <Button size="small" type="primary" onClick={() => navigateToSettings({ section: "channels", continueCreation: true })}>
-                                        去设置配置渠道
+                                        <Button size="small" type="primary" onClick={() => navigateToSettings({ section: "quick", continueCreation: true })}>
+                                            去添加视频模型
                                     </Button>
                                 ) : null}
                             </div>
@@ -443,6 +443,7 @@ function videoOperationLabel(operation: CanvasVideoEditOperation) {
         audio_to_video: "音频生视频",
         compare_versions: "版本对比",
         concat: "拼接成片",
+        timeline_render: "时间线成片",
     };
     return labels[operation] || operation;
 }

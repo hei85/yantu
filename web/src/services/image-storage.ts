@@ -13,22 +13,17 @@ export type UploadedImage = {
     height: number;
     bytes: number;
     mimeType: string;
-    /**
-     * true 表示直传失败、文件当前只存在于本机 IndexedDB。
-     * 云端数据同步会用同一幂等键重传，但在那之前它不是一份已持久化的服务端资源：
-     * `url` 是页面级 objectURL，刷新即失效。UI 不得把这种结果说成"已保存"。
-     */
-    pendingRemoteUpload?: boolean;
-    /** 直传失败原因，仅在 pendingRemoteUpload 为 true 时有值，供 UI 如实告知用户。 */
-    remoteUploadError?: string;
+    /** true 表示资源上传失败，媒体当前只保存在本机 IndexedDB。 */
+    pendingResourceUpload?: boolean;
+    /** 资源上传失败原因。 */
+    resourceUploadError?: string;
 };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob, onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<UploadedImage> {
-    // 同一个逻辑上传在直传失败后会退回 IndexedDB，并由云端数据同步再次提交。
-    // 提前生成本地 key，确保两条路径向后端发送相同的幂等标识。
+    // 提前生成稳定的本地 key，让资源上传重试复用同一个幂等标识。
     const storageKey = `image:${getActiveUserScope()}:${nanoid()}`;
     if (typeof input === "string" && shouldImportRemoteImage(input)) {
         try {
@@ -48,7 +43,7 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const previewUrl = URL.createObjectURL(blob);
     const meta = await readImageMeta(previewUrl);
-    let remoteUploadError = "";
+    let resourceUploadError = "";
     try {
         const resource = await uploadResourceFile(blob, "image", { width: meta.width, height: meta.height, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
         await primeResourceBlobCache(resourceStorageKey(resource.id), blob).catch(() => "");
@@ -62,15 +57,15 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
             mimeType: resource.mimeType || blob.type || meta.mimeType,
         };
     } catch (error) {
-        // 鉴权失效、越权、体积超限这类失败重传也是同样结果，不能退化成"稍后自动同步"。
+        // 鉴权失效、越权、体积超限这类错误不会随重试恢复，不能退化为本机暂存。
         if (error instanceof ResourceUploadError && error.permanent) throw error;
-        remoteUploadError = error instanceof Error ? error.message : "图片直传失败";
+        resourceUploadError = error instanceof Error ? error.message : "图片资源上传失败";
     }
-    // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
+    // 上传失败时退回本机，只有后续明确的生产操作会再次上传这份媒体。
     await store.setItem(storageKey, blob);
     const url = previewUrl;
     objectUrls.set(storageKey, url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingRemoteUpload: true, remoteUploadError };
+    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingResourceUpload: true, resourceUploadError };
 }
 
 function shouldImportRemoteImage(input: string) {

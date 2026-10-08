@@ -200,18 +200,30 @@ func (s *Service) RegisterTaskOutput(userID string, projectID string, stepID str
 	}
 	canvasID := strings.TrimSpace(req.CanvasID)
 	if task.ProjectID != projectID {
-		canvas, canvasErr := s.repo.CanvasProjectForUser(userID, task.ProjectID)
-		if canvasErr != nil || canvas.ProjectID != projectID {
-			return model.WorkflowStepInstance{}, BadAuthRequest("任务不属于当前项目")
+		if strings.TrimSpace(task.ProjectID) == "" {
+			canvasID, err = s.freeCanvasTaskCanvasID(userID, projectID, task, canvasID)
+			if err != nil {
+				return model.WorkflowStepInstance{}, err
+			}
+			requestedResourceID := strings.TrimSpace(req.ResourceID)
+			actualResourceID, _ := taskOutputResource(task.ResultJSON, task.Type)
+			if requestedResourceID == "" || actualResourceID == "" || requestedResourceID != actualResourceID {
+				return model.WorkflowStepInstance{}, BadAuthRequest("请求资源与成功任务的真实输出不一致")
+			}
+		} else {
+			project, projectErr := s.repo.ProjectForCanvas(userID, task.ProjectID)
+			if projectErr != nil || project.ID != projectID {
+				return model.WorkflowStepInstance{}, BadAuthRequest("任务不属于当前项目")
+			}
+			if canvasID != "" && canvasID != task.ProjectID {
+				return model.WorkflowStepInstance{}, BadAuthRequest("任务画布与产物画布不一致")
+			}
+			canvasID = task.ProjectID
 		}
-		if canvasID != "" && canvasID != canvas.ID {
-			return model.WorkflowStepInstance{}, BadAuthRequest("任务画布与产物画布不一致")
-		}
-		canvasID = canvas.ID
 	}
 	if canvasID != "" {
-		canvas, canvasErr := s.repo.CanvasProjectForUser(userID, canvasID)
-		if canvasErr != nil || canvas.ProjectID != projectID {
+		project, projectErr := s.repo.ProjectForCanvas(userID, canvasID)
+		if projectErr != nil || project.ID != projectID {
 			return model.WorkflowStepInstance{}, BadAuthRequest("画布不属于当前项目")
 		}
 	}
@@ -331,6 +343,51 @@ func (s *Service) RegisterTaskOutput(userID string, projectID string, stepID str
 		return model.WorkflowStepInstance{}, err
 	}
 	return *step, nil
+}
+
+// freeCanvasTaskCanvasID accepts legacy/free-canvas tasks whose ProjectID is empty
+// only when their user-owned ProductionRun and persisted task metadata agree on a
+// canvas that is already linked to this project.
+func (s *Service) freeCanvasTaskCanvasID(userID string, projectID string, task *model.Task, requestedCanvasID string) (string, error) {
+	productionRunID := strings.TrimSpace(task.ProductionRunID)
+	if productionRunID == "" {
+		return "", BadAuthRequest("无项目任务缺少制作运行来源")
+	}
+	run, err := s.repo.ProductionRunForUser(userID, productionRunID)
+	if err != nil {
+		return "", BadAuthRequest("任务的制作运行不属于当前用户")
+	}
+	canvasID := strings.TrimSpace(run.CanvasID)
+	if canvasID == "" || (strings.TrimSpace(run.DomainProjectID) != "" && strings.TrimSpace(run.DomainProjectID) != projectID) {
+		return "", BadAuthRequest("任务的制作运行未绑定当前画布项目")
+	}
+	if requestedCanvasID != "" && requestedCanvasID != canvasID {
+		return "", BadAuthRequest("任务画布与产物画布不一致")
+	}
+	decrypted, err := s.decryptTaskInputJSON(task.InputJSON)
+	if err != nil {
+		return "", BadAuthRequest("任务缺少有效的画布来源")
+	}
+	var input struct {
+		Metadata struct {
+			CanvasID        string `json:"canvasId"`
+			ProductionRunID string `json:"productionRunId"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(decrypted), &input); err != nil {
+		return "", BadAuthRequest("任务缺少有效的画布来源")
+	}
+	if strings.TrimSpace(input.Metadata.CanvasID) != canvasID {
+		return "", BadAuthRequest("任务记录的画布与制作运行不一致")
+	}
+	if metadataRunID := strings.TrimSpace(input.Metadata.ProductionRunID); metadataRunID != "" && metadataRunID != productionRunID {
+		return "", BadAuthRequest("任务记录的制作运行与任务不一致")
+	}
+	project, err := s.repo.ProjectForCanvas(userID, canvasID)
+	if err != nil || project.ID != projectID {
+		return "", BadAuthRequest("画布未关联到当前项目")
+	}
+	return canvasID, nil
 }
 
 func (s *Service) validateWorkflowStepCompletion(projectID string, instance *model.WorkflowInstance, step *model.WorkflowStepInstance) error {

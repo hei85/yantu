@@ -1,31 +1,25 @@
 ---
 name: canvas
-description: 操作衍图当前网页画布，读取节点、选区、创建文本节点、创建生成流程、连接节点或触发生成。
+description: 使用本便携版衍图 MCP 控制画布、分镜、媒体节点和生成流程；需要实际操作衍图时使用，按任务加载上下文、编辑或制作技能。
+metadata:
+  version: "1.1.3"
 ---
 
-# 衍图画布
+# 便携版画布入口
 
-你正在帮助用户操作衍图网页画布。需要理解或改动画布时，优先使用已配置的 `yingce` MCP 工具；不要让用户手动复制 JSON、URL 或 token。
+本插件 MCP 通过安装脚本登记的运行时指针使用对应便携包。先用 `runtime_diagnostics`、`canvas_list_open_canvases` 确定真实连接和目标，不能按缓存插件目录、旧标签页或同名服务猜路径。
 
-## 工作流
+- 查看、定位或刷新写入版本：读 [canvas-context](../canvas-context/SKILL.md)，首次完整读取，后续简要读取并针对目标查详情。
+- 创建、引用、布局或清理：读 [canvas-editing](../canvas-editing/SKILL.md)，明确目标、使用最新前置条件、写后回读。默认局部布局，保护采用版本。
+- 图片工具栏的局部重绘、文字、人像、视角、标注、图层与全景：读 [图片工具与 MCP](../canvas-editing/references/image-toolbar-tools.md)，使用对应原生工具，区分本地处理、AI 收费任务和实际质量验收。
+- 生图/视频需要已有素材：读 [asset-aware-generation](../asset-aware-generation/SKILL.md)，核对真实输入、去重与内联引用。
+- 用户要求制作、接续或修复整片：读 [yingce-film-production](../yingce-film-production/SKILL.md) 和 [画布制作规则](../yingce-film-production/references/canvas-production-rules.md)。已有验收素材复用；按镜头和过渡顺序组织，图片验收后绑定视频输入。普通查看、移动或引用编辑无需重新执行整片准备。
+- 封闭室内的一致性与机位规划：读 [固定空间三步流程](../yingce-film-production/references/fixed-space-workflow.md)。先房型，再共用模型与机位取景，最后关键帧和视频；仅查看或修改引用时复用已检查阶段。户外不强制房型与建模。距离漂移读 [距离连续性](../yingce-film-production/references/spatial-distance-continuity.md)，从剧本自动接管读 [工作流与经验](../yingce-film-production/references/script-to-film-automation.md)。
 
-- 如果用户还没有打开或连接网页画布，使用 `open-canvas` 技能打开衍图，不要要求用户手动复制 URL 或 token。
-- 操作前先用 `canvas_get_context` 读取语义化画布和资源状态；如果用户明确提到选中内容、当前节点或“这个”，再用 `canvas_get_selection`。
-- 不知道真实节点 id 时使用 `canvas_find_nodes`；涉及媒体参考时使用 `canvas_get_resources`。
-- 复杂批量操作先用 `canvas_validate_ops`，再用 `canvas_apply_ops`。
-- 创建单个文本内容优先用 `canvas_create_text_node`。
-- 创建生成内容优先用 `canvas_generate_text`、`canvas_generate_image`、`canvas_generate_video`、`canvas_generate_audio`。
-- 需要把提示词、参考素材和生成目标节点串成流程时，使用 `canvas_create_generation_flow` 或项目已有的流程工具。
-- 需要批量增删改、移动、连接节点或设置视口时，使用 `canvas_apply_ops`。
-- 不要模拟鼠标点击，不要要求用户手动复制 JSON。
-- 写入画布的操作会由网页侧边栏做二次确认，按当前工具结果继续推进即可。
+- 连接中断或启动软件：读 [open-canvas](../open-canvas/SKILL.md)，恢复正确包与原任务。
 
-更具体的资源感知生成和可靠编辑流程分别见 `asset-aware-generation`、`canvas-editing`。
+批量创作表先用 `canvas_batch_table_read`，通过表格工具维护行/列/引用；提交前 `canvas_preflight_batch_rows`。分镜先读稳定 rowId，用原生逐行工具建立输出，提交前 `canvas_preflight_storyboard_media`。创建输出节点与预检均不代表生成已经提交。
 
-## 风格
+转换节点使用 `canvas_convert_media` 的真实本地算法，不只改状态字段。绘图、导演摄影机/场景、时间线用专用编辑工具及独立版本，按编辑技能中的对应参考执行。
 
-- 页面文案和画布节点内容默认使用中文。
-- 生成目标节点和提示词节点要保持结构清晰，方便用户继续编辑。
-- 批量创建节点时注意给节点留出间距，不要堆叠在同一个位置。
-- 图片、视频、音频等媒体节点默认保留原始比例；只有用户明确要求自由变形时才改变比例。
-- 生成流程尽量少而清楚，优先让用户一眼能看懂节点关系。
+按当前用户授权执行，优先原生 MCP；所有成功与质量结论都必须有实际工具结果和媒体证据，缺失能力明确报告。模型特定提示词按真实模型选择：确认 MiniMax H3 才加载官方 H3 和中文适配技能。

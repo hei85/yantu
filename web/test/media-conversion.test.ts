@@ -5,6 +5,7 @@ import { findPendingMediaConversionInput } from "../src/components/canvas/canvas
 import { getNodeAcceptedInputKinds, getNodeMaxInputCount, getNodeResourceKind } from "../src/lib/canvas/node-registry";
 import { mediaConversionSourceFingerprint } from "../src/lib/media-conversion/contracts";
 import { convertImageLocally, LocalImageConversionError, transformPixels } from "../src/lib/media-conversion/local-converter";
+import { readLocalRuntimeStatus } from "../src/services/local-runtime";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../src/types/canvas";
 import type { AiConfig } from "../src/stores/use-config-store";
 
@@ -105,4 +106,18 @@ describe("图片本地转换算法", () => {
     test("浏览器算法转换把模型操作交给本机 Runtime", async () => {
         await expect(convertImageLocally("", "depth")).rejects.toMatchObject<LocalImageConversionError>({ code: "model_missing" });
     });
+});
+
+test("本机运行时接受透明抠图模块，其他转换模型仍可连接", async () => {
+    const status = await readLocalRuntimeStatus({
+        request: async () => new Response(JSON.stringify({
+            ok: true,
+            runtime: { id: "framefield-local-runtime", version: "1.0.0", apiVersion: 2 },
+            modules: [
+                { id: "lineart-estimation", displayName: "Lineart", apiVersion: 1, scopes: ["lineart:status", "lineart:run"] },
+                { id: "cutout-estimation", displayName: "Cutout", apiVersion: 1, scopes: ["cutout:status", "cutout:run"] },
+            ],
+        }), { status: 200 }),
+    });
+    expect(status.modules.map((module) => module.id)).toEqual(["lineart-estimation", "cutout-estimation"]);
 });

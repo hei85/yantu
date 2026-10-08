@@ -17,13 +17,15 @@ import { DIRECTOR_DEFAULT_ACTOR_URL, directorPoseBoneDeltas, directorTransformPa
 import { DIRECTOR_DEFAULT_VIEW_MODE, directorViewFramingKey, resolveDirectorEffectiveViewport, resolveDirectorOrthographicFraming, resolveDirectorOrthographicFrustum, resolveDirectorViewFraming, type DirectorOrthographicFraming, type DirectorViewFraming, type DirectorViewMode } from "@/lib/canvas/director/director-view-modes";
 import { DirectorViewToolbar } from "@/components/canvas/director/director-view-toolbar";
 import { resolveMediaUrl } from "@/services/file-storage";
+import { remuxDirectorWebm } from "@/lib/canvas/director/director-webm-remux";
 import type { DirectorHumanoidBone, DirectorLight, DirectorObject, DirectorQuat, DirectorRenderMode, DirectorRig, DirectorScene, DirectorTransform, DirectorVec3 } from "@/types/director";
 
 export type DirectorOrbitControls = ComponentRef<typeof OrbitControls>;
 
 export type DirectorViewportHandle = {
     capture: (mode: DirectorRenderMode) => Promise<Blob>;
-    recordVideo: (duration: number, fps: number) => Promise<Blob>;
+    recordVideo: (duration: number, fps: number) => Promise<{ blob: Blob; durationMs: number }>;
+    getCanvasSize: () => { width: number; height: number } | null;
     readCameraTransform: () => DirectorTransform | null;
     /** 只读放置意图。上下文不可用或从未产生合法点时返回空意图，绝不抛异常。 */
     readPlacementIntent: () => DirectorPlacementIntent;
@@ -137,6 +139,10 @@ export const DirectorViewport = forwardRef<DirectorViewportHandle, DirectorViewp
     useImperativeHandle(ref, () => ({
         capture: (mode) => captureFrame(usableContext(), mode),
         recordVideo: (duration, fps) => recordCanvas(usableContext(), duration, fps),
+        getCanvasSize: () => {
+            const canvas = usableContext()?.gl.domElement;
+            return canvas ? { width: canvas.width, height: canvas.height } : null;
+        },
         readCameraTransform: () => {
             const camera = usableContext()?.camera;
             return camera ? { position: camera.position.toArray() as DirectorTransform["position"], rotation: [camera.rotation.x, camera.rotation.y, camera.rotation.z], scale: [1, 1, 1] } : null;
@@ -157,19 +163,21 @@ export const DirectorViewport = forwardRef<DirectorViewportHandle, DirectorViewp
         // data-renderer-ready 直接来自 directorCaptureUsable：capture context 已登记且未 lost。
         // 这是真实就绪信号，供 E2E 在触发 context loss 前确定监听器已安装。
         <div className="director-viewport-shell" data-renderer-ready={directorCaptureUsable(capture) ? "true" : "false"}>
-            <DirectorViewportErrorBoundary key={`boundary-${retryKey}`} onRelease={releaseCapture} onRetry={retry}>
-                <DirectorCanvasSurface
-                    key={`canvas-${retryKey}`}
-                    {...sceneProps}
-                    onCaptureContext={onCaptureContext}
-                    onRelease={releaseCapture}
-                    onContextLost={onContextLost}
-                    onContextRestored={onContextRestored}
-                    onLoadStateChange={onLoadStateChange}
-                    onGroundPoint={onGroundPoint}
-                    onOrbitControls={onOrbitControls}
-                />
-            </DirectorViewportErrorBoundary>
+            <div className={`director-viewport-render-area${props.viewMode === "camera" ? " is-camera" : ""}`}>
+                <DirectorViewportErrorBoundary key={`boundary-${retryKey}`} onRelease={releaseCapture} onRetry={retry}>
+                    <DirectorCanvasSurface
+                        key={`canvas-${retryKey}`}
+                        {...sceneProps}
+                        onCaptureContext={onCaptureContext}
+                        onRelease={releaseCapture}
+                        onContextLost={onContextLost}
+                        onContextRestored={onContextRestored}
+                        onLoadStateChange={onLoadStateChange}
+                        onGroundPoint={onGroundPoint}
+                        onOrbitControls={onOrbitControls}
+                    />
+                </DirectorViewportErrorBoundary>
+            </div>
             {/* 取景切换是纯视口状态：放在 DOM 层，不随 Canvas 重建而丢失。 */}
             {onViewModeChange ? <DirectorViewToolbar viewMode={props.viewMode ?? DIRECTOR_DEFAULT_VIEW_MODE} onViewModeChange={onViewModeChange} /> : null}
             {capture.contextLost ? (
@@ -1127,44 +1135,60 @@ async function captureFrame(context: CaptureContext | null, mode: DirectorRender
 async function recordCanvas(context: CaptureContext | null, duration: number, fps: number) {
     if (!context) throw new Error("3D 视口尚未就绪");
     if (!context.gl.domElement.captureStream || typeof MediaRecorder === "undefined") throw new Error("当前浏览器不支持视频录制，请导出帧序列");
-    const resumeDisplayMaterialOverride = context.suspendDisplayMaterialOverride();
     const previousMaterial = context.scene.overrideMaterial;
-    const restoreClayMaterials = applyClaySceneMaterials(context.scene);
-    context.scene.overrideMaterial = null;
-    context.gl.render(context.scene, context.camera);
-    const stream = context.gl.domElement.captureStream(fps);
-    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    let resumeDisplayMaterialOverride: (() => void) | null = null;
+    let restoreClayMaterials: (() => void) | null = null;
+    let stream: MediaStream | null = null;
+    let recorder: MediaRecorder | null = null;
     const chunks: Blob[] = [];
     // captureStream 依赖渲染循环持续产出新帧；循环里任何未捕获异常都会让剩余录制变成空帧，
     // 与其 5 秒后静默产出残缺视频回写画布，不如捕获到首个错误就立刻中止并报错。
     let renderError: Error | null = null;
     const onRenderError = () => {
         renderError ??= new Error("白膜视频录制期间发生渲染错误，请重试");
-        if (recorder.state !== "inactive") recorder.stop();
+        if (recorder && recorder.state !== "inactive") recorder.stop();
     };
-    window.addEventListener("error", onRenderError);
-    const result = new Promise<Blob>((resolve, reject) => {
-        recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-        recorder.onerror = () => reject(new Error("白膜视频录制失败"));
-        recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
-    });
-    recorder.start(250);
-    const stopTimer = window.setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, Math.max(250, duration * 1000 + 120));
+    let listenerInstalled = false;
+    let stopTimer: number | null = null;
     try {
+        resumeDisplayMaterialOverride = context.suspendDisplayMaterialOverride();
+        restoreClayMaterials = applyClaySceneMaterials(context.scene);
+        context.scene.overrideMaterial = null;
+        context.gl.render(context.scene, context.camera);
+        stream = context.gl.domElement.captureStream(fps);
+        const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
+        recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        window.addEventListener("error", onRenderError);
+        listenerInstalled = true;
+        const activeRecorder = recorder;
+        const result = new Promise<Blob>((resolve, reject) => {
+            activeRecorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+            activeRecorder.onerror = () => reject(new Error("白膜视频录制失败"));
+            activeRecorder.onstop = () => resolve(new Blob(chunks, { type: activeRecorder.mimeType || "video/webm" }));
+        });
+        activeRecorder.start(250);
+        stopTimer = window.setTimeout(() => { if (activeRecorder.state !== "inactive") activeRecorder.stop(); }, Math.max(250, duration * 1000 + 120));
         const blob = await result;
         if (renderError) throw renderError;
         const recorded = await probeRecordedDuration(blob);
         if (!Number.isFinite(recorded) || recorded < Math.max(0.25, duration * 0.5)) throw new Error("白膜视频时长异常，录制可能不完整，请重试");
-        return blob;
+        // MediaRecorder WebM 常缺少 Segment Duration，浏览器能播放但资源端 ffprobe 无法抽帧。
+        // 用 -c copy 重封装容器索引/时长，不重编码 VP9/VP8，因此保留所有帧与实际运动。
+        const packaged = await remuxDirectorWebm(blob);
+        const packagedDuration = await probeRecordedDuration(packaged);
+        const durationTolerance = Math.max(0.15, (2 / fps));
+        if (!Number.isFinite(packagedDuration) || packagedDuration < 0.25 || Math.abs(packagedDuration - recorded) > durationTolerance) {
+            throw new Error("导演 WebM 重封装后的实测时长与原录制不一致，已拒绝上传");
+        }
+        return { blob: packaged, durationMs: Math.round(packagedDuration * 1000) };
     } finally {
-        window.clearTimeout(stopTimer);
-        window.removeEventListener("error", onRenderError);
-        stream.getTracks().forEach((track) => track.stop());
-        restoreClayMaterials();
+        if (stopTimer !== null) window.clearTimeout(stopTimer);
+        if (listenerInstalled) window.removeEventListener("error", onRenderError);
+        stream?.getTracks().forEach((track) => track.stop());
+        restoreClayMaterials?.();
         context.scene.overrideMaterial = previousMaterial;
-        resumeDisplayMaterialOverride();
-        context.gl.render(context.scene, context.camera);
+        resumeDisplayMaterialOverride?.();
+        try { context.gl.render(context.scene, context.camera); } catch { /* renderer may have been lost while recorder startup failed */ }
     }
 }
 

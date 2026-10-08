@@ -243,46 +243,42 @@ func (s *Service) CreateTimelineTranscriptionTask(userID string, req TimelineTra
 // Timeline 为前端 TimelineProject 快照（v2：tracks/clips 平铺）。
 // 片段通过 directMedia.storageKey=resource:<id> 引用后端资源。
 type TimelineRenderCreateRequest struct {
-	ProjectID string        `json:"projectId"`
-	Timeline  renderProject `json:"timeline"`
+	ProjectID           string           `json:"projectId"`
+	Timeline            renderProject    `json:"timeline"`
+	Output              renderOutputSpec `json:"output"`
+	ProductionRunID     string           `json:"productionRunId,omitempty"`
+	ProductionStepID    string           `json:"productionStepId,omitempty"`
+	ProductionAttemptID string           `json:"productionAttemptId,omitempty"`
 }
 
 type timelineRenderInput struct {
-	ProjectID string        `json:"projectId"`
-	Timeline  renderProject `json:"timeline"`
+	ProjectID           string           `json:"projectId"`
+	Timeline            renderProject    `json:"timeline"`
+	Output              renderOutputSpec `json:"output"`
+	ProductionRunID     string           `json:"productionRunId,omitempty"`
+	ProductionStepID    string           `json:"productionStepId,omitempty"`
+	ProductionAttemptID string           `json:"productionAttemptId,omitempty"`
 }
 
 type timelineRenderResult struct {
-	ResourceID  string `json:"resourceId"`
-	FileName    string `json:"fileName"`
-	Size        int64  `json:"size"`
-	DurationMs  int64  `json:"durationMs"`
-	SubtitleSRT string `json:"subtitleSrt,omitempty"`
+	ResourceID        string                   `json:"resourceId"`
+	FileName          string                   `json:"fileName"`
+	Size              int64                    `json:"size"`
+	DurationMs        int64                    `json:"durationMs"`
+	SubtitleSRT       string                   `json:"subtitleSrt,omitempty"`
+	Probe             *mediaProbeReport        `json:"probe,omitempty"`
+	AudioObservations []renderAudioObservation `json:"audioObservations,omitempty"`
+	Output            renderOutputSpec         `json:"output"`
 }
 
 // CreateTimelineRenderTask 创建时间线渲染任务：本地 ffmpeg 合成，不经模型
 // 路由与计费；创建时校验快照至少包含一个可渲染媒体片段。
 func (s *Service) CreateTimelineRenderTask(userID string, req TimelineRenderCreateRequest) (*model.Task, error) {
-	if s.IsDraining() {
-		return nil, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受新的生成任务", Retryable: true}
-	}
-	plan := buildRenderPlan(req.Timeline)
-	if !plan.HasMedia {
-		return nil, BadAuthRequest("时间线没有可渲染的媒体片段")
-	}
-	policy, err := s.RuntimePolicy()
+	task, policy, err := s.prepareTimelineRenderTask(userID, req)
 	if err != nil {
 		return nil, err
 	}
-	input := timelineRenderInput{ProjectID: strings.TrimSpace(req.ProjectID), Timeline: req.Timeline}
-	inputJSON, _ := json.Marshal(input)
-	task := model.Task{
-		ID: newID(), UserID: userID, ProjectID: strings.TrimSpace(req.ProjectID),
-		Type: model.TaskTypeTimelineRender, Status: model.TaskStatusQueued,
-		Stage: "等待队列调度", Progress: 5, Prompt: "时间线渲染",
-		Provider: "local", Model: "ffmpeg", InputJSON: string(inputJSON),
-	}
-	if err := s.createTaskWithinStorageQuota(&task, policy); err != nil {
+	if err := s.createTaskWithinStorageQuota(task, policy); err != nil {
 		if errors.Is(err, repository.ErrActiveTaskLimit) {
 			return nil, BadAuthRequest(fmt.Sprintf("同时排队或运行的任务最多 %d 个，请等待已有任务完成", policy.Task.ActiveTaskLimit))
 		}
@@ -290,5 +286,31 @@ func (s *Service) CreateTimelineRenderTask(userID string, req TimelineRenderCrea
 	}
 	s.recordActivity(userID, "task", 1)
 	_ = s.log(userID, task.ID, "info", "时间线渲染任务已进入队列", "")
-	return taskForOutput(task), nil
+	return taskForOutput(*task), nil
+}
+
+func (s *Service) prepareTimelineRenderTask(userID string, req TimelineRenderCreateRequest) (*model.Task, RuntimePolicySetting, error) {
+	if s.IsDraining() {
+		return nil, RuntimePolicySetting{}, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受新的生成任务", Retryable: true}
+	}
+	plan := buildRenderPlan(req.Timeline, req.Output)
+	if plan.Error != "" {
+		return nil, RuntimePolicySetting{}, BadAuthRequest(plan.Error)
+	}
+	if !plan.HasMedia {
+		return nil, RuntimePolicySetting{}, BadAuthRequest("时间线没有可渲染的媒体片段")
+	}
+	policy, err := s.RuntimePolicy()
+	if err != nil {
+		return nil, RuntimePolicySetting{}, err
+	}
+	input := timelineRenderInput{ProjectID: strings.TrimSpace(req.ProjectID), Timeline: req.Timeline, Output: req.Output, ProductionRunID: req.ProductionRunID, ProductionStepID: req.ProductionStepID, ProductionAttemptID: req.ProductionAttemptID}
+	inputJSON, _ := json.Marshal(input)
+	task := model.Task{
+		ID: newID(), UserID: userID, ProjectID: strings.TrimSpace(req.ProjectID),
+		Type: model.TaskTypeTimelineRender, Status: model.TaskStatusQueued,
+		Stage: "等待队列调度", Progress: 5, Prompt: "时间线渲染",
+		Provider: "local", Model: "ffmpeg", InputJSON: string(inputJSON),
+	}
+	return &task, policy, nil
 }

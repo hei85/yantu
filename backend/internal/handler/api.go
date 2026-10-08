@@ -23,12 +23,14 @@ func RegisterCanvasAPI(api *gin.RouterGroup, svc *service.Service) {
 	RegisterAdminSystemPerformanceRoutes(api, svc)
 	RegisterAnnouncementRoutes(api, svc)
 	RegisterCreationRoutes(api, svc)
+	RegisterProductionRoutes(api, svc)
 	RegisterLibTVRoutes(api, svc)
 	RegisterTapNowRoutes(api, svc)
 	RegisterChannelModelRoutes(api, svc)
 	RegisterLogicalModelRoutes(api, svc)
 	RegisterModelCatalogRoutes(api, svc)
 	RegisterSystemProxyRoutes(api, svc)
+	RegisterAudioResultRoutes(api, svc)
 	RegisterCustomRelayRoutes(api, svc)
 	RegisterTaskRoutes(api, svc)
 	RegisterRunningHubRoutes(api, svc)
@@ -40,7 +42,6 @@ func RegisterCanvasAPI(api *gin.RouterGroup, svc *service.Service) {
 	projectAPI := api.Group("")
 	projectAPI.Use(RequireFeature(svc, service.FeatureShortDrama))
 	RegisterProjectRoutes(projectAPI, svc)
-	RegisterCanvasShareRoutes(api, svc)
 }
 
 func RegisterOpenAPIRoutes(api *gin.RouterGroup) {

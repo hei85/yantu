@@ -1,11 +1,13 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import { applyMaterializedGenerationTaskResultToNodes } from "@/lib/canvas/canvas-generation-task-sync";
+import { generationTaskOwnsNode } from "@/lib/canvas/canvas-generation-result-ownership";
 import { parseCanvasStorageDocument, rebaseCanvasProjects, serializeCanvasStorageDocument } from "@/lib/canvas/canvas-storage-revision";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import type { GenerationTask, GenerationTaskOutput } from "@/services/api/task-center";
 import { generationEffectApplied } from "@/services/generation-consumer-dedupe";
+import { loadLocalCanvasProject } from "@/services/local-canvas-projects";
 import {
     CANVAS_STORE_KEY,
     canvasStoreStorageRevision,
@@ -116,7 +118,10 @@ export async function applyCanvasGenerationTaskNodeEffect(input: {
     throwIfAborted(input.signal);
     const previousNodes = input.nodesRef.current;
     const applied = await applyMaterializedGenerationTaskResultToNodes(previousNodes, input.task, input.output, input.effectKey, input.nodeId);
+    if (applied.superseded) return;
     if (!applied.updated || !applied.node) throw new Error("画布中找不到对应任务节点");
+    const currentNode = input.nodesRef.current.find((node) => node.id === input.nodeId);
+    if (!currentNode || !generationTaskOwnsNode(currentNode, input.task.id)) return;
     const persistedProject = await persistCanvasGenerationEffect({
         projectId: input.projectId,
         effectKey: input.effectKey,
@@ -439,8 +444,7 @@ export async function persistCanvasGenerationEffect(input: CanvasGenerationEffec
     throwIfAborted(input.signal);
     const scope = getActiveUserScope();
     if (!useCanvasStore.getState().projects.some((project) => project.id === input.projectId)) {
-        const { loadCanvasProjectForEditing } = await import("@/services/user-data-sync");
-        await loadCanvasProjectForEditing(input.projectId);
+        loadLocalCanvasProject(input.projectId);
         throwIfAborted(input.signal);
         if (scope !== getActiveUserScope()) throw new Error("账号已切换，无法写入生成结果");
     }

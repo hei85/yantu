@@ -8,7 +8,6 @@ import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type Viewpo
 
 type Props = {
     open: boolean;
-    projectId: string;
     viewport: ViewportTransform;
     viewportSize: { width: number; height: number };
     onClose: () => void;
@@ -45,7 +44,7 @@ function buildCanvasNodes(result: LibTVImportResult, viewport: ViewportTransform
     }));
 }
 
-export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onClose, onApply }: Props) {
+export function LibTVImportDialog({ open, viewport, viewportSize, onClose, onApply }: Props) {
     const { message } = App.useApp();
     const [value, setValue] = useState("");
     const [loading, setLoading] = useState(false);
@@ -75,7 +74,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
         }
         setLoading(true);
         try {
-            setResult(await importLibTVCanvas(projectId, uuid));
+            setResult(await importLibTVCanvas(uuid));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取 LibTV 画布失败");
         } finally {

@@ -265,6 +265,20 @@ func TestNormalizeResolutionSupportsCommonAliases(t *testing.T) {
 	}
 }
 
+func TestValidateVideoTaskAccepts720ForDeclared736RelayTier(t *testing.T) {
+	profile := DefaultModelCapabilityConfigForModel("axon-video-tasks", "minimax_h3_b99_001").Video
+	profile.Resolutions = []string{"736P"}
+	profile.DefaultResolution = "736P"
+
+	err := validateVideoTask(profile, canvasGenerationInput{
+		Prompt: "test only",
+		Config: providerConfig{Model: "minimax_h3_b99_001", VideoSeconds: "5", Size: "16:9", VQuality: "720"},
+	})
+	if err != nil {
+		t.Fatalf("validateVideoTask() rejected the relay's declared 736P route: %v", err)
+	}
+}
+
 func TestValidateVideoTaskIgnoresGlobalResolutionWhenCatalogDeclaresNone(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel("newapi", "omni").Video
 	profile.Duration = VideoDurationConfig{Selection: "enum", Values: []int{8, 10}, Default: 10}
@@ -411,5 +425,42 @@ func TestValidateVideoTaskRequiresDeclaredMinimumImages(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "至少需要 1 张参考图") {
 		t.Fatalf("validateVideoTask() error = %v", err)
+	}
+}
+
+func TestValidateVideoTaskRejectsUnsupportedProviderBooleanRequests(t *testing.T) {
+	profile := DefaultModelCapabilityConfigForModel("agnes-video", "agnes-video-2.5").Video
+	tests := []struct {
+		name   string
+		config providerConfig
+		want   string
+	}{
+		{
+			name: "native audio",
+			config: providerConfig{
+				InterfaceType: "agnes-video", Model: "agnes-video-2.5", VideoSeconds: "5", Size: "16:9", VQuality: "720P", VideoGenerateAudio: "true",
+			},
+			want: "不支持生成原生音频",
+		},
+		{
+			name: "watermark",
+			config: providerConfig{
+				InterfaceType: "agnes-video", Model: "agnes-video-2.5", VideoSeconds: "5", Size: "16:9", VQuality: "720P", VideoWatermark: "true",
+			},
+			want: "不支持水印参数",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateVideoTask(profile, canvasGenerationInput{Mode: "video", Config: test.config})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateVideoTask() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	allowed := providerConfig{InterfaceType: "agnes-video", Model: "agnes-video-2.5", VideoSeconds: "5", Size: "16:9", VQuality: "720P", VideoGenerateAudio: "false", VideoWatermark: "false"}
+	if err := validateVideoTask(profile, canvasGenerationInput{Mode: "video", Config: allowed}); err != nil {
+		t.Fatalf("explicit false on unsupported options must be accepted: %v", err)
 	}
 }

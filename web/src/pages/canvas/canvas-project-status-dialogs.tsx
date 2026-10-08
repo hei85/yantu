@@ -90,9 +90,11 @@ export function CanvasProjectStatusDialogs({ theme, task, taskLogs, taskLoading,
                 ) : null}
             </AppModal>
 
-            {previewNode?.metadata?.content && previewNode.type === CanvasNodeType.Image ? (
+            {previewNode?.type === CanvasNodeType.Image && (previewNode.metadata?.content || previewNode.metadata?.storageKey) ? (
                 <CanvasImagePreview
-                    src={previewNode.metadata.content}
+                    key={previewNode.id}
+                    src={previewNode.metadata?.content}
+                    storageKey={previewNode.metadata?.storageKey}
                     alt={previewNode.title || "图片"}
                     onClose={onClosePreview}
                 />

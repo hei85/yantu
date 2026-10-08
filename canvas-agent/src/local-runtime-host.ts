@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { createServer, type Server } from "node:http";
 import type { Express } from "express";
 
@@ -15,11 +13,11 @@ import {
 import { createLocalRuntimeApp, type LocalRuntimeModule } from "./local-runtime.js";
 import { LOCAL_RUNTIME_DEFAULT_SCOPES, LocalRuntimeSessionManager } from "./local-runtime-session.js";
 import { createCanvasAgentHttpModule } from "./modules/canvas-agent-http.js";
-import { createDreaminaHttpModule } from "./modules/dreamina-http.js";
 import { createPortraitClearanceHttpModule } from "./modules/portrait-clearance-http.js";
 import { createDepthEstimationHttpModule } from "./modules/depth-estimation-http.js";
 import { createLineartEstimationHttpModule } from "./modules/lineart-estimation-http.js";
 import { createPoseEstimationHttpModule } from "./modules/pose-estimation-http.js";
+import { createCutoutEstimationHttpModule } from "./modules/cutout-estimation-http.js";
 
 export type StartLocalRuntimeOptions = {
     config?: LocalRuntimeConfig;
@@ -40,18 +38,13 @@ export type LocalRuntimeHandle = {
 export function createDefaultLocalRuntimeModules(config: LocalRuntimeConfig): LocalRuntimeModule[] {
     return [
         createCanvasAgentHttpModule(config),
-        createDreaminaHttpModule({
-            ownerId: ensureRuntimeOwnerId(config),
-            configDir: CONFIG_DIR,
-            referenceRoots: () => [
-                path.join(CONFIG_DIR, "codex-workspaces"),
-                ...Object.values(config.canvases ?? {}).map((canvas) => canvas.workspacePath),
-            ],
-        }),
+        // This distribution executes paid model generation through Axon only.
+        // Dreamina adapter source is retained, but its direct CLI routes are not mounted.
         createPortraitClearanceHttpModule({ ownerId: ensureRuntimeOwnerId(config), configDir: CONFIG_DIR }),
         createDepthEstimationHttpModule(),
         createLineartEstimationHttpModule(),
         createPoseEstimationHttpModule(),
+        createCutoutEstimationHttpModule(),
     ];
 }
 
@@ -117,7 +110,7 @@ export function startLocalRuntime(options: StartLocalRuntimeOptions = {}): Local
             await listening(server);
             log("Framefield Local Runtime");
             log("Runtime is listening on 127.0.0.1");
-            log("Codex MCP: codex mcp add yingce -- npx -y @ddcat666/open-ai-canvas-agent mcp");
+            log("Codex MCP: run scripts/install-yingce-plugin.ps1 to bind the current repository");
         } catch (startupError) {
             sessions.dispose();
             const cleanupErrors: unknown[] = [];

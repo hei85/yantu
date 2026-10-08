@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
+import { generationClientOperationIdForIndex } from "@/lib/canvas/canvas-project-generation";
+import { waitForCanvasGenerationSubmission } from "@/lib/canvas/canvas-agent-generation-wait";
+import { runCanvasGenerationOps } from "@/pages/canvas/use-canvas-operation-history";
+import type { GenerationTask } from "@/services/api/task-center";
 
 function fingerprint(overrides: Partial<Parameters<typeof canvasGenerationRequestFingerprint>[0]> = {}) {
     return canvasGenerationRequestFingerprint({
@@ -22,6 +26,12 @@ function fingerprint(overrides: Partial<Parameters<typeof canvasGenerationReques
 }
 
 describe("canvas generation submission", () => {
+    test("one MCP operation id fans out to distinct stable ids for batch outputs", () => {
+        const id = "canvas:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        expect(generationClientOperationIdForIndex(id, 0, 2)).toBe(`${id}:1`);
+        expect(generationClientOperationIdForIndex(id, 1, 2)).toBe(`${id}:2`);
+        expect(generationClientOperationIdForIndex(id, 0, 1)).toBe(id);
+    });
     test("持久化时分离编辑器槽位提示词和模型提示词", () => {
         expect(canvasGenerationPromptMetadata("自我介绍 @图片1", "电影感：自我介绍 @图片1")).toEqual({
             composerContent: "自我介绍 @图片1",
@@ -79,5 +89,71 @@ describe("canvas generation submission", () => {
                 },
             }),
         ).not.toBe(fingerprint());
+    });
+
+    test("local bridge returns task acceptance while provider work remains pending", async () => {
+        let finishGeneration!: () => void;
+        let generationFinished = false;
+        const generation = new Promise<void>((resolve) => {
+            finishGeneration = () => {
+                generationFinished = true;
+                resolve();
+            };
+        });
+        const submitted = Promise.resolve({ taskId: "task-1", status: "running" });
+        const result = await Promise.race([
+            waitForCanvasGenerationSubmission(generation, submitted),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("submission handshake waited for provider completion")), 100)),
+        ]);
+
+        expect(result).toEqual({ kind: "submitted", value: { taskId: "task-1", status: "running" } });
+        expect(generationFinished).toBe(false);
+        finishGeneration();
+    });
+
+    test("canvas_apply_ops generation returns a traceable task before the provider finishes", async () => {
+        const task: GenerationTask = {
+            id: "task-local-1",
+            type: "canvas_video",
+            status: "running",
+            prompt: "5-second fixture clip",
+            attempts: 1,
+            createdAt: "2026-09-23T00:00:00.000Z",
+            updatedAt: "2026-09-23T00:00:00.000Z",
+            clientContext: { nodeId: "video-node-1" },
+        };
+        let finishGeneration!: () => void;
+        let generationFinished = false;
+        let clientOperationId = "";
+        const pendingGeneration = new Promise<void>((resolve) => {
+            finishGeneration = () => {
+                generationFinished = true;
+                resolve();
+            };
+        });
+        const accepted = await runCanvasGenerationOps({
+            generationOps: [{ type: "run_generation", nodeId: "video-node-1", mode: "video", prompt: task.prompt, clientOperationId: "canvas:test-operation-0001" }],
+            nodes: [],
+            context: { source: "local" },
+            generate: async (_nodeId, _mode, _prompt, options) => {
+                clientOperationId = options.clientOperationId || "";
+                options.onTaskUpdate?.(task);
+                await pendingGeneration;
+            },
+            subscribeTasks: () => () => undefined,
+            consumeTask: async () => undefined,
+            resumeAgent: async () => undefined,
+        });
+
+        expect(accepted).toEqual([{ operationNodeId: "video-node-1", task }]);
+        expect(clientOperationId).toBe("canvas:test-operation-0001");
+        expect(generationFinished).toBe(false);
+        finishGeneration();
+        await pendingGeneration;
+    });
+
+    test("generation errors before task acceptance remain visible to the MCP caller", async () => {
+        const failure = new Error("task creation failed");
+        await expect(waitForCanvasGenerationSubmission(Promise.reject(failure), new Promise(() => undefined))).rejects.toBe(failure);
     });
 });

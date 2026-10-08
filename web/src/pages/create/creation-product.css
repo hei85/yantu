@@ -250,10 +250,13 @@
 .app-product-overlays .creation-parameter-menu .image-size-tiers button[aria-pressed="true"],
 .app-product-overlays .creation-parameter-menu .image-size-ratios button[aria-pressed="true"],
 .app-product-overlays .creation-parameter-menu .image-size-auto[aria-pressed="true"] {
-    background: var(--user-control-pressed) !important;
-    /* 选中必须一眼可见：加墨色内描边并加粗，光靠一档底色差太弱。 */
-    box-shadow: inset 0 0 0 2px var(--user-ink) !important;
-    color: var(--user-ink) !important;
+    /* 选中态只用 currentColor：弹层挂在 body 上时 --user-* 可能取不到，
+     * 旧写法整条声明失效后就退化成白块，看不出选中。
+     */
+    background: rgba(127, 127, 127, .18) !important;
+    background: color-mix(in srgb, currentColor 14%, transparent) !important;
+    box-shadow: inset 0 0 0 2px currentColor !important;
+    color: var(--user-ink, inherit) !important;
     font-weight: 650;
 }
 
@@ -267,8 +270,9 @@
 /* 选中的宽高比：缩略图实心化，和未选中的半透明灰色拉开差距。 */
 .app-user-overlays .creation-parameter-menu .image-size-ratios button[aria-pressed="true"] .image-size-ratio-icon,
 .app-product-overlays .creation-parameter-menu .image-size-ratios button[aria-pressed="true"] .image-size-ratio-icon {
-    background: var(--user-ink);
-    opacity: 1;
+    border: 0 !important;
+    background: currentColor !important;
+    opacity: 1 !important;
 }
 
 /* 图片质量 / 生成数量等选项：选中的那一格同样要有明确反馈。 */
@@ -276,9 +280,10 @@
 .app-user-overlays .creation-parameter-menu .creation-choice-grid button[aria-pressed="true"],
 .app-product-overlays .creation-parameter-menu .creation-choice-grid button.is-selected,
 .app-product-overlays .creation-parameter-menu .creation-choice-grid button[aria-pressed="true"] {
-    background: var(--user-control-pressed) !important;
-    box-shadow: inset 0 0 0 2px var(--user-ink) !important;
-    color: var(--user-ink) !important;
+    background: rgba(127, 127, 127, .18) !important;
+    background: color-mix(in srgb, currentColor 14%, transparent) !important;
+    box-shadow: inset 0 0 0 2px currentColor !important;
+    color: var(--user-ink, inherit) !important;
     font-weight: 650;
 }
 

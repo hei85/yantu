@@ -4,9 +4,8 @@ import type { KeyboardEvent } from "react";
 
 import { ProjectPreview } from "@/components/canvas/canvas-project-card";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
-import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import type { CanvasLibrarySummary } from "@/services/api/user-data";
-import { loadCanvasProjectForEditing, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { loadLocalCanvasProject, type CanvasLibrarySummary } from "@/services/local-canvas-projects";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { cn } from "@/lib/utils";
 
@@ -36,15 +35,12 @@ export function CanvasFolderCard({ project, projectName, onClick, onPrefetch, op
     const saveTitle = async () => {
         if (!editing) return;
         stopEditing();
-        try {
-            await loadCanvasProjectForEditing(project.id);
-            renameProject(project.id, editingTitle);
-            await saveRemoteUserDataNow();
-        } catch (error) { message.error(error instanceof Error ? error.message : "重命名失败"); }
+        renameProject(project.id, editingTitle);
+        void flushCanvasStorePersistence().catch((error) => message.error(error instanceof Error ? error.message : "本机保存失败"));
     };
     const exportProject = async () => {
         try {
-            const fullProject = await loadCanvasProjectForEditing(project.id);
+            const fullProject = loadLocalCanvasProject(project.id);
             if (!fullProject) throw new Error("画布不存在");
             await exportCanvasProjects([fullProject], project.title || "画布");
         } catch (error) { message.error(error instanceof Error ? error.message : "导出失败"); }

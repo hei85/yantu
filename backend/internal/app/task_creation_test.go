@@ -290,6 +290,26 @@ func TestResolveSystemChannelModelSelectionRejectsCorruptCapabilityConfig(t *tes
 	}
 }
 
+func TestResolveSystemChannelModelSelectionReturnsAuthoritativeCapabilityRevision(t *testing.T) {
+	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceNewAPIVideo), "revision-video")
+	svc, db, channel, channelModel := createSystemChannelSelectionFixture(t, "video", model.ChannelInterfaceNewAPIVideo, profile, []model.ChannelModelVariant{
+		newSelectionPriceTier("revision-tier", `{}`, "provider-video"),
+	})
+	if err := db.Model(&model.ChannelModel{}).Where("id = ?", channelModel.ID).Update("capability_version", 7).Error; err != nil {
+		t.Fatal(err)
+	}
+	input, err := svc.resolveSystemChannelModelSelection(map[string]any{
+		"mode":   "video",
+		"config": map[string]any{"channelId": channel.ID, "model": channelModel.ModelKey, "videoSeconds": "6", "size": "16:9"},
+	}, "canvas_video", "")
+	if err != nil {
+		t.Fatalf("resolve system model: %v", err)
+	}
+	if input["capabilityRevision"] != channelModel.ID+":7" {
+		t.Fatalf("capabilityRevision = %#v, want %s:7", input["capabilityRevision"], channelModel.ID)
+	}
+}
+
 func createSystemChannelSelectionFixture(t *testing.T, capability string, protocol model.ChannelInterfaceType, profile *ModelCapabilityConfig, tiers []model.ChannelModelVariant) (*Service, *gorm.DB, model.ModelChannel, model.ChannelModel) {
 	t.Helper()
 	svc, db := newChannelModelTestService(t)

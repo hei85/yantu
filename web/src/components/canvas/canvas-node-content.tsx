@@ -17,13 +17,14 @@ import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resour
 import type { GenerationTask } from "@/services/api/task-center";
 import { cacheResourceObjectUrl, getCachedResourceObjectUrl, peekCachedResourceObjectUrl, scheduleResourceBlobCache } from "@/services/resource-blob-cache";
 import { resolveMediaUrl } from "@/services/file-storage";
-import { hydrateCanvasVideoPreview } from "@/services/canvas-video-preview";
+import { CANVAS_VIDEO_PREVIEW_MAX_ATTEMPTS, canvasVideoPreviewRetryDelay, hydrateCanvasVideoPreview } from "@/services/canvas-video-preview";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
 import { createDefaultSubtitleStyle } from "@/types/timeline";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasAudioPlayer } from "./canvas-audio-player";
+import { CanvasVideoPreviewImage } from "./canvas-video-preview-image";
 import { useCanvasNodeActions } from "./canvas-node-action-context";
 import { CanvasSubtitleOverlay } from "./canvas-subtitle-overlay";
 import { CanvasFileUploadContent } from "./canvas-file-upload-content";
@@ -190,7 +191,7 @@ function LoadingContent({ node, theme, onOpenTaskDetails }: Pick<CanvasNodeConte
     const showsProgress = Boolean(taskId) && generationTaskShowsProgress(displayTask);
     const progress = showsProgress && typeof node.metadata?.taskProgress === "number" ? Math.max(0, Math.min(100, Math.round(node.metadata.taskProgress))) : null;
     const statusLabel = taskId ? generationTaskStatusLabel(displayTask) : "等待任务状态";
-    const stageLabel = taskId ? generationTaskStageLabel(displayTask) : "正在创建任务";
+    const stageLabel = node.metadata?.generationResultSyncPending ? "已生成，正在载入结果" : taskId ? generationTaskStageLabel(displayTask) : "正在创建任务";
     const elapsed = useTaskElapsed(node.metadata?.taskCreatedAt);
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2.5 px-5 text-center" style={{ color: theme.node.activeStroke }}>
@@ -396,7 +397,9 @@ function skillOutputModeLabel(mode?: string) {
 }
 
 function ImageNodeContent(props: CanvasNodeContentProps) {
-    if (!props.node.metadata?.content && props.isBatchRoot) {
+    // Asset restoration may persist only a storage key; ImageContent resolves it.
+    const hasImage = Boolean(props.node.metadata?.content || props.node.metadata?.storageKey);
+    if (!hasImage && props.isBatchRoot) {
         const content = props.node.metadata?.status === "loading"
             ? <LoadingContent node={props.node} theme={props.theme} />
             : props.node.metadata?.status === "error"
@@ -404,7 +407,7 @@ function ImageNodeContent(props: CanvasNodeContentProps) {
                 : <EmptyImageContent {...props} isBatchRoot={false} />;
         return <BatchFrame batchPreviewNodes={props.batchPreviewNodes} batchCount={props.batchCount} batchExpanded={props.batchExpanded} batchOpening={props.batchOpening} batchRecovering={props.batchRecovering} theme={props.theme} onToggleBatch={props.onToggleBatch}>{content}</BatchFrame>;
     }
-    if (!props.node.metadata?.content) return <EmptyImageContent {...props} />;
+    if (!hasImage) return <EmptyImageContent {...props} />;
     return <ImageContent batchPreviewNodes={props.batchPreviewNodes} node={props.node} theme={props.theme} isBatchRoot={props.isBatchRoot} batchCount={props.batchCount} batchExpanded={props.batchExpanded} batchOpening={props.batchOpening} batchRecovering={props.batchRecovering} onToggleBatch={props.onToggleBatch} />;
 }
 
@@ -495,10 +498,20 @@ function AudioNodeContent({ node, theme }: CanvasNodeContentProps) {
 function InactiveVideoPreview({ node, theme, onPlay }: Pick<CanvasNodeContentProps, "node" | "theme"> & { onPlay: () => void }) {
     const previewRef = useRef<HTMLDivElement>(null);
     const nearViewport = useNearViewport(previewRef);
-    const previewUrl = canvasNodeVideoPreviewUrl(node);
+    const savedPreviewUrl = canvasNodeVideoPreviewUrl(node);
+    const [failedPreviewUrl, setFailedPreviewUrl] = useState("");
+    const recoveryAttemptsRef = useRef(0);
+    const [coverRetryTick, setCoverRetryTick] = useState(0);
+    const previewUrl = savedPreviewUrl === failedPreviewUrl ? "" : savedPreviewUrl;
     const { updateMetadata } = useCanvasNodeActions();
     const updateMetadataRef = useRef(updateMetadata);
     const [hydrating, setHydrating] = useState(false);
+
+    useEffect(() => {
+        setFailedPreviewUrl("");
+        recoveryAttemptsRef.current = 0;
+        setCoverRetryTick(0);
+    }, [node.id, node.metadata?.content, node.metadata?.storageKey]);
 
     useEffect(() => {
         const element = previewRef.current;
@@ -513,26 +526,43 @@ function InactiveVideoPreview({ node, theme, onPlay }: Pick<CanvasNodeContentPro
     }, [updateMetadata]);
 
     useEffect(() => {
-        if (previewUrl || !nearViewport || !node.metadata?.content || !updateMetadataRef.current) {
+        if (previewUrl || !nearViewport || !(node.metadata?.content || node.metadata?.storageKey) || !updateMetadataRef.current || recoveryAttemptsRef.current >= CANVAS_VIDEO_PREVIEW_MAX_ATTEMPTS) {
             setHydrating(false);
             return;
         }
         const controller = new AbortController();
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let hydrationSettled = false;
+        recoveryAttemptsRef.current += 1;
+        const scheduleRetry = () => {
+            const delay = canvasVideoPreviewRetryDelay(recoveryAttemptsRef.current);
+            if (controller.signal.aborted || delay === undefined) return;
+            retryTimer = setTimeout(() => {
+                if (!controller.signal.aborted) setCoverRetryTick((value) => value + 1);
+            }, delay);
+        };
         setHydrating(true);
         void hydrateCanvasVideoPreview(node, controller.signal)
             .then((videoPreview) => {
-                if (!controller.signal.aborted && videoPreview) updateMetadataRef.current?.(node.id, { videoPreview });
+                if (controller.signal.aborted) return;
+                if (videoPreview) updateMetadataRef.current?.(node.id, { videoPreview });
+                else scheduleRetry();
             })
-            .catch(() => undefined)
+            .catch(scheduleRetry)
             .finally(() => {
+                hydrationSettled = true;
                 if (!controller.signal.aborted) setHydrating(false);
             });
-        return () => controller.abort();
-    }, [nearViewport, node.id, node.metadata?.content, node.metadata?.storageKey, previewUrl]);
+        return () => {
+            controller.abort();
+            if (!hydrationSettled) recoveryAttemptsRef.current = Math.max(0, recoveryAttemptsRef.current - 1);
+            if (retryTimer) clearTimeout(retryTimer);
+        };
+    }, [nearViewport, node.id, node.metadata?.content, node.metadata?.storageKey, previewUrl, failedPreviewUrl, coverRetryTick]);
 
     if (previewUrl) {
         return <div ref={previewRef} className="group/video-preview relative size-full overflow-hidden rounded-[var(--node-radius)] bg-black">
-            <img src={previewUrl} alt={`${node.title || "视频"} 静态预览`} loading="lazy" decoding="async" draggable={false} className="pointer-events-none size-full select-none object-contain" />
+            <CanvasVideoPreviewImage node={node} alt={`${node.title || "视频"} 静态预览`} loading="lazy" decoding="async" draggable={false} className="pointer-events-none size-full select-none object-contain" loadingFallback={<InactiveMediaCard icon={<LoaderCircle className="size-5 animate-spin" />} title={node.title || "视频"} hint="正在恢复视频封面" theme={theme} />} onError={() => setFailedPreviewUrl(savedPreviewUrl)} />
             <VideoPreviewPlayButton title={node.title || "视频"} onPlay={onPlay} />
         </div>;
     }

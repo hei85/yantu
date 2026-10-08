@@ -7,7 +7,6 @@ import { compileCharacterReferencePrompt } from "@/lib/canvas/canvas-character-r
 import { ASSET_CATEGORY_LABELS, normalizeAssetCategory } from "@/lib/asset-category";
 import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import type { ProjectAsset, ProjectDetail } from "@/services/api/projects";
-import { getRemoteAsset } from "@/services/api/user-data";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 
 const categoryLabels: Record<string, string> = { all: "全部资产", ...ASSET_CATEGORY_LABELS };
@@ -78,7 +77,6 @@ export function CanvasProjectAssetModal({
 
     return (
         <AssetLibraryPickerModal
-            remoteLibrary={!detail}
             open={open}
             mediaKinds={["image", "video", "audio", "text"]}
             items={pickerItems}
@@ -108,9 +106,7 @@ export function CanvasProjectAssetModal({
                         if (external) return externalAssetToInsertPayload(external);
                         const item = items.find((candidate) => candidate.id === id);
                         if (!item) throw new Error("所选资产已不存在，请重新选择");
-                        if (item.media || item.character || !item.project) return toInsertPayload(item);
-                        const { asset } = await getRemoteAsset(item.project.id);
-                        return toInsertPayload({ ...item, media: asset });
+                        return toInsertPayload(item);
                     }),
                 );
                 if (!payloads.length) return;
@@ -168,6 +164,17 @@ function toInsertPayload(item: ProjectPickerItem): InsertAssetPayload {
         };
     if (asset.kind === "image") return { kind: "image", dataUrl: projectAssetMediaUrl(asset.data.storageKey, asset.data.dataUrl), storageKey: asset.data.storageKey, title: asset.title, assetId: asset.id };
     throw new Error("当前项目资产不能直接插入画布");
+}
+
+export function projectAssetToCanvasInsertPayload(project: ProjectAsset, media?: Asset): InsertAssetPayload {
+    return toInsertPayload({
+        id: project.id,
+        category: normalizeAssetCategory(project.category),
+        folderId: project.folderId,
+        project,
+        character: project.category === "character" ? project : undefined,
+        media,
+    });
 }
 
 function projectAssetMediaUrl(storageKey?: string, fallback = "") {

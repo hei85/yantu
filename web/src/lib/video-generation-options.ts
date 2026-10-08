@@ -1,7 +1,41 @@
+import type { ModelCapabilityConfig, VideoCapabilityConfig } from "@/lib/model-capabilities";
+
 export const VIDEO_DURATION_OPTIONS = [6, 9, 10, 15] as const;
 export const VIDEO_RESOLUTION_OPTIONS = [480, 720, 1080, 1440, 2160] as const;
 export const VIDEO_RESOLUTION_CAPABILITY_OPTIONS = VIDEO_RESOLUTION_OPTIONS.map((value) => `${value}p`);
 export const VIDEO_DURATION_MIN = 1;
+export const VIDEO_RESOLUTION_DEFAULT_LABEL = "渠道默认";
+export const VIDEO_RESOLUTION_DEFAULT_HINT = "当前型号未提供可选档位，生成时由渠道确定分辨率。";
+export const VIDEO_RESOLUTION_INFERRED_HINT = "档位按型号自动识别，此渠道尚未实测。";
+
+export function inferredVideoResolutionNeedsVerification(profile: Pick<VideoCapabilityConfig, "resolutionSource" | "resolutions">, observed?: ModelCapabilityConfig["observed"]) {
+    if (!["model-id", "model-profile"].includes(profile.resolutionSource || "")) return false;
+    return (Array.isArray(profile.resolutions) ? profile.resolutions : []).some((resolution) => {
+        const details = latestVideoResolutionObservation(resolution, observed)?.details;
+        // A completed negative test is still a real test. Show its mismatch
+        // separately rather than continuing to describe the channel as untested.
+        return !(hasActualVideoOutput(details) && details?.fullDecodePassed === true);
+    });
+}
+
+function latestVideoResolutionObservation(resolution: string | number | undefined, observed?: ModelCapabilityConfig["observed"]) {
+    const key = videoResolutionComparisonKey(resolution);
+    return [...(Array.isArray(observed) ? observed : [])].reverse().find((item) => item?.feature === "resolution"
+        && videoResolutionComparisonKey(String(item.details?.requestedResolution || "")) === key);
+}
+
+function hasActualVideoOutput(details?: Record<string, unknown>) {
+    return typeof details?.taskId === "string" && details.taskId.length > 0
+        && typeof details.resourceId === "string" && details.resourceId.length > 0
+        && Number(details.outputWidth) > 0 && Number(details.outputHeight) > 0;
+}
+
+export function videoOutputMismatchHint(resolution: string | number | undefined, observed?: ModelCapabilityConfig["observed"]) {
+    const details = latestVideoResolutionObservation(resolution, observed)?.details;
+    if (!hasActualVideoOutput(details) || (details?.resolutionMatched !== false && details?.aspectRatioMatched !== false)) return "";
+    const requested = [String(details?.requestedRatio || ""), formatVideoResolutionLabel(String(details?.requestedResolution || ""))].filter(Boolean).join(" · ");
+    return `最近实测：请求 ${requested}，返回 ${Number(details?.outputWidth)}×${Number(details?.outputHeight)}；${details?.resolutionMatched === false ? "分辨率" : "画幅"}${details?.resolutionMatched === false && details?.aspectRatioMatched === false ? "和画幅" : ""}参数未生效。`;
+}
 
 export function normalizeVideoDuration(value: string | number | undefined) {
     const seconds = Math.floor(Number(value) || VIDEO_DURATION_OPTIONS[0]);
@@ -47,6 +81,16 @@ export function videoResolutionComparisonKey(value: string | number | undefined)
     if (!raw) return "";
     const normalized = normalizeVideoResolution(raw);
     return /^\d+$/.test(normalized) ? `${normalized}p` : normalized.toLowerCase();
+}
+
+export function resolveVideoResolutionCapabilityValue(requested: string | number | undefined, supported: string[]) {
+    const requestedKey = videoResolutionComparisonKey(requested);
+    if (!requestedKey) return "";
+    const exact = supported.find((value) => videoResolutionComparisonKey(value) === requestedKey);
+    if (exact) return exact;
+    // The relay's advertised 736P tier is its route for a standard 720P request.
+    if (requestedKey === "720p") return supported.find((value) => videoResolutionComparisonKey(value) === "736p") || "";
+    return "";
 }
 
 export function formatVideoResolutionLabel(value: string | number | undefined) {

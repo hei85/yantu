@@ -106,6 +106,12 @@ export function runGenerationOperationOnce<T>(clientOperationId: string | undefi
     return running;
 }
 
+export function generationClientOperationIdForIndex(clientOperationId: string | undefined, index: number, count: number) {
+    if (!clientOperationId || count <= 1) return clientOperationId;
+    const suffix = `:${index + 1}`;
+    return `${clientOperationId.slice(0, 120 - suffix.length)}${suffix}`;
+}
+
 export async function runCanvasGenerationTaskToConsumer(
     input: Parameters<typeof runBackendCanvasGenerationTask>[0],
     dependencies: {
@@ -522,6 +528,31 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         videoWatermark,
         videoArkPrivateAssetUpload: requestedConfig.videoArkPrivateAssetUpload,
         count: generationDefaults.count || requestedConfig.count,
+    };
+}
+
+/**
+ * Pin the exact resolved video request settings onto its canvas node before a
+ * storyboard batch is fingerprinted. This keeps enqueue, scheduler and executor
+ * on the same parameter snapshot even if the global config changes meanwhile.
+ */
+export function pinCanvasVideoGenerationConfig(config: AiConfig, node: CanvasNodeData): CanvasNodeData {
+    const generationConfig = buildGenerationConfig(config, node, "video");
+    return {
+        ...node,
+        metadata: {
+            ...node.metadata,
+            model: generationConfig.model,
+            size: generationConfig.size,
+            quality: generationConfig.quality,
+            transparentBackground: generationConfig.transparentBackground,
+            count: Number(generationConfig.count),
+            seconds: generationConfig.videoSeconds,
+            vquality: generationConfig.vquality,
+            generateAudio: generationConfig.videoGenerateAudio,
+            watermark: generationConfig.videoWatermark,
+            arkPrivateAssetUpload: generationConfig.videoArkPrivateAssetUpload,
+        },
     };
 }
 

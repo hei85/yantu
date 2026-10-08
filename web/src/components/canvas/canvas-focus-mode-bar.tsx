@@ -1,7 +1,6 @@
 import { Tooltip } from "@/components/ui/base/tooltip";
-import type { ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { History, PanelBottom, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, PanelBottom, X, ZoomIn, ZoomOut } from "lucide-react";
 
 
 import { aceternityMotion } from "@/lib/aceternity-motion";
@@ -9,19 +8,17 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 
 type CanvasFocusModeBarProps = {
-    versionsOpen: boolean;
-    onToggleVersions: () => void;
-    syncStatus?: ReactNode;
     dockRevealed: boolean;
     zoomPercent: number;
     onToggleDock: () => void;
+    onOpenAgent: () => void;
     onExit: () => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
     onFit: () => void;
 };
 
-export function CanvasFocusModeBar({ versionsOpen, onToggleVersions, syncStatus, dockRevealed, zoomPercent, onToggleDock, onExit, onZoomIn, onZoomOut, onFit }: CanvasFocusModeBarProps) {
+export function CanvasFocusModeBar({ dockRevealed, zoomPercent, onToggleDock, onOpenAgent, onExit, onZoomIn, onZoomOut, onFit }: CanvasFocusModeBarProps) {
     const theme = canvasThemes[useActiveTheme()];
     const reducedMotion = useReducedMotion();
 
@@ -46,12 +43,6 @@ export function CanvasFocusModeBar({ versionsOpen, onToggleVersions, syncStatus,
                         <X className="size-4" />
                     </button>
                 </Tooltip>
-                {syncStatus}
-                <Tooltip title="版本记录与本地草稿">
-                    <button type="button" onClick={onToggleVersions} className="grid size-8 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text, background: versionsOpen ? theme.toolbar.itemHover : undefined }} aria-label="版本记录" aria-pressed={versionsOpen}>
-                        <History className="size-4" />
-                    </button>
-                </Tooltip>
                 <span className="mx-0.5 h-4 w-px" style={{ background: theme.toolbar.border }} />
                 <Tooltip title={dockRevealed ? "收起工具" : "工具"}>
                     <button
@@ -63,6 +54,17 @@ export function CanvasFocusModeBar({ versionsOpen, onToggleVersions, syncStatus,
                         aria-pressed={dockRevealed}
                     >
                         <PanelBottom className="size-4" />
+                    </button>
+                </Tooltip>
+                <Tooltip title="打开本地 Canvas Agent">
+                    <button
+                        type="button"
+                        onClick={onOpenAgent}
+                        className="grid size-8 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10"
+                        style={{ color: theme.node.text }}
+                        aria-label="打开本地 Canvas Agent"
+                    >
+                        <Bot className="size-4" />
                     </button>
                 </Tooltip>
                 <Tooltip title="缩小">

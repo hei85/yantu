@@ -12,12 +12,61 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
+func channelModelCapabilityRevision(channelModel model.ChannelModel) string {
+	return fmt.Sprintf("%s:%d", channelModel.ID, channelModel.CapabilityVersion)
+}
+
 // ModelCapabilityConfig 是模型能力声明，不包含供应商字段名；协议适配器负责把统一参数映射到上游请求。
 type ModelCapabilityConfig struct {
 	Version int                    `json:"version"`
 	Text    *TextCapabilityConfig  `json:"text,omitempty"`
 	Image   *ImageCapabilityConfig `json:"image,omitempty"`
 	Video   *VideoCapabilityConfig `json:"video,omitempty"`
+	Audio   *AudioCapabilityConfig `json:"audio,omitempty"`
+	// Observed 是真实调用得出的能力结论（中继拒绝或成功），随声明一起回给前端与 MCP，供 Agent 决策。
+	Observed []CapabilityObservation `json:"observed,omitempty"`
+}
+
+// CapabilityObservation 记录一次能力实测结论。
+type CapabilityObservation struct {
+	Verdict string         `json:"verdict"`
+	Feature string         `json:"feature"`
+	Reason  string         `json:"reason,omitempty"`
+	Source  string         `json:"source,omitempty"`
+	At      string         `json:"at,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
+type AudioCapabilityConfig struct {
+	TTS                     string   `json:"tts"`
+	VoiceDesign             string   `json:"voiceDesign"`
+	VoiceReference          string   `json:"voiceReference"`
+	AmbientSound            string   `json:"ambientSound"`
+	SoundEffects            string   `json:"soundEffects"`
+	Music                   string   `json:"music"`
+	SpeechRecognition       string   `json:"speechRecognition"`
+	Alignment               string   `json:"alignment"`
+	VoiceIDParameter        string   `json:"voiceIdParameter,omitempty"`
+	ReferenceAudioParameter string   `json:"referenceAudioParameter,omitempty"`
+	ToneParameter           string   `json:"toneParameter,omitempty"`
+	EmotionStyleParameter   string   `json:"emotionStyleParameter,omitempty"`
+	SpeakingRateParameter   string   `json:"speakingRateParameter,omitempty"`
+	LanguageParameter       string   `json:"languageParameter,omitempty"`
+	AccentParameter         string   `json:"accentParameter,omitempty"`
+	VoiceIDs                []string `json:"voiceIds,omitempty"`
+	DefaultVoiceID          string   `json:"defaultVoiceId,omitempty"`
+}
+
+func DefaultAudioCapabilityConfig() *AudioCapabilityConfig {
+	return &AudioCapabilityConfig{
+		TTS: "unknown", VoiceDesign: "unknown", VoiceReference: "unknown",
+		AmbientSound: "unknown", SoundEffects: "unknown", Music: "unknown",
+		SpeechRecognition: "unknown", Alignment: "unknown",
+	}
+}
+
+func hasModelCapabilityConfig(capability string) bool {
+	return capability == "text" || capability == "image" || capability == "video" || capability == "audio"
 }
 
 type TextCapabilityConfig struct {
@@ -79,17 +128,19 @@ type ParameterSupport struct {
 }
 
 type VideoCapabilityConfig struct {
-	References        VideoReferenceConfig `json:"references"`
-	Duration          VideoDurationConfig  `json:"duration"`
-	DurationSupported *bool                `json:"durationSupported,omitempty"`
-	Ratios            []string             `json:"ratios"`
-	DefaultRatio      string               `json:"defaultRatio"`
-	Resolutions       []string             `json:"resolutions"`
-	DefaultResolution string               `json:"defaultResolution"`
-	GenerateAudio     VideoBooleanConfig   `json:"generateAudio"`
-	Watermark         VideoBooleanConfig   `json:"watermark"`
-	Operations        []string             `json:"operations"`
-	DefaultOperation  string               `json:"defaultOperation"`
+	References          VideoReferenceConfig `json:"references"`
+	Duration            VideoDurationConfig  `json:"duration"`
+	DurationSupported   *bool                `json:"durationSupported,omitempty"`
+	Ratios              []string             `json:"ratios"`
+	DefaultRatio        string               `json:"defaultRatio"`
+	Resolutions         []string             `json:"resolutions"`
+	DefaultResolution   string               `json:"defaultResolution"`
+	ResolutionSource    string               `json:"resolutionSource,omitempty"`
+	ResolutionSourceURL string               `json:"resolutionSourceURL,omitempty"`
+	GenerateAudio       VideoBooleanConfig   `json:"generateAudio"`
+	Watermark           VideoBooleanConfig   `json:"watermark"`
+	Operations          []string             `json:"operations"`
+	DefaultOperation    string               `json:"defaultOperation"`
 }
 
 type VideoReferenceConfig struct {
@@ -100,6 +151,7 @@ type VideoReferenceConfig struct {
 	MaxVideos        int   `json:"maxVideos"`
 	MaxVideoBytes    int64 `json:"maxVideoBytes"`
 	MaxVideoDuration int   `json:"maxVideoDurationSeconds"`
+	MinAudios        int   `json:"minAudios,omitempty"`
 	MaxAudios        int   `json:"maxAudios"`
 	MaxAudioBytes    int64 `json:"maxAudioBytes"`
 	MaxAudioDuration int   `json:"maxAudioDurationSeconds"`
@@ -293,10 +345,7 @@ func normalizedChannelModelCapability(channelModel *model.ChannelModel) (*ModelC
 		return nil, errors.New("渠道模型为空")
 	}
 	capability := normalizeCapability(channelModel.Capability)
-	if capability == "audio" {
-		return nil, nil
-	}
-	if capability != "text" && capability != "image" && capability != "video" {
+	if capability != "text" && capability != "image" && capability != "video" && capability != "audio" {
 		return nil, fmt.Errorf("不支持的渠道模型能力：%s", channelModel.Capability)
 	}
 	config, err := DecodeModelCapabilityConfig(channelModel.CapabilityConfigJSON)
@@ -315,6 +364,22 @@ func NormalizeModelCapabilityConfig(capability string, protocol string, input *M
 }
 
 func NormalizeModelCapabilityConfigForModel(capability string, protocol string, modelName string, input *ModelCapabilityConfig) (*ModelCapabilityConfig, error) {
+	// 实测证据不属于“待校验的配置”，归一化时必须原样带回去，否则目录/ Agent 看不到
+	// 这个模型以前拒绝过什么。
+	observed := []CapabilityObservation(nil)
+	if input != nil {
+		observed = input.Observed
+	}
+	if capability == "audio" {
+		value := DefaultAudioCapabilityConfig()
+		if input != nil && input.Audio != nil {
+			*value = *input.Audio
+		}
+		if err := validateAudioCapabilityConfig(value); err != nil {
+			return nil, err
+		}
+		return &ModelCapabilityConfig{Version: 1, Audio: value, Observed: observed}, nil
+	}
 	if capability != "text" && capability != "image" && capability != "video" {
 		return nil, nil
 	}
@@ -327,7 +392,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			streaming := true
 			text.Streaming = &streaming
 		}
-		value := &ModelCapabilityConfig{Version: 1, Text: &text}
+		value := &ModelCapabilityConfig{Version: 1, Text: &text, Observed: observed}
 		if err := validateTextCapabilityConfig(value.Text); err != nil {
 			return nil, err
 		}
@@ -337,7 +402,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input == nil || input.Image == nil {
 			return nil, BadAuthRequest("请配置图片模型能力参数")
 		}
-		value := &ModelCapabilityConfig{Version: 1, Image: input.Image}
+		value := &ModelCapabilityConfig{Version: 1, Image: input.Image, Observed: observed}
 		if err := validateImageCapabilityConfig(value.Image); err != nil {
 			return nil, err
 		}
@@ -346,11 +411,56 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 	if input == nil || input.Video == nil {
 		return nil, BadAuthRequest("请配置视频模型能力参数")
 	}
-	value := &ModelCapabilityConfig{Version: 1, Video: applyModelSpecificVideoCapability(input.Video, protocol, modelName)}
+	value := &ModelCapabilityConfig{Version: 1, Video: applyModelSpecificVideoCapability(input.Video, protocol, modelName), Observed: observed}
 	if err := validateVideoCapabilityConfig(value.Video); err != nil {
 		return nil, err
 	}
 	return value, nil
+}
+
+func validateAudioCapabilityConfig(value *AudioCapabilityConfig) error {
+	if value == nil {
+		return BadAuthRequest("请配置音频模型能力")
+	}
+	for label, status := range map[string]string{
+		"TTS": value.TTS, "voice design": value.VoiceDesign, "voice reference": value.VoiceReference,
+		"ambient sound": value.AmbientSound, "sound effects": value.SoundEffects, "music": value.Music,
+		"speech recognition": value.SpeechRecognition, "alignment": value.Alignment,
+	} {
+		if status != "configured" && status != "unsupported" && status != "unknown" {
+			return BadAuthRequest(label + " 能力状态只支持 configured、unsupported 或 unknown")
+		}
+	}
+	for label, parameter := range map[string]string{
+		"voiceIdParameter": value.VoiceIDParameter, "referenceAudioParameter": value.ReferenceAudioParameter,
+		"toneParameter": value.ToneParameter, "emotionStyleParameter": value.EmotionStyleParameter,
+		"speakingRateParameter": value.SpeakingRateParameter, "languageParameter": value.LanguageParameter,
+		"accentParameter": value.AccentParameter,
+	} {
+		if len(parameter) > 80 || strings.ContainsAny(parameter, " \t\r\n") {
+			return BadAuthRequest(label + " 必须是最多 80 字符且不含空白的上游字段名")
+		}
+	}
+	if len(value.VoiceIDs) > 128 || len(value.DefaultVoiceID) > 160 {
+		return BadAuthRequest("音频模型声音目录最多 128 项，defaultVoiceId 最多 160 字符")
+	}
+	seenVoiceIDs := make(map[string]bool, len(value.VoiceIDs))
+	for _, voiceID := range value.VoiceIDs {
+		if voiceID == "" || strings.TrimSpace(voiceID) != voiceID || len(voiceID) > 160 || strings.ContainsAny(voiceID, "\r\n\t") || seenVoiceIDs[voiceID] {
+			return BadAuthRequest("voiceIds 必须是不重复、非空且最多 160 字符的上游 voice ID")
+		}
+		seenVoiceIDs[voiceID] = true
+	}
+	if value.DefaultVoiceID != "" && len(seenVoiceIDs) > 0 && !seenVoiceIDs[value.DefaultVoiceID] {
+		return BadAuthRequest("defaultVoiceId 必须存在于 voiceIds 声音目录")
+	}
+	if value.VoiceDesign == "configured" && value.VoiceIDParameter == "" {
+		return BadAuthRequest("声明 voice design 前必须配置 voiceIdParameter")
+	}
+	if value.VoiceReference == "configured" && value.ReferenceAudioParameter == "" {
+		return BadAuthRequest("声明 voice reference 前必须配置 referenceAudioParameter")
+	}
+	return nil
 }
 
 func applyModelSpecificVideoCapability(profile *VideoCapabilityConfig, protocol string, modelName string) *VideoCapabilityConfig {
@@ -447,9 +557,15 @@ func CapabilitySpecFromModelCapabilityConfig(config *ModelCapabilityConfig, capa
 		}
 		video := config.Video
 		spec.Operations = append([]string(nil), video.Operations...)
-		addInputConstraint(spec.Inputs, "image", video.References.MinImages, video.References.MaxImages)
+		imageMinimum := video.References.MinImages
+		if containsCapabilityString(video.Operations, "text_to_video") {
+			imageMinimum = 0
+		} else if containsCapabilityString(video.Operations, "image_to_video") && imageMinimum < 1 {
+			imageMinimum = 1
+		}
+		addInputConstraint(spec.Inputs, "image", imageMinimum, video.References.MaxImages)
 		addInputConstraint(spec.Inputs, "video", 0, video.References.MaxVideos)
-		addInputConstraint(spec.Inputs, "audio", 0, video.References.MaxAudios)
+		addInputConstraint(spec.Inputs, "audio", video.References.MinAudios, video.References.MaxAudios)
 		if video.Duration.Selection == "enum" {
 			values := make([]any, 0, len(video.Duration.Values))
 			for _, value := range video.Duration.Values {
@@ -637,13 +753,16 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if value.References.PromptMaxChars < 1 || value.References.PromptMaxChars > 1000000 {
 		return BadAuthRequest("提示词最大字符数必须在 1-1000000 之间")
 	}
-	for name, number := range map[string]int{"最少图片引用数": value.References.MinImages, "最大图片引用数": value.References.MaxImages, "最大视频引用数": value.References.MaxVideos, "最大音频引用数": value.References.MaxAudios} {
+	for name, number := range map[string]int{"最少图片引用数": value.References.MinImages, "最大图片引用数": value.References.MaxImages, "最大视频引用数": value.References.MaxVideos, "最少音频引用数": value.References.MinAudios, "最大音频引用数": value.References.MaxAudios} {
 		if number < 0 || number > 100 {
 			return BadAuthRequest(name + "必须在 0-100 之间")
 		}
 	}
 	if value.References.MinImages > value.References.MaxImages {
 		return BadAuthRequest("最少图片引用数不能超过最大图片引用数")
+	}
+	if value.References.MinAudios > value.References.MaxAudios {
+		return BadAuthRequest("最少音频引用数不能超过最大音频引用数")
 	}
 	if value.References.MaxImageBytes < 0 || value.References.MaxVideoBytes < 0 || value.References.MaxAudioBytes < 0 || value.References.MaxVideoDuration < 0 || value.References.MaxAudioDuration < 0 {
 		return BadAuthRequest("引用素材限制不能小于 0")
@@ -801,8 +920,31 @@ func validateVideoTask(profile *VideoCapabilityConfig, input canvasGenerationInp
 	if model.IsVolcengineArkVideoProtocol(model.ChannelInterfaceType(input.Config.InterfaceType)) && len(input.ReferenceAudios) > 0 && len(input.ReferenceImages) == 0 && len(input.ReferenceVideos) == 0 {
 		return BadAuthRequest("火山方舟全模态参考不支持纯音频或文本+音频，请同时添加参考图片或参考视频")
 	}
-	if len(input.ReferenceImages) < profile.References.MinImages {
-		return BadAuthRequest(fmt.Sprintf("当前视频模型至少需要 %d 张参考图", profile.References.MinImages))
+	operation := metadataString(input.Metadata, "videoEditOperation")
+	if operation == "" {
+		if len(input.ReferenceImages) > 0 {
+			operation = "image_to_video"
+		} else {
+			operation = profile.DefaultOperation
+		}
+	}
+	if !containsCapabilityString(profile.Operations, operation) {
+		return BadAuthRequest("当前视频模型不支持该生成模式")
+	}
+	if operation == "text_to_video" && len(input.ReferenceImages) > 0 {
+		return BadAuthRequest("文生视频不能携带参考图；请移除参考图或选择图生视频模型")
+	}
+	if operation == "image_to_video" || operation == "reference_to_video" {
+		minimum := profile.References.MinImages
+		if operation == "image_to_video" && minimum < 1 {
+			minimum = 1
+		}
+		if len(input.ReferenceImages) < minimum {
+			return BadAuthRequest(fmt.Sprintf("当前视频生成模式至少需要 %d 张参考图", minimum))
+		}
+	}
+	if len(input.ReferenceAudios) < profile.References.MinAudios {
+		return BadAuthRequest(fmt.Sprintf("当前视频模型至少需要 %d 段参考音频", profile.References.MinAudios))
 	}
 	for _, media := range input.ReferenceImages {
 		if profile.References.MaxImageBytes > 0 && media.Bytes > profile.References.MaxImageBytes {
@@ -835,16 +977,11 @@ func validateVideoTask(profile *VideoCapabilityConfig, input canvasGenerationInp
 	if len(profile.Resolutions) > 0 && !isAutomaticVideoResolution(input.Config.VQuality) && videoResolutionNameRequest(profile, input.Config.VQuality) == "" {
 		return BadAuthRequest("输出分辨率不在当前模型支持范围内")
 	}
-	operation := metadataString(input.Metadata, "videoEditOperation")
-	if operation == "" {
-		if len(input.ReferenceImages) > 0 {
-			operation = "image_to_video"
-		} else {
-			operation = profile.DefaultOperation
-		}
+	if !profile.GenerateAudio.Supported && parseBool(input.Config.VideoGenerateAudio, false) {
+		return BadAuthRequest("当前视频模型不支持生成原生音频")
 	}
-	if !containsCapabilityString(profile.Operations, operation) {
-		return BadAuthRequest("当前视频模型不支持该生成模式")
+	if !profile.Watermark.Supported && parseBool(input.Config.VideoWatermark, false) {
+		return BadAuthRequest("当前视频模型不支持水印参数")
 	}
 	return nil
 }

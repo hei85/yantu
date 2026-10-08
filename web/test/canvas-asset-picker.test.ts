@@ -103,14 +103,4 @@ describe("canvas context menu motion", () => {
         expect(menu).toContain("<SpotlightSurface");
     });
 
-    test("keeps the clicked category while the remote page loads", () => {
-        const source = readFileSync(resolve(import.meta.dir, "../src/components/assets/asset-library-picker-modal.tsx"), "utf8");
-
-        // 远端模式下分类选项来自注册表，不能随着取数瞬间收缩，否则点空分类会被回滚到「全部素材」。
-        expect(source).toContain("const visibleCategories = remoteEnabled ? remoteCategoryOptions : normalCategories;");
-        expect(source).toContain("if (remoteEnabled && remoteQuery.isFetching) return;");
-        expect(source).toContain("{visibleCategories.map((value) => (");
-        // 旧的“看到什么就只允许选什么”的写法会把空分类立即改回 all。
-        expect(source).not.toContain("if (category === \"all\" || category === \"archived\" || normalCategories.includes(category)) return;");
-    });
 });

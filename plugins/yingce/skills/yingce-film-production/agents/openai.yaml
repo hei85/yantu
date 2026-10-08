@@ -1,0 +1,6 @@
+interface:
+  display_name: "衍图整片制作"
+  short_description: "通过衍图 MCP 将剧本制作成指定时长影片并保留可恢复的制作进度"
+  default_prompt: "使用 $yingce-film-production，根据我的剧本和目标时长完成衍图画布上的整片制作。"
+policy:
+  allow_implicit_invocation: true

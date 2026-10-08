@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"infinite-canvas/backend/internal/distribution"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/protocol"
 
@@ -72,6 +73,9 @@ func runProtocolAdapterTaskWithPolicy(ctx context.Context, input canvasGeneratio
 		request.Extra["idempotencyKey"] = key
 		spec, err := adapter.BuildCreate(ctx, protocol.RequestContext{BaseURL: input.Config.BaseURL, Request: request})
 		if err != nil {
+			return nil, err
+		}
+		if err := applyAxonH3VideoCreateFields(input, &spec); err != nil {
 			return nil, err
 		}
 		body, err := executeProtocolRequest(withProviderRequestKind(ctx, "create"), input.Config, spec)
@@ -188,8 +192,15 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 		}
 	}
 	aspectRatio := input.Config.Size
+	if input.Mode == "video" && (input.Config.InterfaceType == "newapi" || input.Config.InterfaceType == "openai-video" || input.Config.InterfaceType == "openai-videos") {
+		aspectRatio = videoPixelSize(aspectRatio, resolution)
+	}
 	if input.Mode == "image" && strings.TrimSpace(input.Config.InterfaceType) == string(model.ChannelInterfaceOpenAIImage) {
 		aspectRatio = normalizePixelSize(aspectRatio)
+	}
+	operation := firstNonEmpty(metadataString(input.Metadata, "videoEditOperation"), metadataString(input.Metadata, "videoOperation"))
+	if input.Mode == "audio" {
+		operation = strings.TrimSpace(metadataString(input.Metadata, "kind"))
 	}
 	request := protocol.GenerationRequest{
 		Capability:    protocol.Capability(input.Mode),
@@ -204,13 +215,57 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 		Quality:       input.Config.Quality,
 		GenerateAudio: parseBool(input.Config.VideoGenerateAudio, false),
 		Watermark:     parseBool(input.Config.VideoWatermark, false),
-		Operation:     firstNonEmpty(metadataString(input.Metadata, "videoEditOperation"), metadataString(input.Metadata, "videoOperation")),
+		Operation:     operation,
 		Extra: map[string]any{
 			"videoSeconds": input.Config.VideoSeconds,
-			"audioVoice":   input.Config.AudioVoice,
 			"audioFormat":  input.Config.AudioFormat,
 			"count":        input.Config.Count,
 		},
+	}
+	if audioVoice := strings.TrimSpace(input.Config.AudioVoice); audioVoice != "" && metadataString(input.Metadata, "voiceStrategy") != "voice_reference" {
+		request.Extra["audioVoice"] = audioVoice
+	}
+	if input.Mode == "audio" {
+		for key, metadataKey := range map[string]string{
+			"audioTrackKind": "kind", "audioMode": "productionAudioMode", "voiceStrategy": "voiceStrategy",
+			"voiceId": "voiceId", "tone": "tone", "emotionStyle": "emotionStyle", "speakingRate": "speakingRate",
+			"language": "language", "accent": "accent",
+		} {
+			if value := strings.TrimSpace(metadataString(input.Metadata, metadataKey)); value != "" {
+				request.Extra[key] = value
+			}
+		}
+		if strings.TrimSpace(metadataString(input.Metadata, "productionAudioMode")) == model.ProductionAudioModeRebuild && input.Config.CapabilityConfig != nil && input.Config.CapabilityConfig.Audio != nil {
+			audio := input.Config.CapabilityConfig.Audio
+			metadata := metadataStringValues(input.Metadata)
+			voiceID := strings.TrimSpace(metadata["voiceId"])
+			if metadata["voiceStrategy"] == "standard_tts" {
+				voiceID = strings.TrimSpace(input.Config.AudioVoice)
+			}
+			for _, item := range []struct{ parameter, value string }{
+				{audio.VoiceIDParameter, voiceID},
+				{audio.ToneParameter, metadata["tone"]},
+				{audio.EmotionStyleParameter, metadata["emotionStyle"]},
+				{audio.LanguageParameter, metadata["language"]},
+				{audio.AccentParameter, metadata["accent"]},
+			} {
+				if item.parameter != "" && strings.TrimSpace(item.value) != "" {
+					request.Extra[item.parameter] = item.value
+				}
+			}
+			if audio.SpeakingRateParameter != "" {
+				if rate := strings.TrimSpace(metadata["speakingRate"]); rate != "" {
+					request.Extra[audio.SpeakingRateParameter] = parseFloat(rate, 1)
+				}
+			}
+			if audio.ReferenceAudioParameter != "" && len(input.ReferenceAudios) == 1 {
+				reference := input.ReferenceAudios[0]
+				value := firstNonEmpty(strings.TrimSpace(reference.URL), strings.TrimSpace(reference.DataURL))
+				if value != "" {
+					request.Extra[audio.ReferenceAudioParameter] = value
+				}
+			}
+		}
 	}
 	for _, message := range input.TextHistory {
 		role := strings.ToLower(strings.TrimSpace(message.Role))
@@ -339,6 +394,12 @@ func executeProtocolBinaryRequestWithConsumer(ctx context.Context, config provid
 	requestURL, err := protocolRequestURL(config.BaseURL, spec)
 	if err != nil {
 		return nil, "", err
+	}
+	if err := requireAxonBaseURL(config.BaseURL); err != nil {
+		return nil, "", err
+	}
+	if err := distribution.ValidateModelURL(requestURL); err != nil {
+		return nil, "", Forbidden(err.Error())
 	}
 	req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
 	if err != nil {
@@ -801,6 +862,18 @@ func finishProtocolResult(ctx context.Context, config providerConfig, mode strin
 			return nil, err
 		}
 		item := map[string]interface{}{"dataUrl": dataURL(mimeType, data), "mimeType": mimeType}
+		if mode == "audio" {
+			mimeType, err = validateGeneratedAudio(mimeType, data, config.AudioFormat)
+			if err != nil {
+				return nil, err
+			}
+			actualFormat := audioFormatForMimeType(mimeType)
+			item = map[string]interface{}{
+				"dataUrl": dataURL(mimeType, data), "mimeType": mimeType,
+				"format": actualFormat, "actualFormat": actualFormat,
+				"requestedFormat": strings.ToLower(strings.TrimSpace(config.AudioFormat)),
+			}
+		}
 		items = append(items, item)
 	}
 	switch mode {
@@ -819,6 +892,15 @@ func finishProtocolResult(ctx context.Context, config providerConfig, mode strin
 func finishProtocolAdapterResult(ctx context.Context, input canvasGenerationInput, adapter protocol.Adapter, request protocol.GenerationRequest, taskID string, result *protocol.Result, pollPolicy videoPollPolicy) (map[string]interface{}, error) {
 	if protocolResultHasOutput(input.Mode, result) {
 		return finishProtocolResult(ctx, input.Config, input.Mode, taskID, result, pollPolicy)
+	}
+	if input.Mode == "video" && isHeihanAxonH3Video(input.Config.BaseURL, input.Config.Model) {
+		// Axon's standard /v1/videos/{id} status omits the result URL, while
+		// /v1/videos/{id}/content can fail to proxy a completed TOS artifact.
+		// Its task-detail endpoint exposes the signed URL; consume it through
+		// the normal SSRF-checked media downloader without another create call.
+		if detailed, err := axonH3VideoResultDetail(ctx, input.Config, taskID); err == nil && detailed != nil {
+			return finishProtocolResult(ctx, input.Config, input.Mode, taskID, detailed, pollPolicy)
+		}
 	}
 	resultAdapter, ok := adapter.(protocol.ResultAdapter)
 	capability, hasCapability := adapter.(protocol.ResultCapability)
@@ -862,6 +944,18 @@ func finishProtocolAdapterResult(ctx context.Context, input canvasGenerationInpu
 		return nil, fmt.Errorf("声明式协议结果下载不支持生成模式 %s", input.Mode)
 	}
 	return finishProtocolResult(ctx, input.Config, input.Mode, taskID, downloaded, pollPolicy)
+}
+
+func axonH3VideoResultDetail(ctx context.Context, config providerConfig, taskID string) (*protocol.Result, error) {
+	var detail map[string]interface{}
+	if err := getJSON(withProviderRequestKind(ctx, "poll"), config, "/video/generations/"+url.PathEscape(taskID), &detail); err != nil {
+		return nil, err
+	}
+	videoURL := newAPIVideoResultURL(detail)
+	if videoURL == "" {
+		return nil, errors.New("Axon H3 视频任务已完成但详情未返回成品地址")
+	}
+	return &protocol.Result{Videos: []protocol.MediaReference{{URL: videoURL}}}, nil
 }
 
 func protocolResultHasOutput(mode string, result *protocol.Result) bool {

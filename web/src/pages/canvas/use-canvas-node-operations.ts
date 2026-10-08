@@ -5,17 +5,20 @@ import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { FOLDER_COLLAPSED_HEIGHT, FOLDER_COLLAPSED_WIDTH, FRAME_HEADER_HEIGHT, getFrameChildIds, getFrameChildren, isFrameNode } from "@/lib/canvas/canvas-frame";
-import { alignCanvasNodes, layoutCanvasAuto, layoutCanvasFlow, layoutCanvasNodes, nextCanvasVersionLabel, spreadCanvasNodes, type CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
+import { alignCanvasNodes, layoutCanvasFlow, layoutCanvasNodes, nextCanvasVersionLabel, spreadCanvasNodes, type CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
+import { organizeCanvasNodes } from "@/lib/canvas/canvas-organize";
 import { applyCanvasConnectionPromptSync } from "@/lib/canvas/canvas-resource-references";
 import { createCanvasNode, isHiddenBatchChild, removeCanvasNodes } from "@/lib/canvas/canvas-project-domain";
 import { isolateCopiedNodeMetadata, nextCopiedNodeTitle } from "@/lib/canvas/canvas-node-copy";
 import { CanvasNodeType, type CanvasConnection, type CanvasFolderStyle, type CanvasFolderTheme, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ContextMenuState, type Position } from "@/types/canvas";
-import { cloneCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
+import { cloneCanvasDrawing, startEmptyCanvasDrawingInitialization } from "@/lib/canvas/canvas-drawing-storage";
 import { isDrawingEngineAvailable, type CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import { useUserStore } from "@/stores/use-user-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
 import { usePluginStore } from "@/stores/use-plugin-store";
+import { createCanvasAgentFrameOperations } from "@/pages/canvas/canvas-agent-frame-operations";
+import { createCanvasAgentNativeNodeOperations } from "@/pages/canvas/canvas-agent-native-node-operations";
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -40,6 +43,7 @@ type UseCanvasNodeOperationsOptions = {
     setContextMenu: Dispatch<SetStateAction<ContextMenuState | null>>;
     setDialogNodeId: Dispatch<SetStateAction<string | null>>;
     onNodesDeleted: (removedIds: Set<string>, nextNodes: CanvasNodeData[], removedNodes: CanvasNodeData[]) => void;
+    archiveNodesToLinkedFolder?: (folderNodeId: string, nodes: CanvasNodeData[]) => Promise<void>;
 };
 
 export function useCanvasNodeOperations({
@@ -56,6 +60,7 @@ export function useCanvasNodeOperations({
     setContextMenu,
     setDialogNodeId,
     onNodesDeleted,
+    archiveNodesToLinkedFolder,
 }: UseCanvasNodeOperationsOptions) {
     const { message } = App.useApp();
     const effectiveConfig = useEffectiveConfig();
@@ -149,10 +154,29 @@ export function useCanvasNodeOperations({
         const node = createCanvasNode(type, position || getCanvasCenter(), metadata);
         if (workflowTitle) node.title = workflowTitle;
         commitNodes([...nodesRef.current, node]);
+        if (type === CanvasNodeType.Drawing && node.metadata?.drawingId) {
+            void startEmptyCanvasDrawingInitialization(projectId, node.metadata.drawingId, defaultDrawingEngine).then((saved) => {
+                const current = nodesRef.current.find((item) => item.id === node.id);
+                if (!current || current.metadata?.drawingId !== node.metadata?.drawingId) return;
+                commitNodes(nodesRef.current.map((item) => item.id === node.id ? {
+                    ...item,
+                    metadata: {
+                        ...item.metadata,
+                        drawingEngine: saved.engine,
+                        drawingRevision: saved.revision,
+                        drawingUpdatedAt: saved.updatedAt,
+                        drawingShapeCount: saved.shapeCount,
+                        drawingPageCount: saved.pageCount,
+                    },
+                } : item));
+            }).catch((error) => {
+                message.error(error instanceof Error ? `绘图文档初始化失败：${error.message}` : "绘图文档初始化失败");
+            });
+        }
         selectNodes(new Set([node.id]));
         if (type === CanvasNodeType.Script) setDialogNodeId(null);
         if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Script && type !== CanvasNodeType.BatchTable && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Frame && type !== CanvasNodeType.Drawing && type !== CanvasNodeType.MediaConversion) setDialogNodeId(node.id);
-    }, [commitNodes, defaultDrawingEngine, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, runtimeStatuses, selectNodes, setDialogNodeId, tldrawLicenseKey]);
+    }, [commitNodes, defaultDrawingEngine, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, projectId, runtimeStatuses, selectNodes, setDialogNodeId, tldrawLicenseKey]);
 
     const createFolder = useCallback((position?: Position, linked?: { id: string; projectId: string; title: string; style: CanvasFolderStyle; theme: CanvasFolderTheme; createdAt: string }) => {
         const folder = createCanvasNode(CanvasNodeType.Frame, position || getCanvasCenter(), {
@@ -189,19 +213,16 @@ export function useCanvasNodeOperations({
         const currentNodes = nodesRef.current;
         const selectedIds = selectedNodeIdsRef.current;
         const hasSelection = selectedIds.size > 0;
-        const candidates = currentNodes.filter((node) => {
-            if (node.metadata?.locked || isFrameNode(node) || isHiddenBatchChild(node, currentNodes)) return false;
-            if (hasSelection) return selectedIds.has(node.id);
-            return !node.parentId;
-        });
-        if (candidates.length < 2) {
-            message.info(hasSelection ? "请至少选择两个可整理节点" : "画布中至少需要两个可整理节点");
+        const organization = organizeCanvasNodes(currentNodes, connectionsRef.current, { nodeIds: hasSelection ? [...selectedIds] : undefined });
+        if (!organization.patches.size) {
+            message.info("当前节点无需调整，已保持整齐布局");
             return;
         }
-
-        const positions = layoutCanvasAuto(candidates, connectionsRef.current);
-        commitNodes(currentNodes.map((node) => positions.has(node.id) ? { ...node, position: positions.get(node.id)! } : node));
-        message.success(hasSelection ? "已按媒体分类整理选中节点" : "已按媒体分类整理画布");
+        commitNodes(currentNodes.map((node) => {
+            const patch = organization.patches.get(node.id);
+            return patch ? { ...node, ...patch, ...(patch.metadata ? { metadata: { ...node.metadata, ...patch.metadata } } : {}) } : node;
+        }));
+        message.success(hasSelection ? "已按分组网格整理选中节点" : "已按分组网格整理画布");
     }, [commitNodes, connectionsRef, message, nodesRef, selectedNodeIdsRef]);
 
     const spreadSelectedNodes = useCallback(() => {
@@ -225,9 +246,10 @@ export function useCanvasNodeOperations({
         message.success(mode === "distributeX" || mode === "distributeY" ? "已等距分布选中节点" : "已对齐选中节点");
     }, [commitNodes, message, nodesRef, selectedNodeIdsRef]);
 
-    const createStoryboardGroup = useCallback(() => {
+    const createStoryboardGroup = useCallback((explicitNodeIds?: string[]) => {
+        const selectedIds = explicitNodeIds ? new Set(explicitNodeIds) : selectedNodeIdsRef.current;
         const images = nodesRef.current
-            .filter((node) => selectedNodeIdsRef.current.has(node.id) && !node.metadata?.locked && node.type === CanvasNodeType.Image && Boolean(node.metadata?.content))
+            .filter((node) => selectedIds.has(node.id) && !node.metadata?.locked && node.type === CanvasNodeType.Image && Boolean(node.metadata?.content))
             .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
         if (images.length < 2) {
             message.warning("请至少选择两张已有图片");
@@ -276,9 +298,10 @@ export function useCanvasNodeOperations({
         message.success(`已创建 ${images.length} 镜分镜组`);
     }, [commitNodes, message, nodesRef, selectNodes, selectedNodeIdsRef]);
 
-    const createReferenceGroup = useCallback(() => {
+    const createReferenceGroup = useCallback((explicitNodeIds?: string[]) => {
+        const selectedIds = explicitNodeIds ? new Set(explicitNodeIds) : selectedNodeIdsRef.current;
         const media = nodesRef.current
-            .filter((node) => selectedNodeIdsRef.current.has(node.id) && !node.metadata?.locked && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) && Boolean(node.metadata?.content))
+            .filter((node) => selectedIds.has(node.id) && !node.metadata?.locked && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) && Boolean(node.metadata?.content))
             .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
         if (media.length < 2) {
             message.warning("请至少选择两个已有图片或视频节点");
@@ -549,6 +572,20 @@ export function useCanvasNodeOperations({
         }
     }, []);
 
+    const agentFrameOperations = createCanvasAgentFrameOperations({
+        nodesRef,
+        createFolder,
+        createStoryboardGroup,
+        createReferenceGroup,
+        commitNodes,
+        archiveNodesToLinkedFolder,
+    });
+    const agentNativeNodeOperations = createCanvasAgentNativeNodeOperations({
+        nodesRef,
+        getCanvasCenter,
+        createNode,
+    });
+
     return {
         alignSelectedNodes,
         autoArrangeCanvasNodes,
@@ -560,6 +597,8 @@ export function useCanvasNodeOperations({
         createNode,
         createReferenceGroup,
         createStoryboardGroup,
+        agentFrameOperations,
+        agentNativeNodeOperations,
         deleteConnection,
         deleteNodes,
         duplicateNode,

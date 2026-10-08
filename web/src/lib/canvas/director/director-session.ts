@@ -10,6 +10,11 @@ export function shouldReinitializeDirectorSession(input: { initializedSceneId: s
     return initializedSceneId !== nextSceneId;
 }
 
+/** Same-id canonical writes are safe to adopt only while the draft still matches its prior base. */
+export function shouldAdoptExternalDirectorScene(input: { sameScene: boolean; draftMatchesPrevious: boolean; incomingChanged: boolean; gestureActive: boolean }) {
+    return input.sameScene && input.draftMatchesPrevious && input.incomingChanged && !input.gestureActive;
+}
+
 /** 以 id upsert，调用方必须传入「当前最新」数组，避免旧闭包覆盖并发保存。 */
 export function upsertDirectorSceneById(scenes: DirectorScene[], scene: DirectorScene): DirectorScene[] {
     return scenes.some((item) => item.id === scene.id) ? scenes.map((item) => (item.id === scene.id ? scene : item)) : [...scenes, scene];

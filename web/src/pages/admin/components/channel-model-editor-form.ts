@@ -1,5 +1,5 @@
 import type { ModelCapabilityChoice } from "@/components/model-protocol-picker";
-import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultAudioCapabilityConfig, defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
 import type { ChannelModel } from "@/services/api/channel-models";
 
@@ -36,7 +36,7 @@ export function initialChannelModelValues(item: ChannelModel | null, protocols: 
         capability,
         protocol,
         enabled: item?.enabled ?? true,
-        capabilityConfig: capability === "audio" ? undefined : normalizeModelCapabilityConfig(item?.capabilityConfig || defaultModelCapabilityConfig(protocol, upstreamModel)),
+        capabilityConfig: capability === "audio" ? { version: 1, audio: { ...defaultAudioCapabilityConfig(), ...item?.capabilityConfig?.audio } } : normalizeModelCapabilityConfig(item?.capabilityConfig || defaultModelCapabilityConfig(protocol, upstreamModel)),
     };
 }
 
@@ -47,7 +47,7 @@ export function changeChannelModelCapability(values: ChannelModelFormValues, pro
     return {
         ...values,
         protocol,
-        capabilityConfig: capability === "audio" ? undefined : defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()),
+        capabilityConfig: capability === "audio" ? { version: 1, audio: defaultAudioCapabilityConfig() } : defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()),
     };
 }
 
@@ -56,4 +56,3 @@ export function validateChannelModelProtocol(capability: string, protocol: strin
         throw new Error("请选择当前能力下已启用的请求协议");
     }
 }
-

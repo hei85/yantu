@@ -22,31 +22,7 @@ var customRelayClient = service.CustomRelayHTTPClient
 
 func RegisterCustomRelayRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.Any("/ai/custom", func(c *gin.Context) {
-		user, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if err := svc.RequireFeature(service.FeatureCustomChannels); err != nil {
-			failService(c, err)
-			return
-		}
-		policy, available := loadRuntimePolicy(c, svc)
-		if !available || !enforceRateLimit(c, "custom-relay:"+user.ID, policy.Request.CustomRelayPerMinute, time.Minute) {
-			return
-		}
-		ttl := time.Duration(policy.Request.CustomRelayTimeoutMinutes+1) * time.Minute
-		release, acquired, err := svc.AcquireCustomRelaySlot(c.Request.Context(), user.ID, policy.Request.CustomRelayConcurrency, ttl)
-		if err != nil {
-			fail(c, http.StatusServiceUnavailable, errors.New("自定义渠道并发协调服务不可用"))
-			return
-		}
-		if !acquired {
-			fail(c, http.StatusTooManyRequests, errors.New("自定义渠道并发请求过多，请等待已有请求完成"))
-			return
-		}
-		defer release()
-		proxyCustomRelayRequestWithService(c, policy.Request, svc)
+		fail(c, http.StatusForbidden, errors.New("此发行版不支持自定义中转站，请使用 Axon 模型中心"))
 	})
 }
 

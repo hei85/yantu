@@ -99,9 +99,9 @@ func defaultPromptDefinitions() []PromptOperationDefinition {
 		},
 		{
 			Operation: OperationCharacterTurnaround, Label: "角色三视图", Category: "角色", OutputType: "text",
-			Description:    "按当前角色版本和项目画风生成正、侧、背三视图。",
+			Description:    "按当前角色版本和项目画风生成正、侧、背三视图，并在同一张设定表里附正面脸部特写。",
 			Variables:      []PromptTemplateVariable{{Label: "角色名称", Placeholder: "{{角色名称}}"}, {Label: "项目画风", Placeholder: "{{项目画风}}"}, {Label: "角色设定", Placeholder: "{{角色设定}}"}},
-			DefaultContent: `制作专业人物三视图设定表。画面严格分成三个等宽竖向区域，从左到右依次为正面全身、右侧面全身、背面全身。三个视角必须是同一角色、同一服装、同一发型、同一体型和同一比例，采用站立中性姿势，完整显示头顶到脚底。背景使用纯净中性浅色和均匀设定稿光线，只负责分离轮廓，不得改变项目画风的绘画或渲染媒介。禁止文字、边框、道具说明、表情变化和额外人物。`,
+			DefaultContent: `制作专业人物设定表：同一张图里必须同时给出三视图和正面脸部特写。画面分四个区域：左侧三个等宽竖向区域，从左到右依次为正面全身、右侧面全身、背面全身；右侧单独一块区域放同一角色的正面脸部特写，正对镜头、五官清晰、中性表情、无遮挡、贯穿该区域高度。四个区域必须是同一角色、同一服装、同一发型、同一体型和同一比例；全身视角采用站立中性姿势并完整显示头顶到脚底；脸部特写必须与正面全身的五官、瞳色、发型分缝和配饰完全一致，用于锁死面部细节。背景使用纯净中性浅色和均匀设定稿光线，只负责分离轮廓，不得改变项目画风的绘画或渲染媒介。禁止文字说明、边框装饰、道具说明、表情变化、额外人物和不同服装。同一张图内不得只画三视图而省略正脸特写。`,
 		},
 		{
 			Operation: OperationShortDramaOutline, Label: "短剧大纲", Category: "项目", OutputType: "json", SchemaKey: "short-drama-outline/v1",
@@ -344,6 +344,8 @@ func StoryboardExecutionContract(durationRule string, countRule string) string {
 - assetRefs 只能引用当前画布资产中的 nodeId；不要根据相似名称编造 ID。每镜最多 6 个，priority 越大表示越重要。
 - styleGuide 最多 120 个中文字符；visualPrompt 只描述首帧，videoPrompt 只描述运动和结尾状态。
 - 画幅比例由视频节点参数控制，提示词不得写入具体比例，也不要讨论画幅配置。
+- visualPrompt、videoPrompt、dialogue、styleGuide、description 一律使用简体中文书写；模型名、专有名词和参数值可保留原文，禁止输出整句英文。
+- 一条提示词只描述一个镜头：不得写入“让九宫格整体动起来”“把多镜合并成一条生成”这类跨镜指令。九宫格或分镜参考图只用于画面规划，每一格是不同瞬间并按顺序连续推进，视频必须一镜一镜生成。
 - 只返回完整 JSON，不要 Markdown 或解释。
 - ` + promptOutputContract(OperationStoryboardPlan)
 }

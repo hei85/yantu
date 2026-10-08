@@ -37,7 +37,7 @@ type ProjectAssetCountRow struct {
 
 func (r *Repository) ProjectUnitCanvasCounts(projectID string) (map[string]int64, error) {
 	var rows []ProjectAssetCountRow
-	if err := r.db.Table("canvas_unit_links").Select("unit_id AS key, COUNT(DISTINCT canvas_id) AS count").Where("project_id = ?", projectID).Group("unit_id").Scan(&rows).Error; err != nil {
+	if err := r.db.Table("canvas_unit_links").Select("unit_id AS key, COUNT(DISTINCT canvas_id) AS count").Where("project_id = ? AND unit_id <> ''", projectID).Group("unit_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	counts := make(map[string]int64, len(rows))
@@ -56,7 +56,7 @@ func (r *Repository) ProjectOverviewMetrics(projectID string) (ProjectOverviewMe
 			(SELECT COALESCE(SUM(word_count), 0) FROM project_units WHERE project_id = ?) AS total_word_count,
 			(SELECT COUNT(*) FROM project_units WHERE project_id = ? AND word_count = 0) AS units_without_text,
 			(SELECT COUNT(*) FROM project_units pu WHERE pu.project_id = ? AND pu.status <> ? AND NOT EXISTS (SELECT 1 FROM shots s WHERE s.project_id = pu.project_id AND s.unit_id = pu.id)) AS units_without_shots,
-			(SELECT COUNT(*) FROM canvas_projects WHERE project_id = ?) AS canvas_count,
+			(SELECT COUNT(DISTINCT canvas_id) FROM canvas_unit_links WHERE project_id = ?) AS canvas_count,
 			(SELECT COUNT(*) FROM project_asset_links WHERE project_id = ?) AS asset_count,
 			(SELECT COUNT(*) FROM shots WHERE project_id = ?) AS shot_count,
 			(SELECT COUNT(*) FROM project_asset_candidates WHERE project_id = ? AND status = 'pending_confirmation') AS pending_candidate_count,
@@ -78,7 +78,7 @@ func (r *Repository) ProjectOverviewUnits(projectID string, limit int) ([]Projec
 		SELECT pu.id, pu.project_id, pu.parent_id, pu.kind, pu.title, pu.word_count, pu.status, pu.position, pu.created_at, pu.updated_at,
 			(SELECT COUNT(*) FROM shots s WHERE s.project_id = pu.project_id AND s.unit_id = pu.id) AS shot_count,
 			(SELECT COUNT(*) FROM project_asset_candidates pac WHERE pac.project_id = pu.project_id AND pac.unit_id = pu.id) AS candidate_count,
-			(SELECT COUNT(DISTINCT cul.canvas_id) FROM canvas_unit_links cul WHERE cul.project_id = pu.project_id AND cul.unit_id = pu.id) AS canvas_count
+			(SELECT COUNT(DISTINCT cul.canvas_id) FROM canvas_unit_links cul WHERE cul.project_id = pu.project_id AND cul.unit_id = pu.id AND cul.unit_id <> '') AS canvas_count
 		FROM project_units pu
 		WHERE pu.project_id = ?
 		ORDER BY pu.position ASC, pu.created_at ASC
@@ -155,54 +155,6 @@ func (r *Repository) ProjectWorkflowInstancesForUnit(projectID string, unitID st
 	var instances []model.WorkflowInstance
 	err := r.db.Where("project_id = ? AND unit_id = ?", projectID, unitID).Order("created_at asc").Find(&instances).Error
 	return instances, err
-}
-
-func (r *Repository) ProjectCanvasSummariesPage(userID string, projectID string, page int, pageSize int) ([]model.CanvasProject, int64, error) {
-	var canvases []model.CanvasProject
-	var total int64
-	query := r.db.Model(&model.CanvasProject{}).Where("user_id = ? AND project_id = ?", userID, projectID)
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	err := query.Select("id", "user_id", "project_id", "title", "created_at", "updated_at").Order("updated_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&canvases).Error
-	return canvases, total, err
-}
-
-func (r *Repository) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string) ([]model.CanvasProject, int64, error) {
-	var projects []model.CanvasProject
-	var total int64
-	query := r.db.Model(&model.CanvasProject{}).Where("user_id = ?", userID)
-	if projectID == "independent" {
-		query = query.Where("project_id = '' OR project_id IS NULL")
-	} else if projectID != "" && projectID != "all" {
-		query = query.Where("project_id = ?", projectID)
-	}
-	if search = strings.TrimSpace(search); search != "" {
-		query = query.Where("LOWER(title) LIKE ?", "%"+strings.ToLower(search)+"%")
-	}
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	order := "updated_at desc, id asc"
-	if sort == "name" {
-		order = "title asc, id asc"
-	} else if sort == "nodes" {
-		order = "COALESCE(json_array_length(payload_json, '$.nodes'), 0) desc, id asc"
-		if r.db.Dialector.Name() == "postgres" {
-			order = "COALESCE(jsonb_array_length(payload_json::jsonb->'nodes'), 0) desc, id asc"
-		}
-	}
-	err := query.Order(order).Offset((page - 1) * pageSize).Limit(pageSize).Find(&projects).Error
-	return projects, total, err
-}
-
-func (r *Repository) ProjectCanvasUnitLinksForCanvases(projectID string, canvasIDs []string) ([]model.CanvasUnitLink, error) {
-	if len(canvasIDs) == 0 {
-		return []model.CanvasUnitLink{}, nil
-	}
-	var links []model.CanvasUnitLink
-	err := r.db.Where("project_id = ? AND canvas_id IN ?", projectID, canvasIDs).Order("created_at asc").Find(&links).Error
-	return links, err
 }
 
 func (r *Repository) ProjectAssetCandidatesPage(projectID string, page int, pageSize int, unitID string, status string, category string, queryText string) ([]model.ProjectAssetCandidate, int64, error) {

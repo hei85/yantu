@@ -129,7 +129,7 @@ export function useCanvasDirector({
         const sourceNodeId = sourceNodeAtStart.id;
         const [image, videoUpload] = await Promise.all([
             uploadImage(output.beauty),
-            output.clayVideo ? uploadMediaFile(output.clayVideo, "director-clay") : Promise.resolve(null),
+            output.clayVideo ? uploadMediaFile(output.clayVideo, "director-clay", undefined, { durationMs: output.clayVideoDurationMs }) : Promise.resolve(null),
         ]);
         // 上传期间项目、节点和镜头都可能变化。以当前权威状态重新核验并合并，
         // 不允许旧输出写入另一项目，也不允许旧 scene 快照覆盖并发编辑。
@@ -215,6 +215,9 @@ export function useCanvasDirector({
         setNodes(finalizedNodes);
         setConnections(nextConnections);
         saveDirectorScene(mergedScene);
+        const savedPreview = finalizedNodes.find((item) => item.id === previewId);
+        const savedVideo = clayVideoId ? finalizedNodes.find((item) => item.id === clayVideoId) : undefined;
+        return { nodeId: previewId, videoNodeId: videoUpload ? clayVideoId : undefined, sceneId: output.scene.id, shotId: output.shot.id, storageKey: savedPreview?.metadata?.storageKey, videoStorageKey: savedVideo?.metadata?.storageKey, videoDurationMs: savedVideo?.metadata?.durationMs, assetId: savedPreview?.metadata?.assetId };
     }, [connectionsRef, directorNodeId, domainProjectId, nodesRef, projectId, saveDirectorScene, setConnections, setNodes]);
 
     return { applyDirectorOutput, createDirectorShot, openDirectorWorkbench, saveDirectorScene };

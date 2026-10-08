@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
-import { getGenerationCount, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import { generationClientOperationIdForIndex, getGenerationCount, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -30,6 +30,7 @@ export async function executeTextGeneration({
     taskContext,
     skillMetadata,
     retryContext,
+    clientOperationId,
 }: CanvasGenerationExecution) {
     const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
     const isDirectTextTarget = sourceNode?.type === CanvasNodeType.Text && !sourceNode.metadata?.content?.trim() && !editingTextNode;
@@ -61,12 +62,13 @@ export async function executeTextGeneration({
     const textTargetIds = generateInPlace ? [nodeId, ...childIds] : childIds;
     textTargetIds.forEach((targetNodeId) => startGenerationRequest(targetNodeId, nodeId, nodeId, controller));
     const answers = await Promise.all(
-        textTargetIds.map((targetNodeId) =>
+        textTargetIds.map((targetNodeId, index) =>
             runCanvasGenerationTaskToConsumer(
                 {
                     projectId,
                     nodeId: targetNodeId,
                     ...retryContext,
+                    clientOperationId: generationClientOperationIdForIndex(retryContext?.clientOperationId || clientOperationId, index, textTargetIds.length),
                     mode: "text",
                     prompt: effectivePrompt,
                     config: generationConfig,

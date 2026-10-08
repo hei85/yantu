@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // Bun 直接执行 TypeScript 测试时需要保留扩展名；生产 tsconfig 不包含 test/。
-import { DEFAULT_VIDEO_PROMPT_MAX_CHARS, defaultModelCapabilityConfig, normalizeVideoValue } from "../src/lib/model-capabilities.ts";
+import { DEFAULT_VIDEO_PROMPT_MAX_CHARS, defaultModelCapabilityConfig, modelCapabilityConfigFor, normalizeAudioCapabilityConfig, normalizeVideoValue, videoResolutionRequest } from "../src/lib/model-capabilities.ts";
 
 test("switching to MiniMax H3 replaces an unsupported 720p value with 768P", () => {
     const profile = defaultModelCapabilityConfig("minimax-video", "MiniMax-H3").video!;
@@ -12,6 +12,15 @@ test("switching to MiniMax H3 replaces an unsupported 720p value with 768P", () 
         ratio: "16:9",
         resolution: "768P",
     });
+});
+
+test("an explicitly declared 736P tier is the routed value for a missing 720P request", () => {
+    const profile = defaultModelCapabilityConfig("minimax-video", "MiniMax-H3").video!;
+    profile.resolutions = ["736P"];
+    profile.defaultResolution = "1080P";
+
+    assert.equal(videoResolutionRequest(profile, "720"), "736P");
+    assert.equal(normalizeVideoValue(profile, { seconds: "5", ratio: "16:9", resolution: "720" }).resolution, "736P");
 });
 
 // 视频提示词由「输入框文本 + 连线内容 + 技能上下文」合成，技能上下文预算为 32000，
@@ -30,4 +39,27 @@ test("raising the video default leaves text and image limits untouched", () => {
     const profile = defaultModelCapabilityConfig("seedance-videos-compatible", "sd-2.5");
     assert.equal(profile.text!.references.promptMaxChars, 32000);
     assert.equal(profile.image!.references.promptMaxChars, 32000);
+});
+
+test("missing or undefined audio capability declarations remain explicitly unknown", () => {
+    const config = normalizeAudioCapabilityConfig({ tts: "configured", voiceDesign: undefined, ambientSound: undefined });
+
+    assert.deepEqual(
+        [config.tts, config.voiceDesign, config.voiceReference, config.ambientSound, config.soundEffects, config.music],
+        ["configured", "unknown", "unknown", "unknown", "unknown", "unknown"],
+    );
+
+    const profile = modelCapabilityConfigFor({ channels: [{
+        id: "relay",
+        models: ["mimo-v2.5-tts"],
+        modelCosts: [{
+            model: "mimo-v2.5-tts",
+            protocol: "xiaomi-mimo-tts",
+            capabilityConfig: { version: 1, audio: { tts: "configured", voiceDesign: undefined } },
+        }],
+    }] }, "relay::mimo-v2.5-tts");
+
+    assert.equal(profile.audio?.voiceDesign, "unknown");
+    assert.equal(profile.audio?.voiceReference, "unknown");
+    assert.equal(profile.audio?.music, "unknown");
 });

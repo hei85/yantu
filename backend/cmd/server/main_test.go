@@ -73,13 +73,3 @@ func TestAllowedOriginConfiguredListDoesNotFallbackToArbitraryLocalhost(t *testi
 		t.Fatal("configured CORS list should disable the implicit localhost fallback")
 	}
 }
-
-func TestRedactCanvasSharePath(t *testing.T) {
-	got := redactCanvasSharePath("/api/public/canvas-shares/private-token/resources/resource-1/file")
-	if got != "/api/public/canvas-shares/:token/resources/resource-1/file" {
-		t.Fatalf("unexpected redacted path: %s", got)
-	}
-	if got := redactCanvasSharePath("/api/tasks"); got != "/api/tasks" {
-		t.Fatalf("unrelated path changed: %s", got)
-	}
-}

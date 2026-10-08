@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildTimelineRenderPlan, formatSrtTimestamp, type TimelineRenderSource } from "../src/lib/timeline/timeline-to-ffmpeg";
+import { buildTimelineRenderPlan, type TimelineRenderSource } from "../src/lib/timeline/timeline-to-ffmpeg";
 import type { TimelineClip, TimelineProject } from "../src/types/timeline";
 
 function videoClip(id: string, nodeId: string, startMs: number, durationMs: number): TimelineClip {
@@ -46,7 +46,53 @@ function concatStartOffsetsMs(plan: ReturnType<typeof buildTimelineRenderPlan>):
     return offsets;
 }
 
+test("独立音频按片段身份裁剪、淡入淡出、延迟并混入成片", () => {
+    const video = videoClip("video-clip", "shared-node", 0, 2000);
+    const audio: TimelineClip = { id: "audio-clip", kind: "audio", nodeId: "shared-node", trackId: "audio", startMs: 500, durationMs: 1000, sourceStartMs: 250, sourceDurationMs: 2000, volume: 0.6, fadeInMs: 200, fadeOutMs: 300 };
+    const project: TimelineProject = { version: 2, tracks: [{ id: "video", kind: "video", label: "视频", order: 0 }, { id: "audio", kind: "audio", label: "音频", order: 1 }], clips: [video, audio], durationMs: 2000 };
+    const plan = buildTimelineRenderPlan(project, [
+        { nodeId: "shared-node", clipId: video.id, fileName: "video.mp4", durationMs: 2000, url: "video.mp4" },
+        { nodeId: "shared-node", clipId: audio.id, fileName: "audio.wav", durationMs: 2000, url: "audio.wav" },
+    ]);
+    const audioStep = plan.steps.find((step) => step.kind === "audio");
+    expect(audioStep?.args.join(" ")).toContain("audio.wav");
+    expect(audioStep?.args.join(" ")).toContain("atrim=start=0.25:duration=1");
+    expect(audioStep?.args.join(" ")).toContain("volume=0.6");
+    expect(audioStep?.args.join(" ")).toContain("adelay=500|500");
+    expect(plan.steps.some((step) => step.kind === "mux")).toBe(true);
+});
+
+test("隐藏音频和隐藏字幕不会进入原生渲染计划", () => {
+    const video = videoClip("video-clip", "video-node", 0, 2000);
+    const audio: TimelineClip = { id: "audio-clip", kind: "audio", nodeId: "audio-node", trackId: "audio", startMs: 0, durationMs: 1000 };
+    const subtitle: TimelineClip = { id: "subtitle-clip", kind: "subtitle", nodeId: "video-node", trackId: "subtitle", startMs: 0, durationMs: 1000, text: "不应烧录" };
+    const project: TimelineProject = { version: 2, tracks: [{ id: "video", kind: "video", label: "视频", order: 0 }, { id: "audio", kind: "audio", label: "音频", order: 1, visible: false }, { id: "subtitle", kind: "subtitle", label: "字幕", order: 2, visible: false }], clips: [video, audio, subtitle], durationMs: 2000 };
+    const plan = buildTimelineRenderPlan(project, [source("video-node")]);
+    expect(plan.steps.some((step) => step.kind === "audio")).toBe(false);
+    expect(plan.steps.some((step) => step.kind === "subtitle" || step.kind === "burn")).toBe(false);
+});
+
+test("可见字幕计划进入透明 PNG overlay 烧录步骤", () => {
+    const video = videoClip("video-clip", "video-node", 0, 2000);
+    const subtitle: TimelineClip = { id: "s1", kind: "subtitle", nodeId: "video-node", trackId: "sub", startMs: 100, durationMs: 900, text: "HELLO MCP" };
+    const project: TimelineProject = { version: 2, tracks: [{ id: "video", kind: "video", label: "Video", order: 0 }, { id: "sub", kind: "subtitle", label: "Subtitles", order: 1 }], clips: [video, subtitle], durationMs: 2000 };
+    const plan = buildTimelineRenderPlan(project, [source("video-node")], { width: 128, height: 72 });
+    expect(plan.steps.some((step) => step.kind === "overlay")).toBe(true);
+    const burn = plan.steps.find((step) => step.kind === "burn")!;
+    expect(burn.args.join(" ")).toContain("timeline-video.mp4");
+    expect(burn.args.join(" ")).not.toContain("subtitles=");
+});
+
 describe("buildTimelineRenderPlan 片段与黑场对齐", () => {
+    test("上游 13 秒请求返回较长文件时，按分镜时间线长度裁切", () => {
+        const clip = { ...videoClip("h3-13s", "node-h3-13s", 0, 13_000), sourceDurationMs: 13_667 };
+        const project = timeline([clip]);
+        const plan = buildTimelineRenderPlan(project, [source("node-h3-13s")], { width: 1280, height: 720, fps: 24, outputName: "out.mp4" });
+        const trim = plan.steps.find((step) => step.kind === "trim");
+        expect(trim?.args[trim.args.indexOf("-t") + 1]).toBe("13");
+        expect(concatTotalSeconds(plan)).toBe(13);
+    });
+
     test("全部片段有源素材且首尾相接：无黑场、concat 顺序=片段顺序、总长等于时间线", () => {
         const project = timeline([videoClip("a", "node-a", 0, 15_000), videoClip("b", "node-b", 15_000, 4_000), videoClip("c", "node-c", 19_000, 15_000)]);
         const plan = buildTimelineRenderPlan(project, [source("node-a"), source("node-b"), source("node-c")], { width: 1280, height: 720, fps: 30, outputName: "out.mp4" });
@@ -151,12 +197,5 @@ describe("trim 步骤输出 seek（-ss 在 -i 之后）", () => {
         expect(ssIndex).toBeGreaterThan(-1);
         // -ss 必须在 -i 之后（输出 seek，帧精确）；在 -i 之前是输入 seek，MP4/H.264 只对齐关键帧。
         expect(ssIndex).toBeGreaterThan(inputIndex);
-    });
-});
-
-describe("formatSrtTimestamp", () => {
-    test("SRT 时间码毫秒对齐三位", () => {
-        expect(formatSrtTimestamp(3_600_000 + 60_000 + 1_234)).toBe("01:01:01,234");
-        expect(formatSrtTimestamp(0)).toBe("00:00:00,000");
     });
 });

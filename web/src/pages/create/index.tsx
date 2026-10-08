@@ -12,7 +12,8 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { continueCreationConversationOnCanvas } from "@/services/creation-canvas-conversation";
 import { useExternalAssetSources } from "@/hooks/use-external-asset-sources";
 import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, videoDurationAllowed, videoDurationOptions } from "@/lib/model-capabilities";
-import { inferVideoOperation, resolveCompatibleModel, mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
+import { inferVideoOperation, modelCompatibilityError, resolveCompatibleModel, mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
+import { resolveVideoResolutionCapabilityValue } from "@/lib/video-generation-options";
 import type { BackendGenerationResult } from "@/services/api/generation-task";
 import type { Skill } from "@/services/api/skills";
 import type { GenerationTask } from "@/services/api/task-center";
@@ -27,7 +28,7 @@ import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { createPluginHostContext } from "@/services/plugin-host";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import { buildCreationMentionReferences, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+import { buildCreationMentionReferences, expandCreationPrompt, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
 import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, removeCreationAttachment, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
 import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
 import { attachCreationTaskContexts, completedCreationGenerationTask, conversationTimestamp, creationShotRail, creationVideoShotOrdinal, isImageAttachment, isVideoAttachment, materializeCreationTaskResults, newConversation, newMessage, reconcileCreationTaskMessages } from "./creation-conversations";
@@ -127,6 +128,7 @@ export default function CreatePage() {
         [activeId, conversations],
     );
     const preferredModel = mode === "text" ? config.textModel : mode === "image" ? config.imageModel : config.videoModel;
+    const preferredVideoAudioSupported = mode === "video" && modelCapabilityConfigFor(config, preferredModel).video?.generateAudio.supported === true;
     const hasPrompt = Boolean(prompt.trim());
     const modelRequirements = useMemo<ModelRequirements>(() => ({
         capability: mode,
@@ -142,13 +144,16 @@ export default function CreatePage() {
 		options: mode === "image"
 			? { size: ratio, quality, count: Number(count), transparentBackground: config.transparentBackground === "true" }
 			: mode === "video"
-				? { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality, videoGenerateAudio: config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" }
+				? { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality, videoGenerateAudio: preferredVideoAudioSupported && config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" }
 				: {},
-	}), [attachments, config.transparentBackground, config.videoGenerateAudio, config.videoWatermark, count, hasPrompt, mode, quality, ratio, seconds, videoQuality]);
+	}), [attachments, config.transparentBackground, config.videoGenerateAudio, config.videoWatermark, count, hasPrompt, mode, preferredVideoAudioSupported, quality, ratio, seconds, videoQuality]);
     const selectedModel = resolveCompatibleModel(config, preferredModel, modelRequirements) || preferredModel;
     const imageProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).image!, [config, selectedModel]);
     const videoProfile = useMemo(() => modelCapabilityConfigFor(config, selectedModel).video!, [config, selectedModel]);
-    const maxReferences = mode === "video" ? videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0 : mode === "image" ? imageProfile.references.maxImages : 6;
+    const modelReferenceLimit = mode === "video" ? videoProfile.references.maxImages + videoProfile.references.maxVideos + videoProfile.references.maxAudios : mode === "image" ? imageProfile.references.maxImages : 6;
+    // The asset picker is also the upload entrance. Keep it usable for text-only
+    // models so a reference can be prepared before choosing a compatible model.
+    const maxReferences = modelReferenceLimit > 0 ? modelReferenceLimit : Math.max(6, attachments.length);
     const referenceImageSize = useMemo(() => {
         const imageAttachments = attachments.filter(isImageAttachment);
         if (imageAttachments.length !== 1) return undefined;
@@ -221,16 +226,7 @@ export default function CreatePage() {
         setSeconds(normalized.seconds);
         setRatio(normalized.ratio);
         setVideoQuality(normalized.resolution.replace(/p$/i, ""));
-        const maxReferences = videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0;
-        if (attachments.length > maxReferences) setAttachments((current) => current.slice(0, maxReferences));
     }, [composerPreferencesHydrated, composerPreferencesInitialized, mode, selectedModel, videoProfile]);
-
-    useEffect(() => {
-        const reconciled = reconcileCreationAttachmentLimit(attachments, mentionReferences, maxReferences);
-        if (reconciled.attachments === attachments) return;
-        setAttachments(reconciled.attachments);
-        if (reconciled.removedReferences.length) setPrompt((current) => removeCreationReferenceTokens(current, reconciled.removedReferences));
-    }, [attachments, maxReferences, mentionReferences]);
 
     useEffect(() => {
         let cancelled = false;
@@ -451,8 +447,16 @@ export default function CreatePage() {
             return external ? [creationAttachmentFromExternalAsset(external)] : [];
         });
         if (!next.length) return;
-        setAttachments((current) => [...current.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next].slice(0, maxReferences));
+        const merged = [...attachments.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next];
+        if (merged.length > maxReferences) {
+            toast.warning(`当前最多可添加 ${maxReferences} 个参考内容，请先移除部分素材`);
+            return;
+        }
+        setAttachments(merged);
         setLibraryOpen(false);
+        if (modelReferenceLimit === 0 && mode !== "text") {
+            toast.warning(`参考内容已保留；当前${mode === "video" ? "视频" : "图片"}模型不支持参考图，请切换到支持参考图的模型后生成`);
+        }
     };
 
     const removeAttachment = (id: string) => {
@@ -552,8 +556,14 @@ export default function CreatePage() {
             releaseSubmitGate();
             return;
         }
-        if (attachments.length > maxReferences) {
-            toast.warning("参考内容正在按当前模型能力调整，请稍后重试");
+        if (mode !== "text" && modelReferenceLimit === 0 && attachments.length) {
+            toast.warning(`当前${mode === "video" ? "视频" : "图片"}模型不支持参考内容。素材已保留，请切换到支持参考图的模型后生成`);
+            releaseRetryLock();
+            releaseSubmitGate();
+            return;
+        }
+        if (attachments.length > modelReferenceLimit) {
+            toast.warning(`当前模型最多支持 ${modelReferenceLimit} 个参考内容，素材已保留，请移除多余素材或切换模型`);
             releaseRetryLock();
             releaseSubmitGate();
             return;
@@ -569,6 +579,33 @@ export default function CreatePage() {
             audioCount: referenceAudios.length,
             characterCount: 0,
         });
+        if (mode === "video") {
+            // Validate what will actually be sent, before normalizeVideoValue can
+            // silently replace an unsupported 16:9/9:16 choice with a default.
+            const incompatible = modelCompatibilityError(config, selectedModel, {
+                capability: "video",
+                input: {
+                    textCount: 1,
+                    imageCount: referenceImages.length,
+                    videoCount: referenceVideos.length,
+                    audioCount: referenceAudios.length,
+                    characterCount: 0,
+                },
+                videoOperation,
+                videoSeconds: seconds,
+                videoRatio: ratio,
+                videoResolution: videoQuality,
+            });
+            const ratioError = videoProfile.ratios.length && !videoProfile.ratios.includes(ratio) ? `当前视频模型不支持 ${ratio} 画幅，请选择该模型支持的比例` : "";
+            const resolutionError = videoProfile.resolutions.length && !resolveVideoResolutionCapabilityValue(videoQuality, videoProfile.resolutions) ? "当前视频模型不支持所选清晰度" : "";
+            const error = ratioError || resolutionError || incompatible;
+            if (error) {
+                toast.error(error);
+                releaseRetryLock();
+                releaseSubmitGate();
+                return;
+            }
+        }
         const skillReferences = references.flatMap((reference) => (reference.skill ? [reference.skill] : []));
         let runtime: CreationRuntime;
         try {
@@ -790,7 +827,6 @@ export default function CreatePage() {
             setConversations(next);
             await saveCreationConversations(next);
             if (scope !== getActiveUserScope()) return;
-            if (result.syncError) toast.warning("会话已保存在本机，云端同步尚未完成。");
             const params = new URLSearchParams({ conversation: result.sessionId });
             if (assetIds.length) {
                 params.set("mode", "handoff");
@@ -1036,7 +1072,6 @@ export default function CreatePage() {
         </div>
         <CreationHistoryDrawer open={historyOpen} conversations={historyConversations} activeId={activeConversation.id} onNew={startNewConversation} onClose={() => setHistoryOpen(false)} onSelect={selectConversation} onDelete={confirmDeleteConversation} onRename={renameConversationTitle} />
         {libraryOpen ? <Suspense fallback={null}><AssetLibraryPickerModal
-            remoteLibrary
             open={libraryOpen}
             items={libraryItems}
             categoryLabels={{ ...creationAssetCategoryLabels, ...externalAssetSources.categoryLabels }}

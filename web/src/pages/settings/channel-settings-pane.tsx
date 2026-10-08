@@ -16,6 +16,7 @@ import { ChannelModelManager } from "@/pages/admin/components/channel-model-mana
 import {
     createModelChannel,
     defaultBaseUrlForApiFormat,
+    encodeChannelModel,
     filterModelsByCapability,
     modelOptionsFromChannels,
     useConfigStore,
@@ -29,11 +30,12 @@ type UserChannelConnection = "openai" | "gemini";
 // 导入时只有明确声明了能力的模型才写入能力配置，其余交给模型名启发式判断。
 type ChannelBundleModelWithCapability = ChannelBundleModel & { capability: ModelCapability };
 type ChannelSettingsPaneProps = {
-    onOpenModels: () => void;
+  onOpenModels: () => void;
+  onOpenQuick?: () => void;
     onOpenRunningHub?: () => void;
 };
 
-export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelSettingsPaneProps) {
+export function ChannelSettingsPane({ onOpenModels, onOpenQuick, onOpenRunningHub }: ChannelSettingsPaneProps) {
     const { message } = App.useApp();
     const config = useConfigStore((state) => state.config);
     const replaceConfig = useConfigStore((state) => state.replaceConfig);
@@ -94,7 +96,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
         const apiFormat = connection;
         const defaultBaseUrl = defaultBaseUrlForApiFormat(apiFormat);
         const baseUrl = isKnownDefaultBaseUrl(channel.baseUrl) ? defaultBaseUrl : channel.baseUrl;
-        // 渠道只负责连接类型；具体模型能力和请求协议由下方共享能力卡片维护。
+        // 目录连接类型同时作为手动模型的标准文本接口默认值。
         updateChannel(channel.id, { apiFormat, interfaceType: undefined, baseUrl });
     };
 
@@ -327,10 +329,10 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
         <Form layout="vertical" requiredMark={false}>
             <div className="settings-pane-header">
                 <div className="min-w-0">
-                    <h2>模型接入</h2>
-                    <p>把你自己的模型 API 接进来：填 Base URL 和 API Key、拉取或手选要用的模型，启用后就能在创作端直接选用。模型能力在「模型管理」里按模型配置。<Button type="link" size="small" className="h-auto p-0 text-xs font-semibold" onClick={onOpenModels}>打开模型选择</Button></p>
+                    <h2>已接入</h2>
+                    <p>这里可以查看、编辑已经添加的模型。通常只需在「添加模型」中填写中转站地址、Key 和模型 ID；「高级接入」可批量拉取模型，软件会根据中转站目录自动识别调用方式。目录未提供对应接口的模型会保持待配置。<Button type="link" size="small" className="h-auto p-0 text-xs font-semibold" onClick={onOpenModels}>设置创作默认</Button></p>
                 </div>
-                <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
                     <input
                         ref={importInputRef}
                         type="file"
@@ -343,10 +345,13 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                             if (file) void importChannels(file);
                         }}
                     />
-                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" icon={<Upload className="size-4" />} onClick={() => importInputRef.current?.click()}>导入</Button>
-                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" icon={<Download className="size-4" />} loading={exporting} onClick={() => void exportChannels()}>导出</Button>
-                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" icon={<RefreshCw className="size-4" />} loading={loadingChannelIds.includes("all")} disabled={loadingChannelIds.some((id) => id !== "all")} onClick={() => void refreshAllModels()}>拉取全部</Button>
-                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" type="primary" icon={<Plus className="size-4" />} onClick={() => setSystemEditor({ open: true, channel: null })}>新增接入</Button>
+                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" type="primary" icon={<Plus className="size-4" />} onClick={onOpenQuick}>添加模型</Button>
+                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" onClick={() => setSystemEditor({ open: true, channel: null })}>高级接入</Button>
+                    <div className="flex w-full flex-wrap gap-1 border-t border-border/50 pt-2 sm:w-auto sm:border-0 sm:pt-0" aria-label="更多模型管理操作">
+                        <Button type="text" className="h-9 flex-1 text-foreground/55 sm:h-8 sm:flex-none" icon={<Upload className="size-4" />} onClick={() => importInputRef.current?.click()}>导入</Button>
+                        <Button type="text" className="h-9 flex-1 text-foreground/55 sm:h-8 sm:flex-none" icon={<Download className="size-4" />} loading={exporting} onClick={() => void exportChannels()}>导出</Button>
+                        <Button type="text" className="h-9 flex-1 text-foreground/55 sm:h-8 sm:flex-none" icon={<RefreshCw className="size-4" />} loading={loadingChannelIds.includes("all")} disabled={loadingChannelIds.some((id) => id !== "all")} onClick={() => void refreshAllModels()}>拉取全部</Button>
+                    </div>
                 </div>
             </div>
             {onOpenRunningHub ? <section className="settings-section mb-3">
@@ -422,8 +427,11 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                                     <div className="min-w-0 flex-1 basis-52">
                                         <h3 id={`channel-${channel.id}-title`} className="truncate text-sm font-semibold">{channel.name || "未命名渠道"}</h3>
                                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-foreground/55">
-                                            {channelProtocolLabel(channel)} · 已保存 {channel.models.length} 个模型
+                                            {channelProtocolLabel(channel)} · {channel.models.length} 个可选
                                             <ChannelStatus channel={channel} />
+                                        </div>
+                                        <div className="mt-1.5 flex flex-wrap gap-1" aria-label="该接入支持的用途">
+                                            {capabilityLabels(channel).map((label) => <span key={label} className="model-setup-capability">{label}</span>)}
                                         </div>
                                     </div>
                                     <div className="flex w-full justify-end gap-2 sm:w-auto sm:shrink-0">
@@ -466,7 +474,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                                             <section className="model-editor-section">
                                                 <div>
                                                     <h2>模型与能力</h2>
-                                                    <p className="mt-1 text-xs text-foreground/50">维护渠道模型，并在单个模型中配置调用协议与能力。</p>
+                                                    <p className="mt-1 text-xs text-foreground/50">中转站上的模型不会自动出现在创作选项；请在这里添加模型 ID，或点击「拉取模型」。已保存的模型仅表示本地可选，能否生成以实际调用为准。</p>
                                                 </div>
                                                 <Form.Item label="模型列表" htmlFor={`channel-${channel.id}-models`} className="mb-0"><Select id={`channel-${channel.id}-models`} mode="tags" showSearch allowClear maxTagCount="responsive" tokenSeparators={[",", "\n"]} placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models: uniqueModels(models) })} /></Form.Item>
                                             </section>
@@ -477,7 +485,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                         );
                     })}
                 </div>
-            ) : <WorkspaceState icon="settings" compact title="还没有接入任何模型" description="填入你的 Base URL 和 API Key，拉取模型后就能在创作时直接选用。" action={<Button icon={<Plus className="size-4" />} onClick={() => setSystemEditor({ open: true, channel: null })}>新增接入</Button>} />}
+            ) : <WorkspaceState icon="settings" compact title="还没有接入任何模型" description="填写服务商给你的 API 地址、Key 和模型名，就能完成第一个接入。" action={<Button type="primary" icon={<Plus className="size-4" />} onClick={onOpenQuick}>添加模型</Button>} />}
         </Form>
         {managingSystemChannel ? (
             <ChannelModelManager
@@ -526,6 +534,8 @@ export function channelValidationError(channel: ModelChannel) {
 }
 
 export function isChannelReady(channel: ModelChannel) {
+    if (channel.enabled === false) return false;
+    if (channel.scope === "system") return channel.hasApiKey !== false && channel.models.length > 0;
     return !channelValidationError(channel);
 }
 
@@ -542,11 +552,16 @@ export function focusInvalidChannelField(channel: ModelChannel) {
 function ChannelStatus({ channel }: { channel: ModelChannel }) {
     const error = channelValidationError(channel);
     return (
-        <span className={`settings-channel-status ${error ? "is-warning" : "is-ready"}`}>
+        <span className={`settings-channel-status ${error ? "is-warning" : "is-unverified"}`}>
             <i aria-hidden="true" />
-            {error || "可用"}
+            {error || "信息已填齐，未验证生成"}
         </span>
     );
+}
+
+function capabilityLabels(channel: ModelChannel) {
+    const labels: Array<[ModelCapability, string]> = [["image", "图片"], ["video", "视频"], ["text", "文本"], ["audio", "音频"]];
+    return labels.filter(([capability]) => filterModelsByCapability(channel.models.map((model) => encodeChannelModel(channel.id, model)), capability, [channel]).length > 0).map(([, label]) => label);
 }
 
 function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {

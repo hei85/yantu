@@ -3,9 +3,9 @@ import { Switch } from "@/components/ui/base/switch";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceRatioOptions } from "@/lib/seedance-video";
-import { isVolcengineArkVideoProtocol } from "@/lib/model-protocols";
+import { isHeihanAxonH3Video, isVolcengineArkVideoProtocol } from "@/lib/model-protocols";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { formatVideoResolutionLabel, isVideoResolutionMatch, normalizeVideoDuration, videoDimensionsForRatioAndResolution, videoResolutionComparisonKey, VIDEO_DURATION_MIN } from "@/lib/video-generation-options";
+import { formatVideoResolutionLabel, inferredVideoResolutionNeedsVerification, isVideoResolutionMatch, normalizeVideoDuration, videoDimensionsForRatioAndResolution, videoOutputMismatchHint, videoResolutionComparisonKey, VIDEO_DURATION_MIN, VIDEO_RESOLUTION_DEFAULT_HINT, VIDEO_RESOLUTION_DEFAULT_LABEL, VIDEO_RESOLUTION_INFERRED_HINT } from "@/lib/video-generation-options";
 import { modelCapabilityConfigFor, resolveVideoRatioValue, resolveVideoResolutionValue, videoDurationOptions, type VideoCapabilityConfig } from "@/lib/model-capabilities";
 import { modelOptionName, resolveModelChannel, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 
@@ -27,7 +27,8 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[292px] space-y-3" }: VideoSettingsPanelProps) {
-    const profile = modelCapabilityConfigFor(config, config.model).video!;
+    const capability = modelCapabilityConfigFor(config, config.model);
+    const profile = capability.video!;
 	const variants = modelVariants(config);
     if (resolveModelRequestConfig(config, config.model).interfaceType === "volcengine-jimeng-video") {
 		return <JiMengVideoSettingsPanel config={config} profile={profile} variants={variants} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
@@ -44,6 +45,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const configuredResolutions = profile.resolutions.map((value) => ({ value, label: formatVideoResolutionLabel(value) }));
     const generateAudio = boolConfig(config.videoGenerateAudio, profile.generateAudio.default);
     const watermark = boolConfig(config.videoWatermark, profile.watermark.default);
+    const outputMismatch = videoOutputMismatchHint(resolution, capability.observed);
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -57,7 +59,10 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             </OptionPill>
                         ))}
                     </div>
-                </SettingGroup> : null}
+                </SettingGroup> : <SettingGroup title="分辨率" color={theme.node.muted}>
+                    <div className="px-2 text-[var(--fs-label)]">{VIDEO_RESOLUTION_DEFAULT_LABEL}</div>
+                    <p className="px-2 text-xs leading-5" style={{ color: theme.node.muted }}>{VIDEO_RESOLUTION_DEFAULT_HINT}</p>
+                </SettingGroup>}
                 {sizeSupported ? <SettingGroup title="尺寸" color={theme.node.muted}>
                     {dimensions ? <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5">
                         <DimensionValue prefix="W" value={dimensions.width} theme={theme} />
@@ -84,6 +89,9 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
 					<VideoDurationControl profile={profile} value={Number(seconds)} theme={theme} disabled={(value) => !hasVariantForVideoSelection(variants, resolution, value)} onChange={(value) => onConfigChange("videoSeconds", String(value))} />
                 </SettingGroup>
                 {profile.generateAudio.supported || profile.watermark.supported ? <SettingGroup title="输出" color={theme.node.muted}><div className="grid grid-cols-2 gap-3 rounded-md px-2" style={{ background: theme.toolbar.itemHover }}>{profile.generateAudio.supported ? <SwitchRow label="生成声音" checked={generateAudio} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} /> : null}{profile.watermark.supported ? <SwitchRow label="添加水印" checked={watermark} theme={theme} onChange={(checked) => onConfigChange("videoWatermark", String(checked))} /> : null}</div></SettingGroup> : null}
+                {isHeihanAxonH3Video(resolveModelChannel(config, config.model).baseUrl, modelOptionName(config.model)) ? <p className="px-2 text-xs leading-5" style={{ color: theme.node.muted }}>此中转站的 H3 工作流没有独立的“生成声音”开关；成片是否带原声由上游工作流决定。</p> : null}
+                {outputMismatch ? <p className="px-2 text-xs leading-5" style={{ color: theme.node.muted }}>{outputMismatch}</p> : null}
+                {inferredVideoResolutionNeedsVerification(profile, capability.observed) ? <p className="px-2 text-xs leading-5" style={{ color: theme.node.muted }}>{VIDEO_RESOLUTION_INFERRED_HINT}</p> : null}
             </div>
         </ImageSettingsTheme>
     );
@@ -95,6 +103,10 @@ function JiMengVideoSettingsPanel({ config, profile, variants, onConfigChange, t
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-sm font-semibold">视频设置</div> : null}
+                <SettingGroup title="分辨率" color={theme.node.muted}>
+                    <div className="px-2 text-[var(--fs-label)]">{profile.resolutions.length ? formatVideoResolutionLabel(resolveVideoResolutionValue(profile, config.vquality)) : VIDEO_RESOLUTION_DEFAULT_LABEL}</div>
+                    {!profile.resolutions.length ? <p className="px-2 text-xs leading-5" style={{ color: theme.node.muted }}>{VIDEO_RESOLUTION_DEFAULT_HINT}</p> : null}
+                </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-1.5">
                 {profile.ratios.map((value) => <OptionPill key={value} selected={config.size === value} theme={theme} onClick={() => onConfigChange("size", value)}>{value}</OptionPill>)}
@@ -134,7 +146,7 @@ function SeedanceVideoSettingsPanel({ config, profile, variants, onConfigChange,
                             );
                         })}
                     </div>
-                    {isSeedanceFastModel(model) ? <div className="text-[var(--fs-tiny)] leading-4 opacity-55">fast 模型自动使用 720P</div> : null}
+                    {!profile.resolutions.length ? <><div className="px-2 text-[var(--fs-label)]">{VIDEO_RESOLUTION_DEFAULT_LABEL}</div><p className="px-2 text-xs leading-5" style={{ color: theme.node.muted }}>{VIDEO_RESOLUTION_DEFAULT_HINT}</p></> : isSeedanceFastModel(model) ? <div className="text-[var(--fs-tiny)] leading-4 opacity-55">fast 模型自动使用 720P</div> : null}
                 </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-1.5">

@@ -18,10 +18,18 @@ export type GenerationTaskOutput = {
 
 export type GenerationTask = {
     id: string;
+    userId?: string;
     clientOperationId?: string;
     retryOf?: string;
     attemptGroupId?: string;
     projectId?: string;
+    productionRunId?: string;
+    productionStepId?: string;
+    productionAttemptId?: string;
+    capabilityRevision?: string;
+    storyboardRowId?: string;
+    segmentId?: string;
+    segmentOrder?: number;
     type: string;
     status: TaskStatus;
     progress?: number;
@@ -36,6 +44,8 @@ export type GenerationTask = {
     providerCancelAttempts?: number;
     providerCancelRequestedAt?: string;
     providerCancelledAt?: string;
+    pollStage?: string;
+    nextPollAt?: string;
     errorCode?: string;
     officialStatus?: "pending" | "processing" | "completed" | "failed" | "cancelled";
     receiptRecorded?: boolean;
@@ -196,13 +206,22 @@ async function collectGenerationTaskPages<T>(readPage: (request: GenerationTaskP
     return items.slice(0, limit);
 }
 
-export function queryGenerationTask(id: string, options?: { signal?: AbortSignal }) {
-    return http.get<GenerationTask>(`/tasks/${encodeURIComponent(id)}`, { signal: options?.signal });
+export async function queryGenerationTask(id: string, options?: { signal?: AbortSignal }) {
+    const task = await http.get<GenerationTask>(`/tasks/${encodeURIComponent(id)}`, { signal: options?.signal });
+    if (task.status !== "failed" || task.errorCode) return task;
+    try {
+        const diagnostic = await http.get<{ errorCode?: string }>(`/portable/task-errors/${encodeURIComponent(id)}`, { signal: options?.signal });
+        return diagnostic.errorCode ? { ...task, errorCode: diagnostic.errorCode } : task;
+    } catch {
+        // 其他部署方式可能没有便携版的只读错误码接口，保留原任务状态。
+        return task;
+    }
 }
 
 type GenerationTaskSubscriptionDependencies = {
     queryTask(id: string): Promise<GenerationTask>;
     waitTask(id: string, options?: { initialTask?: GenerationTask; onTaskUpdate?: (task: GenerationTask) => void }): Promise<GenerationTask>;
+    retryDelayMs?: number;
 };
 
 export function createGenerationTaskSubscriptionService(dependencies: GenerationTaskSubscriptionDependencies) {
@@ -210,41 +229,73 @@ export function createGenerationTaskSubscriptionService(dependencies: Generation
         listeners: Set<(task: GenerationTask) => void>;
         latest?: GenerationTask;
         observation?: Promise<void>;
+        retryTimer?: ReturnType<typeof setTimeout>;
+        consecutiveFailures: number;
     };
     const entries = new Map<string, Entry>();
+    const terminal = (task?: GenerationTask) => task?.status === "succeeded" || task?.status === "failed" || task?.status === "cancelled";
+    const notifyListener = (listener: (task: GenerationTask) => void, task: GenerationTask) => {
+        try {
+            listener(task);
+        } catch (error) {
+            console.warn("生成任务订阅回调失败", { taskId: task.id, error });
+        }
+    };
     const publish = (entry: Entry, task: GenerationTask) => {
         entry.latest = task;
-        for (const listener of entry.listeners) listener(task);
+        for (const listener of entry.listeners) notifyListener(listener, task);
     };
     const observe = (id: string, entry: Entry) => {
-        if (entry.observation) return;
+        if (entry.observation || !entry.listeners.size || terminal(entry.latest)) return;
+        if (entry.retryTimer) {
+            clearTimeout(entry.retryTimer);
+            entry.retryTimer = undefined;
+        }
         entry.observation = (async () => {
             const initial = await dependencies.queryTask(id);
             publish(entry, initial);
-            if (initial.status === "succeeded" || initial.status === "failed" || initial.status === "cancelled") return;
-            const terminal = await dependencies.waitTask(id, {
+            if (terminal(initial) || !entry.listeners.size) return;
+            const completed = await dependencies.waitTask(id, {
                 initialTask: initial,
                 onTaskUpdate: (task) => publish(entry, task),
             });
-            publish(entry, terminal);
+            publish(entry, completed);
+            entry.consecutiveFailures = 0;
         })().catch((error) => {
-            // 观察失败不能永久占住 entry，否则页面重新订阅时也不会再查询任务。
+            // A temporary connection failure must not require a page refresh.
+            // Re-query the original task; never submit a new paid request here.
+            entry.consecutiveFailures += 1;
+            console.warn("生成任务观察中断，将自动恢复原任务连接", { taskId: id, error });
+            if (!entry.listeners.size || terminal(entry.latest)) return;
+            const delay = Math.min(30000, Math.max(1, dependencies.retryDelayMs ?? 3000) * 2 ** Math.min(entry.consecutiveFailures - 1, 4));
+            entry.retryTimer = setTimeout(() => {
+                entry.retryTimer = undefined;
+                observe(id, entry);
+            }, delay);
+        }).finally(() => {
             entry.observation = undefined;
-            console.warn("生成任务观察中断，后续订阅将重新建立连接", { taskId: id, error });
         });
     };
     return {
         subscribe(ids: readonly string[], listener: (task: GenerationTask) => void) {
             const uniqueIds = [...new Set(ids)];
             for (const id of uniqueIds) {
-                const entry = entries.get(id) ?? { listeners: new Set<(task: GenerationTask) => void>() };
+                const entry: Entry = entries.get(id) ?? { listeners: new Set<(task: GenerationTask) => void>(), consecutiveFailures: 0 };
                 entries.set(id, entry);
                 entry.listeners.add(listener);
-                if (entry.latest) listener(entry.latest);
+                if (entry.latest) notifyListener(listener, entry.latest);
                 observe(id, entry);
             }
             return () => {
-                for (const id of uniqueIds) entries.get(id)?.listeners.delete(listener);
+                for (const id of uniqueIds) {
+                    const entry = entries.get(id);
+                    if (!entry) continue;
+                    entry.listeners.delete(listener);
+                    if (!entry.listeners.size && entry.retryTimer) {
+                        clearTimeout(entry.retryTimer);
+                        entry.retryTimer = undefined;
+                    }
+                }
             };
         },
     };
@@ -337,7 +388,6 @@ function safeTaskLogErrorCode(value: unknown) {
 }
 
 export type WaitForGenerationTaskOptions = {
-	textEventsSource?: "task" | "agent";
     signal?: AbortSignal;
     intervalMs?: number;
     timeoutMs?: number;
@@ -379,7 +429,7 @@ export async function waitForGenerationTask(id: string, options?: WaitForGenerat
                 return task;
             }
             if (task.status === "failed" || task.status === "cancelled") {
-                throw new Error(task.error ? generationErrorMessage(task.error) : `任务${task.status === "cancelled" ? "已取消" : "失败"}`);
+                throw new Error(generationErrorMessage(task));
             }
             await delay(intervalMs, options?.signal);
         }
@@ -400,7 +450,7 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
     let lastEventId = 0;
     // Agent subscriptions replay from cursor 0; an existing draft must not be
     // prepended to the same persisted deltas when reopening a conversation.
-    let fullText = options.textEventsSource === "agent" ? "" : lastTask?.textDraft || "";
+    let fullText = lastTask?.textDraft || "";
     let lastStreamError: unknown;
     if (!lastTask) {
         lastTask = await queryGenerationTask(id, { signal: options.signal });
@@ -413,7 +463,7 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
         try {
             const base = String(apiBaseURL).replace(/\/+$/, "");
             const cursor = lastEventId > 0 ? `?after=${encodeURIComponent(String(lastEventId))}` : "";
-            const path = options.textEventsSource === "agent" ? `/agent/runs/${encodeURIComponent(id)}/events` : `/tasks/${encodeURIComponent(id)}/text-events`;
+            const path = `/tasks/${encodeURIComponent(id)}/text-events`;
             const response = await fetch(`${base}${path}${cursor}`, {
                 headers: { Accept: "text/event-stream" },
                 credentials: "include",
@@ -475,7 +525,7 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
                 options.onTaskUpdate?.(completed);
                 if (completed.status === "succeeded") return completed;
                 if (completed.status === "failed" || completed.status === "cancelled") {
-                    throw new TaskTextStreamFatalError(completed.error ? generationErrorMessage(completed.error) : `任务${completed.status === "cancelled" ? "已取消" : "失败"}`);
+                    throw new TaskTextStreamFatalError(completed.error ? generationErrorMessage(completed) : `任务${completed.status === "cancelled" ? "已取消" : "失败"}`);
                 }
             }
             lastStreamError = new Error("任务文本流连接提前结束");

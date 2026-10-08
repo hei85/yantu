@@ -9,6 +9,8 @@ import { buildGenerationConfig, resetGenerationTaskMetadata } from "@/lib/canvas
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { modelDisplayName, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasBatchRow, type CanvasBatchTableData, type CanvasConnection, type CanvasGenerationBatchMode, type CanvasNodeData } from "@/types/canvas";
+import { createCanvasBatchAgentOperations } from "./canvas-agent-batch-operations";
+import { preflightBatchTableRows, type CanvasAgentBatchRowPreflight } from "./canvas-agent-batch-generation-preflight";
 
 type Options = {
     nodesRef: { current: CanvasNodeData[] };
@@ -16,8 +18,14 @@ type Options = {
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
     setConnections: Dispatch<SetStateAction<CanvasConnection[]>>;
     setSelectedNodeIds: Dispatch<SetStateAction<Set<string>>>;
-    enqueueGenerationBatch: (sourceNodeId: string, mode: CanvasGenerationBatchMode, targets: Array<{ rowId: string; nodeId: string }>, options?: { concurrency?: number }) => string | undefined;
+    enqueueGenerationBatch: (sourceNodeId: string, mode: CanvasGenerationBatchMode, targets: Array<{ rowId: string; nodeId: string }>, options?: { concurrency?: number; clientOperationId?: string }) => string | undefined;
 };
+
+export function assertBatchOperationRowIdsMatch(requestedRowIds: string[], batchRowIds: string[]) {
+    if ([...requestedRowIds].sort().join("\u0000") !== [...batchRowIds].sort().join("\u0000")) {
+        throw new Error("相同 clientOperationId 已绑定不同批量行；拒绝重放收费操作");
+    }
+}
 
 export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setConnections, setSelectedNodeIds, enqueueGenerationBatch }: Options) {
     const { message, modal } = App.useApp();
@@ -25,8 +33,14 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
 
     const patchTable = useCallback((nodeId: string, patch: Partial<CanvasBatchTableData>) => {
-        setNodes((current) => current.map((node) => node.id !== nodeId ? node : { ...node, metadata: { ...node.metadata, batchTable: { operation: "try_on", concurrency: 10, rows: [], ...node.metadata?.batchTable, ...patch } } }));
-    }, [setNodes]);
+        const current = nodesRef.current;
+        const target = current.find((node) => node.id === nodeId);
+        if (!target || target.type !== CanvasNodeType.BatchTable || !target.metadata?.batchTable) return;
+        const table = target.metadata.batchTable;
+        const next = current.map((node) => node.id !== nodeId ? node : { ...node, metadata: { ...node.metadata, batchTable: { ...table, ...patch } } });
+        setNodes(next);
+        return nodesRef.current.find((node) => node.id === nodeId)?.metadata?.batchTable;
+    }, [nodesRef, setNodes]);
 
     const updateRow = useCallback((nodeId: string, rowId: string, patch: Partial<CanvasBatchRow>) => {
         const node = nodesRef.current.find((item) => item.id === nodeId);
@@ -65,9 +79,11 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
         patchTable(nodeId, nextTable);
         if (removed) {
             const handleId = batchReferenceHandleId(removed.id);
-            setConnections((current) => current.filter((connection) => !(connection.toNodeId === nodeId && connection.toHandleId === handleId)));
+            const next = connectionsRef.current.filter((connection) => !(connection.toNodeId === nodeId && connection.toHandleId === handleId));
+            connectionsRef.current = next;
+            setConnections(next);
         }
-    }, [message, nodesRef, patchTable, setConnections]);
+    }, [connectionsRef, message, nodesRef, patchTable, setConnections]);
 
     const syncRowsFromConnections = useCallback((nodeId: string, silent = false) => {
         const node = nodesRef.current.find((item) => item.id === nodeId);
@@ -114,32 +130,28 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
         if (nextTable !== table) patchTable(nodeId, { rows: nextTable.rows });
     }, [nodesRef, patchTable]);
 
-    const generateRows = useCallback(async (nodeId: string, requestedRowIds?: string[]) => {
+    const runBatchRows = useCallback(async (nodeId: string, requestedRowIds: string[] | undefined, clientOperationId?: string, beforeCommit?: () => Promise<void>) => {
         const sourceNode = nodesRef.current.find((item) => item.id === nodeId);
         const table = sourceNode?.metadata?.batchTable;
-        if (!sourceNode || !table) return;
+        if (!sourceNode || !table) return undefined;
         const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
         if (!isAiConfigReady(effectiveConfig, imageModel)) {
             navigateToSettings({ continueCreation: true });
-            return;
+            return undefined;
         }
         const generationConfig = buildGenerationConfig(effectiveConfig, undefined, "image");
         const imageResolution = /^(1k|2k|4k)$/i.test(generationConfig.quality) ? generationConfig.quality.toUpperCase() : "由尺寸决定";
         const activeNodeIds = new Set((sourceNode.metadata?.generationBatches || []).filter((batch) => batch.mode === "batch_image").flatMap((batch) => batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status)).map((item) => item.nodeId)));
-        const requested = requestedRowIds?.length ? new Set(requestedRowIds) : null;
-        const rows = table.rows.filter((row) => {
-            const inputNodeIds = row.inputNodeIds.filter(Boolean);
-            if (!row.enabled || (requested && !requested.has(row.id)) || !batchPromptForRow(table, row).trim()) return false;
-            if (table.operation === "try_on" && inputNodeIds.length < 2) return false;
-            if (!inputNodeIds.length || inputNodeIds.some((id) => !nodesRef.current.some((node) => node.id === id && node.type === CanvasNodeType.Image && Boolean(node.metadata?.content || node.metadata?.storageKey)))) return false;
-            const output = row.outputNodeId ? nodesRef.current.find((node) => node.id === row.outputNodeId) : undefined;
-            if (output && activeNodeIds.has(output.id)) return false;
-            // 操作列的单行生成允许对已完成结果重新生成；顶部批量按钮仍只提交未完成项。
-            if (requested) return true;
-            return !output?.metadata?.content;
-        });
-        if (!rows.length) return message.info("没有可提交的未完成任务，请检查参考图和提示词");
-        const confirmed = await new Promise<boolean>((resolve) => modal.confirm({
+        const requested = requestedRowIds?.length ? requestedRowIds : table.rows.filter((row) => row.enabled).map((row) => row.id);
+        const checked = preflightBatchTableRows({ table, nodes: nodesRef.current, rowIds: requested, activeNodeIds: [...activeNodeIds], modelReady: true });
+        const previousBatch = clientOperationId ? nodesRef.current.flatMap((node) => node.metadata?.generationBatches || []).find((batch) => batch.clientOperationId === clientOperationId) : undefined;
+        if (previousBatch && requestedRowIds?.length) assertBatchOperationRowIdsMatch(requestedRowIds, previousBatch.items.map((item) => item.rowId));
+        const rows = previousBatch
+            ? previousBatch.items.map((item) => table.rows.find((row) => row.id === item.rowId)).filter((row): row is NonNullable<typeof row> => Boolean(row))
+            : checked.filter((row) => row.status === "ready" || ((Boolean(requestedRowIds?.length) || Boolean(clientOperationId)) && row.status === "completed")).map((entry) => table.rows.find((row) => row.id === entry.rowId)!);
+        if (!rows.length) { message.info("没有可提交的未完成任务，请检查参考图和提示词"); return { rows: checked }; }
+        if (previousBatch && (previousBatch.sourceNodeId !== nodeId || previousBatch.mode !== "batch_image")) throw new Error("相同 clientOperationId 已绑定不同批量行；拒绝重放收费操作");
+        const confirmed = previousBatch ? true : await new Promise<boolean>((resolve) => modal.confirm({
             title: `确认提交 ${rows.length} 个批量图片任务`,
             content: [
                 `模型：${modelDisplayName(effectiveConfig, generationConfig.model) || generationConfig.model}`,
@@ -156,7 +168,19 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
             onOk: () => resolve(true),
             onCancel: () => resolve(false),
         }));
-        if (!confirmed) return;
+        if (!confirmed) return { cancelled: true, checked };
+        const inputStamp = JSON.stringify(rows.map((row) => ({ rowId: row.id, prompt: batchPromptForRow(table, row).trim(), inputNodeIds: row.inputNodeIds, textNodeIds: row.textNodeIds, assets: [...row.inputNodeIds, ...(row.textNodeIds || [])].map((id) => { const asset = nodesRef.current.find((item) => item.id === id); return [id, asset?.type, asset?.metadata?.assetId, asset?.metadata?.storageKey, asset?.metadata?.content, asset?.metadata?.prompt]; }) })));
+        await beforeCommit?.();
+        const latest = nodesRef.current.find((item) => item.id === nodeId);
+        const latestTable = latest?.metadata?.batchTable;
+        const latestRows = latestTable ? rows.map((row) => latestTable.rows.find((item) => item.id === row.id)).filter((row): row is NonNullable<typeof row> => Boolean(row)) : [];
+        const latestStamp = JSON.stringify(latestTable ? latestRows.map((row) => ({ rowId: row.id, prompt: batchPromptForRow(latestTable, row).trim(), inputNodeIds: row.inputNodeIds, textNodeIds: row.textNodeIds, assets: [...row.inputNodeIds, ...(row.textNodeIds || [])].map((id) => { const asset = nodesRef.current.find((item) => item.id === id); return [id, asset?.type, asset?.metadata?.assetId, asset?.metadata?.storageKey, asset?.metadata?.content, asset?.metadata?.prompt]; }) })) : []);
+        if (inputStamp !== latestStamp || latestRows.length !== rows.length) throw new Error("确认后批量行或参考图已变化；请重新预检并确认");
+        if (previousBatch) {
+            const recoveredId = enqueueGenerationBatch(nodeId, "batch_image", previousBatch.items.map((item) => ({ rowId: item.rowId, nodeId: item.nodeId })), { concurrency: table.concurrency, clientOperationId });
+            if (!recoveredId) throw new Error("无法使用相同 clientOperationId 恢复原批次");
+            return { batchId: recoveredId, rows: checked.map((entry) => ({ ...entry, ...(previousBatch.items.find((item) => item.rowId === entry.rowId) ? { nodeId: previousBatch.items.find((item) => item.rowId === entry.rowId)!.nodeId, taskId: previousBatch.items.find((item) => item.rowId === entry.rowId)!.taskId, status: previousBatch.items.find((item) => item.rowId === entry.rowId)!.status } : {}) })) };
+        }
 
         const imageSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
         const nextNodes = [...nodesRef.current];
@@ -204,8 +228,44 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
         setNodes(nextNodes);
         setConnections(nextConnections);
         setSelectedNodeIds(new Set(targets.map((target) => target.nodeId)));
-        if (enqueueGenerationBatch(nodeId, "batch_image", targets, { concurrency: table.concurrency })) message.success(`${targets.length} 个任务已加入并发队列`);
+        const batchId = enqueueGenerationBatch(nodeId, "batch_image", targets, { concurrency: table.concurrency, ...(clientOperationId ? { clientOperationId } : {}) });
+        if (batchId) message.success(`${targets.length} 个任务已加入并发队列`);
+        return { batchId, rows: checked.map((entry) => { const target = targets.find((item) => item.rowId === entry.rowId); return { ...entry, ...(target ? { nodeId: target.nodeId, status: "waiting" as const } : {}) }; }) };
     }, [connectionsRef, effectiveConfig, enqueueGenerationBatch, isAiConfigReady, message, modal, nodesRef, setConnections, setNodes, setSelectedNodeIds]);
 
-    return { addReferenceColumn, addRow, fillRowsFromConnections, generateRows, moveReferenceCell, patchTable, removeReferenceColumn, removeRow, reorderReferenceColumns, syncRowsFromConnections, updateRow };
+    const generateRows = useCallback(async (nodeId: string, requestedRowIds?: string[]) => runBatchRows(nodeId, requestedRowIds), [runBatchRows]);
+    const agentPreflightBatchRows = useCallback((input: { nodeId: string; rowIds: string[] }) => {
+        const source = nodesRef.current.find((node) => node.id === input.nodeId);
+        const table = source?.metadata?.batchTable;
+        if (!table) throw new Error("批量创作表不存在");
+        const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
+        const active = new Set((source.metadata?.generationBatches || []).filter((batch) => batch.mode === "batch_image").flatMap((batch) => batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status)).map((item) => item.nodeId)));
+        const rows = preflightBatchTableRows({ table, nodes: nodesRef.current, rowIds: input.rowIds, activeNodeIds: [...active], modelReady: isAiConfigReady(effectiveConfig, imageModel) });
+        return { nodeId: input.nodeId, model: imageModel, status: rows.some((row) => row.status === "ready") ? "ready" as const : rows.some((row) => row.status === "running") ? "running" as const : "blocked" as const, submitted: false as const, rows };
+    }, [effectiveConfig, isAiConfigReady, nodesRef]);
+    const agentGenerateBatchRows = useCallback(async (input: { nodeId: string; rowIds: string[]; clientOperationId: string }, beforeCommit: () => Promise<void>) => {
+        const operationId = input.clientOperationId.trim();
+        if (!operationId || operationId.length > 96) throw new Error("clientOperationId 必须是 1 至 96 字符的稳定标识");
+        const preflight = agentPreflightBatchRows(input);
+        const result = await runBatchRows(input.nodeId, input.rowIds, operationId, beforeCommit);
+        if (!result || typeof result !== "object") return { nodeId: input.nodeId, clientOperationId: operationId, status: "failed" as const, submitted: false, rows: preflight.rows };
+        if ("cancelled" in result && result.cancelled) return { nodeId: input.nodeId, clientOperationId: operationId, status: "cancelled" as const, submitted: false, rows: preflight.rows };
+        if (!("batchId" in result) || !result.batchId) return { nodeId: input.nodeId, clientOperationId: operationId, status: "blocked" as const, submitted: false, rows: preflight.rows };
+        const batch = nodesRef.current.find((node) => node.id === input.nodeId)?.metadata?.generationBatches?.find((item) => item.id === result.batchId);
+        const rows = result.rows as Array<CanvasAgentBatchRowPreflight & { status: string }>;
+        return { nodeId: input.nodeId, clientOperationId: operationId, ...(result.batchId ? { batchId: result.batchId } : {}), status: batch?.status || "queued", submitted: Boolean(result.batchId), rows: rows.map((row) => { const item = batch?.items.find((candidate) => candidate.rowId === row.rowId); return { ...row, ...(item?.taskId ? { taskId: item.taskId } : {}), status: item?.status || row.status }; }) };
+    }, [agentPreflightBatchRows, nodesRef, runBatchRows]);
+
+    const agentOperations = createCanvasBatchAgentOperations({ nodesRef, connectionsRef }, {
+        addReferenceColumn,
+        addRow,
+        moveReferenceCell,
+        removeReferenceColumn,
+        removeRow,
+        reorderReferenceColumns,
+        syncRowsFromConnections,
+        updateRow,
+    });
+
+    return { addReferenceColumn, addRow, agentOperations, agentPreflightBatchRows, agentGenerateBatchRows, fillRowsFromConnections, generateRows, moveReferenceCell, patchTable, removeReferenceColumn, removeRow, reorderReferenceColumns, syncRowsFromConnections, updateRow };
 }

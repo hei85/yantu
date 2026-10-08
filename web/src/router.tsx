@@ -1,22 +1,16 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router";
 
-import { RequireAuth } from "@/components/auth/require-auth";
-import { useUserStore } from "@/stores/use-user-store";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadProjectDetailPage, loadProjectsPage } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
-import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
 
 // 管理后台已并入「设置」：旧的 /admin 入口全部回流到设置页。
-const RedirectAdminToSettings = () => <Navigate to="/settings?section=features" replace />;
+const RedirectAdminToSettings = () => <Navigate to="/settings" replace />;
 const AssetsPage = lazy(loadAssetsPage);
-const LoginPage = lazy(() => import("@/pages/auth/login"));
-const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const CanvasPage = lazy(loadCanvasPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
-const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const CreatePage = lazy(loadCreatePage);
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SkillsPage = lazy(() => import("@/pages/skills"));
@@ -43,15 +37,7 @@ function AuthenticatedWorkspaceLayout() {
     const { pathname } = useLocation();
     const isCanvasProjectRoute = pathname.startsWith("/canvas/");
     const fallback = isCanvasProjectRoute ? <CanvasRefreshShell /> : <FullScreenLoader label="正在打开创作空间" detail="准备当前页面" />;
-    return <RequireAuth><Suspense fallback={fallback}><UserLayout><Outlet /></UserLayout></Suspense></RequireAuth>;
-}
-
-// 本地工作站开启免登录后，会话在路由渲染前就已建立；此时直接回首页，不再展示登录表单。
-function LoginRoute() {
-    const hydrated = useUserStore((state) => state.hydrated);
-    const user = useUserStore((state) => state.user);
-    if (hydrated && user) return <Navigate to="/" replace />;
-    return fullScreenDeferred(<LoginPage />);
+    return <Suspense fallback={fallback}><UserLayout><Outlet /></UserLayout></Suspense>;
 }
 
 /**
@@ -73,87 +59,71 @@ function devRoutes() {
 
 export const router = createBrowserRouter([
     {
-        element: <AuthScene />,
+        path: "/login",
+        element: <Navigate to="/" replace />,
         errorElement: <RouteErrorPage />,
-        children: [
-            { path: "/login", element: <LoginRoute /> },
-            { path: "/register", element: fullScreenDeferred(<RegisterPage />) },
-        ],
     },
-    { path: "/share/canvas/:token", element: fullScreenDeferred(<SharedCanvasPage />), errorElement: <RouteErrorPage /> },
+    { path: "/register", element: <Navigate to="/" replace /> },
     ...(import.meta.env.DEV ? devRoutes() : []),
     {
         element: <AuthenticatedWorkspaceLayout />,
         errorElement: <RouteErrorPage />,
         children: [
-            { path: "/", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> },
-            { path: "/create", element: <RequireAuth>{deferred(<CreatePage />)}</RequireAuth> },
+            { path: "/", element: deferred(<CreatePage />) },
+            { path: "/create", element: deferred(<CreatePage />) },
             {
                 path: "/tasks",
                 element: (
-                    <RequireAuth>
-                        <RequireFeature feature="taskCenterEnabled">{deferred(<TasksPage />)}</RequireFeature>
-                    </RequireAuth>
+                    <RequireFeature feature="taskCenterEnabled">{deferred(<TasksPage />)}</RequireFeature>
                 ),
             },
-            { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
-            { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
-            { path: "/settings", element: <RequireAuth>{deferred(<SettingsPage />)}</RequireAuth> },
+            { path: "/assets", element: deferred(<AssetsPage />) },
+            { path: "/skills", element: deferred(<SkillsPage />) },
+            { path: "/settings", element: deferred(<SettingsPage />) },
             { path: "/connect", element: <Navigate to="/settings?section=quick" replace /> },
 
 
             {
                 path: "/projects",
                 element: (
-                    <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectsPage />)}</RequireFeature>
-                    </RequireAuth>
+                    <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectsPage />)}</RequireFeature>
                 ),
             },
             {
                 path: "/projects/:projectId",
                 element: (
-                    <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
-                    </RequireAuth>
+                    <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
                 ),
             },
             {
                 path: "/projects/:projectId/:view",
                 element: (
-                    <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
-                    </RequireAuth>
+                    <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
                 ),
             },
             {
                 path: "/projects/:projectId/chapters/:chapterId",
                 element: (
-                    <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
-                    </RequireAuth>
+                    <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
                 ),
             },
             {
                 path: "/projects/:projectId/workflow/:unitId/:stage",
                 element: (
-                    <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
-                    </RequireAuth>
+                    <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
                 ),
             },
-            { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
-            { path: "/canvas/:id", element: <RequireAuth><CanvasProjectPage /></RequireAuth> },
+            { path: "/canvas", element: deferred(<CanvasPage />) },
+            { path: "/canvas/:id", element: <CanvasProjectPage /> },
             // 旧管理后台地址全部回流到「设置」对应分区，保留用户书签可用。
-            { path: "/admin", element: <RequireAuth><RedirectAdminToSettings /></RequireAuth> },
-            { path: "/admin/prompt-templates", element: <RequireAuth><Navigate to="/settings?section=prompt-templates" replace /></RequireAuth> },
-            { path: "/admin/storyboard-prompts", element: <RequireAuth><Navigate to="/settings?section=prompt-templates" replace /></RequireAuth> },
-            { path: "/admin/resources", element: <RequireAuth><Navigate to="/settings" replace /></RequireAuth> },
-            { path: "/admin/settings/features", element: <RequireAuth><Navigate to="/settings?section=features" replace /></RequireAuth> },
-            { path: "/admin/settings/drawing-engine", element: <RequireAuth><Navigate to="/settings?section=drawing-engine" replace /></RequireAuth> },
-            { path: "/admin/settings/system-performance", element: <RequireAuth><Navigate to="/settings" replace /></RequireAuth> },
-            { path: "/admin/settings/third-party", element: <RequireAuth><Navigate to="/settings?section=third-party" replace /></RequireAuth> },
-            { path: "/admin/*", element: <RequireAuth><RedirectAdminToSettings /></RequireAuth> },
+            { path: "/admin", element: <RedirectAdminToSettings /> },
+            { path: "/admin/prompt-templates", element: <Navigate to="/settings?section=prompt-templates" replace /> },
+            { path: "/admin/storyboard-prompts", element: <Navigate to="/settings?section=prompt-templates" replace /> },
+            { path: "/admin/resources", element: <Navigate to="/settings" replace /> },
+            { path: "/admin/settings/drawing-engine", element: <Navigate to="/settings?section=drawing-engine" replace /> },
+            { path: "/admin/settings/system-performance", element: <Navigate to="/settings" replace /> },
+            { path: "/admin/settings/third-party", element: <Navigate to="/settings?section=third-party" replace /> },
+            { path: "/admin/*", element: <RedirectAdminToSettings /> },
         ],
     },
     { path: "*", element: fullScreenDeferred(<NotFound />) },

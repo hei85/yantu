@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gorm.io/gorm"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 )
@@ -39,9 +40,25 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		return nil, err
 	}
 
+	clientOperationID := taskClientOperationID(normalizedInput)
+	clientOperationHash := ""
+	if clientOperationID != "" {
+		clientOperationHash = creationHash(normalizedInput)
+		if existing, existingErr := s.repo.TaskForUserByClientOperation(userID, clientOperationID); existingErr == nil {
+			if existing.ClientOperationHash != clientOperationHash {
+				return nil, productionConflict("同一 clientOperationId 对应了不同请求")
+			}
+			return taskForOutput(*existing), nil
+		} else if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+			return nil, existingErr
+		}
+	}
 	var routed *RoutedModel
 	logicalModelID := strings.TrimSpace(req.LogicalModelID)
 	workflowProviderTask := taskInputUsesWorkflowProvider(normalizedInput)
+	if workflowProviderTask {
+		return nil, Forbidden("此发行版的模型生成仅通过 Axon 渠道执行")
+	}
 	frontendEnabled := false
 	if workflowProviderTask {
 		config, _ := normalizedInput["config"].(map[string]any)
@@ -61,6 +78,14 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		if err != nil {
 			return nil, err
 		}
+	}
+	if routed != nil {
+		normalizedInput["capabilityRevision"] = channelModelCapabilityRevision(routed.ChannelModel)
+	}
+	// Persist the same operation used by capability routing, even when a caller
+	// omitted the redundant top-level field. Terminal tasks compact their input.
+	if strings.TrimSpace(req.Operation) == "" {
+		req.Operation = inferredTaskOperation(normalizedInput, taskType)
 	}
 
 	if strings.HasPrefix(taskType, "video_") && !hasExecutableProviderVideoConfig(normalizedInput) {
@@ -93,7 +118,10 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if activeTasks >= int64(policy.Task.ActiveTaskLimit) {
 		return nil, BadAuthRequest(fmt.Sprintf("同时排队或运行的任务最多 %d 个，请等待已有任务完成", policy.Task.ActiveTaskLimit))
 	}
-	task := model.Task{ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, ProjectID: req.ProjectID, Type: taskType, Status: model.TaskStatusQueued, Stage: "等待队列调度", Progress: 5, Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: req.Model}
+	task := model.Task{ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, ProjectID: req.ProjectID, Type: taskType, Status: model.TaskStatusQueued, Stage: "等待队列调度", Progress: 5, Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: req.Model, ClientOperationHash: clientOperationHash, CapabilityRevision: strings.TrimSpace(stringValue(normalizedInput["capabilityRevision"]))}
+	if clientOperationID != "" {
+		task.ClientOperationID = &clientOperationID
+	}
 	if req.admission != nil {
 		task.ID = req.admission.ID
 	}
@@ -133,6 +161,11 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		return nil, BadAuthRequest("所选模型已停用、归档或配置已更新，请重新选择")
 	}
 	if err != nil {
+		if clientOperationID != "" {
+			if existing, existingErr := s.repo.TaskForUserByClientOperation(userID, clientOperationID); existingErr == nil && existing.ClientOperationHash == clientOperationHash {
+				return taskForOutput(*existing), nil
+			}
+		}
 		return nil, err
 	}
 	s.recordActivity(userID, "task", 1)
@@ -143,6 +176,10 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 // resolveTaskModelSelection 根据请求实际携带的模型选择决定路由方式。
 // 显式系统渠道和用户自定义渠道请求不能被全局前台模型开关误判；
 // 它们仍分别进入系统目录校验或自定义渠道的功能、能力与安全校验。
+func taskClientOperationID(input map[string]any) string {
+	metadata, _ := input["metadata"].(map[string]any)
+	return strings.TrimSpace(stringValue(metadata["clientOperationId"]))
+}
 func (s *Service) resolveTaskModelSelection(input map[string]any, logicalModelID string, taskType string, operation string, frontendEnabled bool) (*RoutedModel, map[string]any, error) {
 	customChannelTask := taskInputUsesCustomChannel(input)
 	if frontendEnabled && !taskInputUsesSystemChannel(input) && !customChannelTask {
@@ -241,6 +278,28 @@ func normalizeTaskInput(input map[string]any) (map[string]any, error) {
 	return normalized, nil
 }
 
+func inferredTaskOperation(input map[string]any, taskType string) string {
+	intent := ModelRequestIntentFromTaskInput(input, taskType, "")
+	switch intent.Capability {
+	case "video":
+		if intent.Inputs["video"] > 0 {
+			return "video_to_video"
+		}
+		if intent.Inputs["image"] > 0 {
+			return "image_to_video"
+		}
+		return "text_to_video"
+	case "image":
+		if intent.Inputs["image"] > 0 {
+			return "image_to_image"
+		}
+		return "text_to_image"
+	case "audio":
+		return "text_to_audio"
+	}
+	return ""
+}
+
 // createTextReplayTask 创建前端自管的文本持久化任务：状态为 text_replay，
 // 不排队执行、不计 active 队列、不产生计费，仅作为正文增量（text-deltas）的存储容器。
 func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, normalizedInput map[string]any) (*model.Task, error) {
@@ -321,6 +380,9 @@ func (s *Service) resolveSystemChannelModelSelection(input map[string]any, taskT
 	}
 	if !channel.Enabled || channel.Scope != model.ChannelScopeSystem {
 		return input, InvalidModelSelection("指定的渠道不可用")
+	}
+	if err := requireAxonChannel(channel); err != nil {
+		return input, err
 	}
 
 	channelModel, err := s.repo.ChannelModelByKey(channelID, modelKey)
@@ -422,6 +484,7 @@ func (s *Service) resolveSystemChannelModelSelection(input map[string]any, taskT
 	nextConfig["providerModelKey"] = firstNonEmpty(variant.ProviderModelKey, channelModel.ProviderModelKey, channelModel.ModelKey)
 	nextConfig["interfaceType"] = string(channelModel.Protocol)
 	nextConfig["apiFormat"] = channelAPIFormatForProtocol(channel.APIFormat, channelModel.Protocol)
+	input["capabilityRevision"] = channelModelCapabilityRevision(*channelModel)
 	return input, nil
 }
 

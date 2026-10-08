@@ -26,23 +26,24 @@ import (
 var sseFrameBoundaryPattern = regexp.MustCompile(`\r?\n\r?\n`)
 
 type canvasGenerationInput struct {
-	Mode             string                 `json:"mode"`
-	Prompt           string                 `json:"prompt"`
-	Config           providerConfig         `json:"config"`
-	ReferenceImages  []providerMedia        `json:"referenceImages"`
-	ReferenceVideos  []providerMedia        `json:"referenceVideos"`
-	ReferenceAudios  []providerMedia        `json:"referenceAudios"`
-	TextHistory      []providerTextMessage  `json:"textHistory"`
-	Mask             *providerMedia         `json:"mask"`
-	Metadata         map[string]interface{} `json:"metadata"`
-	AgentRequests    *agentToolRequests     `json:"agentRequests"`
-	TextOptions      canvasTextOptions      `json:"textOptions"`
-	ImageCapability  *ImageCapabilityConfig `json:"-"`
-	StreamText       bool                   `json:"-"` // 分镜请求使用上游 SSE 保活；最终结构仍在流结束后统一校验。
-	MaxOutputTokens  int                    `json:"-"`
-	OnTextDelta      func(string)           `json:"-"`
-	OnReasoningDelta func(string)           `json:"-"`
-	VideoCapability  *VideoCapabilityConfig `json:"-"`
+	Mode               string                 `json:"mode"`
+	Prompt             string                 `json:"prompt"`
+	CapabilityRevision string                 `json:"capabilityRevision,omitempty"`
+	Config             providerConfig         `json:"config"`
+	ReferenceImages    []providerMedia        `json:"referenceImages"`
+	ReferenceVideos    []providerMedia        `json:"referenceVideos"`
+	ReferenceAudios    []providerMedia        `json:"referenceAudios"`
+	TextHistory        []providerTextMessage  `json:"textHistory"`
+	Mask               *providerMedia         `json:"mask"`
+	Metadata           map[string]interface{} `json:"metadata"`
+	AgentRequests      *agentToolRequests     `json:"agentRequests"`
+	TextOptions        canvasTextOptions      `json:"textOptions"`
+	ImageCapability    *ImageCapabilityConfig `json:"-"`
+	StreamText         bool                   `json:"-"` // 分镜请求使用上游 SSE 保活；最终结构仍在流结束后统一校验。
+	MaxOutputTokens    int                    `json:"-"`
+	OnTextDelta        func(string)           `json:"-"`
+	OnReasoningDelta   func(string)           `json:"-"`
+	VideoCapability    *VideoCapabilityConfig `json:"-"`
 }
 
 type canvasTextOptions struct {
@@ -64,6 +65,7 @@ type providerTextMessage struct {
 }
 
 type providerConfig struct {
+	CapabilityRevision    string                 `json:"-"`
 	ChannelID             string                 `json:"channelId"`
 	ChannelModelKey       string                 `json:"channelModelKey,omitempty"`
 	VariantID             string                 `json:"variantId,omitempty"`
@@ -223,6 +225,9 @@ func (e providerHTTPError) Error() string {
 	case 524:
 		return "上游网关超时（524）：模型请求可能仍在服务端执行并产生费用，请勿立即重试，请先到供应商后台核对任务或账单"
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		if message, ok := providerPayloadErrorCategory(e.Body); ok {
+			return message
+		}
 		return "模型服务拒绝了请求，请检查模型和参数"
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "模型服务鉴权失败，请检查 API Key 和模型权限"
@@ -278,6 +283,8 @@ func providerPayloadErrorCategory(raw string) (string, bool) {
 		return "", false
 	}
 	switch {
+	case strings.Contains(normalized, contentModerationErrorCode):
+		return "请求内容未通过模型服务安全审核，请调整后重试", true
 	// 真人肖像类目只匹配供应商错误码里的稳定标识，不扫描自然语言。
 	// 正文常常回显用户提示词，"likeness"、"肖像"这类词单独出现并不能证明
 	// 上游是因为真人形象拒绝，按词判断会把普通参数错误误报成肖像问题。
@@ -336,6 +343,7 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	if strings.TrimSpace(input.Prompt) == "" {
 		return nil, errors.New("prompt is required")
 	}
+	input.Config.CapabilityRevision = strings.TrimSpace(input.CapabilityRevision)
 	config, err := s.resolveProviderConfig(input.Config)
 	if err != nil {
 		return nil, err
@@ -440,20 +448,34 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 }
 
 type providerMediaHydrationPolicy struct {
-	requireURL bool
-	preferURL  bool
+	requireURL         bool
+	preferURL          bool
+	allowInlineDataURL bool
 }
 
 func providerMediaHydrationPolicyFor(ctx context.Context, input canvasGenerationInput) providerMediaHydrationPolicy {
 	policy := providerMediaHydrationPolicy{preferURL: providerPrefersMediaURLs(input.Config.InterfaceType, input)}
 	switch strings.TrimSpace(input.Config.InterfaceType) {
-	case string(model.ChannelInterfaceNewAPIVideo), string(model.ChannelInterfaceNewAPIChannel1), string(model.ChannelInterfaceNewAPIChannel2), string(model.ChannelInterfaceVolcengineArkVideo), string(model.ChannelInterfaceVolcengineArkAgentPlanVideo), string(model.ChannelInterfaceMiniMaxVideo):
+	case string(model.ChannelInterfaceNewAPIVideo):
+		// The standard /videos input_reference field is a multipart file.
+		// AutoDL's H3 workflow accepts URLs or inline DataURLs in JSON fields.
+		policy.allowInlineDataURL = isHeihanAxonH3Video(input.Config.BaseURL, input.Config.Model)
+		policy.requireURL = false
+		policy.preferURL = isHeihanAxonH3Video(input.Config.BaseURL, input.Config.Model)
+	case string(model.ChannelInterfaceNewAPIChannel1), string(model.ChannelInterfaceNewAPIChannel2), string(model.ChannelInterfaceVolcengineArkVideo), string(model.ChannelInterfaceVolcengineArkAgentPlanVideo), string(model.ChannelInterfaceMiniMaxVideo):
 		policy.requireURL = true
 		policy.preferURL = true
 	}
 	if adapter, ok := protocolAdapterForContext(ctx, input.Config.InterfaceType); ok && adapter.Metadata().RequiresPublicMediaURLs {
 		policy.requireURL = true
 		policy.preferURL = true
+	}
+	// This upstream's browser sends local H3 references as DataURLs in the JSON
+	// workflow parameters. Keep its inline-data exception scoped to this relay/model.
+	if strings.TrimSpace(input.Config.InterfaceType) == string(model.ChannelInterfaceNewAPIVideo) && isHeihanAxonH3Video(input.Config.BaseURL, input.Config.Model) {
+		policy.requireURL = false
+		policy.preferURL = true
+		policy.allowInlineDataURL = true
 	}
 	if input.Mask != nil {
 		policy.requireURL = false
@@ -563,14 +585,7 @@ func (s *Service) taskProjectStyleProfile(userID string, canvasOrProjectID strin
 	if id == "" {
 		return "", "", false, nil
 	}
-	if canvas, err := s.repo.CanvasProjectForUser(userID, id); err == nil {
-		if strings.TrimSpace(canvas.ProjectID) == "" {
-			return "", "", false, nil
-		}
-		project, projectErr := s.repo.ProjectForUser(userID, canvas.ProjectID)
-		if projectErr != nil {
-			return "", "", true, projectErr
-		}
+	if project, err := s.repo.ProjectForCanvas(userID, id); err == nil {
 		return project.StyleProfileJSON, project.StylePresetID, true, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", "", false, err
@@ -728,7 +743,7 @@ func (s *Service) hydrateGenerationMedia(userID string, input *canvasGenerationI
 
 func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, policy providerMediaHydrationPolicy) error {
 	if !strings.HasPrefix(media.StorageKey, "resource:") {
-		if policy.requireURL && strings.HasPrefix(strings.TrimSpace(media.DataURL), "data:") {
+		if policy.requireURL && !policy.allowInlineDataURL && strings.HasPrefix(strings.TrimSpace(media.DataURL), "data:") {
 			return errors.New("当前 JSON 视频协议的参考素材不能使用内嵌数据，请先上传到对象存储或提供公网素材地址")
 		}
 		return nil
@@ -746,8 +761,8 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 		signedURL, err := s.directResourceURL(resource, time.Now().Add(providerResourceURLTTL))
 		if err != nil {
 			// 本地单机部署没有公网素材地址：允许回退为内嵌 data URL，避免图生视频等能力完全不可用。
-			if !inlineMediaURLFallbackEnabled() {
-				return fmt.Errorf("生成参考素材地址失败：%w", err)
+			if !inlineMediaURLFallbackEnabled() && !policy.allowInlineDataURL {
+				return fmt.Errorf("生成参考素材地址失败：%w；本地单机存储可设置 CANVAS_INLINE_MEDIA_URLS=1 以内嵌 data URL 方式提供参考素材，或配置 CANVAS_PUBLIC_BASE_URL / OSS 存储", err)
 			}
 		} else {
 			media.URL = signedURL
@@ -827,10 +842,7 @@ func (s *Service) resolveProviderConfig(config providerConfig) (providerConfig, 
 		channelID = systemChannelIDFromBaseURL(config.BaseURL)
 	}
 	if channelID == "" {
-		if _, err := ValidateOutboundURL(config.BaseURL); err != nil {
-			return providerConfig{}, err
-		}
-		return config, nil
+		return providerConfig{}, Forbidden("此发行版仅使用模型中心中已配置的 Axon 渠道")
 	}
 	channel, err := s.SystemChannel(channelID)
 	if err != nil {
@@ -898,6 +910,16 @@ func (s *Service) resolveProviderConfig(config providerConfig) (providerConfig, 
 	config.ChannelModelKey = modelKey
 	config.ProviderModelKey = providerModelKey
 	config.Model = firstNonEmpty(providerModelKey, channelModel.ProviderModelKey, modelKey)
+	if expected := strings.TrimSpace(config.CapabilityRevision); expected != "" && expected != channelModelCapabilityRevision(*channelModel) {
+		return providerConfig{}, errors.New("当前模型能力规格已更新，请重新创建任务")
+	}
+	if normalizeCapability(channelModel.Capability) == "audio" {
+		capabilityConfig, capabilityErr := normalizedChannelModelCapability(channelModel)
+		if capabilityErr != nil {
+			return providerConfig{}, fmt.Errorf("加载渠道模型能力配置失败：%w", capabilityErr)
+		}
+		config.CapabilityConfig = capabilityConfig
+	}
 	return config, nil
 }
 

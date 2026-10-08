@@ -74,3 +74,21 @@ backend/server.exe
 *.exe
 # One-off local probe scripts and their compiled output.
 backend/tmp_*
+
+# User runtime state is never part of a source release.
+/canvas-agent-config/
+/runtime/
+/python-runtime/
+/workspace/
+/logs/
+/backups/
+/audio-audits/
+/pids.json*
+*.key
+*.pem
+*.pfx
+# Official guide text is fetched from its own upstream, not relicensed here.
+/plugins/yingce/skills/h3-prompt-writing/references/base-en.txt
+/plugins/yingce/skills/h3-prompt-writing/references/ref-en.txt
+/plugins/yingce/skills/h3-prompt-writing/references/upstream-SKILL.md
+*.download

@@ -262,10 +262,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                                 return <WorkflowSelectedLabel kind={workflow?.kind || "workflow"} label={workflow?.label || String(selected.label || "")} />;
                             }}
                             notFoundContent={`暂无${capabilityLabel(workflowCapability)}工作流`}
-                            popupMatchSelectWidth={false}
                             virtual={false}
                             listHeight={320}
-                            styles={{ popup: { root: { minWidth: 320, maxWidth: "min(420px, calc(100vw - 32px))" } } }}
+                            styles={{ popup: { root: { maxWidth: "min(420px, calc(100vw - 32px))" } } }}
                             optionRender={(option) => {
                                 if (option.data.options) return option.label;
                                 return <WorkflowOptionLabel kind={option.data.kind === "app" ? "app" : "workflow"} label={String(option.data.label || "")} title={String(option.data.title || option.data.label || "")} />;
