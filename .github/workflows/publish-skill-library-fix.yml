@@ -1,4 +1,4 @@
-name: Assemble skill library fix release
+name: Assemble complete portable replacement
 
 on:
   workflow_dispatch:

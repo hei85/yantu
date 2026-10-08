@@ -8,7 +8,7 @@
 | Open AI Canvas 与本仓库此前 MIT 内容 | ddcat-ai/open-ai-canvas；保留 MIT 授权和作者署名 |
 | hei85 自有且未另行授权的新增内容 | 根目录 LICENSE；明确标注文件采用 LicenseRef-Yantu-Source-Available |
 | Higgsfield 提示词技能树 | plugins/yingce/skills/higgsfield-ai-prompt-skill/，O-Side Media，沿用该目录 LICENSE（MIT） |
-| MiniMax H3 官方指南 | https://github.com/MiniMax-AI/MiniMax-H3；不将官方全文重新授权，提供本地适配与固定上游下载脚本 |
+| MiniMax H3 官方指南 | https://github.com/MiniMax-AI/MiniMax-H3；保留维护者已安装的官方 4 个原文件、原来源和权利；中文适配独立存放，不将官方内容按本仓库许可重新授权 |
 | Remotion 等外部工具说明与技能 | 保留原来源，不对第三方内容主张 hei85 的限制性许可；软件和服务按各自条款使用 |
 | Go、Node 与 Python 依赖 | go.mod、package.json / bun.lock 记录源码依赖；便携包保留各依赖原许可、Python portable-packages.json 和文件校验清单，不适用自有新增部分限制 |
 | Node.js v24.18.0 | MIT 及所带第三方许可；便携包 licenses/runtimes/Node-v24.18.0-LICENSE.txt |
@@ -24,8 +24,9 @@
 | Basis Universal 转码器 | Copyright (C) 2019–2026 Binomial LLC；web/public/three/basis/，Apache-2.0，来源 https://github.com/BinomialLLC/basis_universal；许可全文见 licenses/Apache-2.0.txt |
 
 H3 官方指南固定为提交 d21241f0a4b3acbb34c97dae47fa417b7065e438，
-校验值写在 scripts/install-official-h3-guides.ps1。下载结果只在使用者
-本地，不纳入本仓库；使用前应阅读上游适用授权与条款。
+校验值写在 scripts/install-official-h3-guides.ps1，随包文件与维护者
+已安装版本逐字节一致。缺失或损坏时可从固定官方提交恢复；使用前
+应阅读上游适用授权与条款，官方内容不适用本仓库的自有新增部分许可。
 
 这些第三方文件不适用 hei85 自有新增部分的限制。如发现来源或授权
 登记不完整，请通过本仓库 Issue 联系维护者。

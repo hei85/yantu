@@ -356,6 +356,9 @@ export function ChannelModelManager({ channel, onClose, onChanged, section, back
                     <Button loading={fetching} icon={<RefreshCw className="size-4" />} onClick={() => void fetchModels()}>
                         拉取模型
                     </Button>
+                    <Button type="primary" icon={<Plus className="size-4" />} onClick={startCreate}>
+                        新增模型
+                    </Button>
                 </Space>
             }
         >

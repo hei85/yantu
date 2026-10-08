@@ -104,12 +104,9 @@ $env:PORTABLE_API_TARGET = $backendUrl
 $env:PORTABLE_WEB_PORT = [string]$WebPort
 $env:PORT = [string]$RuntimePort
 $env:GIN_MODE = 'release'
-# Register packages only after the pinned official references are available.
-# Network failure leaves other skills usable and reports the missing H3 guides.
-if (-not $SkipOfficialGuides) {
-    try { & (Join-Path $PSScriptRoot 'install-official-h3-guides.ps1') }
-    catch { Write-Warning 'H3 official guides could not be downloaded. Run scripts/install-official-h3-guides.ps1 before using H3, then restart to refresh the skill library.' }
-}
+# Official H3 files are already shipped. Check their pinned hashes offline;
+# the repair installer downloads only if a shipped file is missing or damaged.
+if (-not $SkipOfficialGuides) { & (Join-Path $PSScriptRoot 'install-official-h3-guides.ps1') }
 $processes = @{}
 try {
     $processes.backend = (Start-Process -FilePath $backendExe -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru -RedirectStandardInput $stdinPath -RedirectStandardOutput (Join-Path $stateDir 'backend.log') -RedirectStandardError (Join-Path $stateDir 'backend.err.log')).Id

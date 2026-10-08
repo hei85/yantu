@@ -70,13 +70,13 @@ def main() -> None:
     for name in ["package.json", "bun.lock"]:
         shutil.copy2(root / "canvas-agent" / name, destination / "canvas-agent" / name)
     (destination / "scripts").mkdir()
-    for name in ["start-portable.ps1", "start-axon.ps1", "stop-yingce-local.ps1", "serve-web.mjs",
+    for name in ["start-portable.ps1", "start-axon.ps1", "stop-yingce-local.ps1", "serve-web.mjs", "portable-start-web.ps1",
                  "install-to-codex.ps1", "install-official-h3-guides.ps1", "install-optional-models.ps1",
                  "film-mcp-call.mjs", "film-resource-index.mjs", "build-film-plan.ts", "update-production-skill.mjs"]:
         shutil.copy2(root / "scripts" / name, destination / "scripts" / name)
-    for name in ["启动衍图.cmd", "停止衍图.cmd", "start-yingce.cmd", "stop-yingce.cmd", "安装到Codex.cmd",
+    for name in ["启动衍图.cmd", "停止衍图.cmd", "start-yingce.cmd", "stop-yingce.cmd", "安装到Codex.cmd", "恢复网页服务.cmd",
                  "初始化可选分析模型.cmd", "快速开始.md", "使用说明.md", "README.md", "AGENTS.md", "CLAUDE.md",
-                 "AI_USAGE_POLICY.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "VERSION"]:
+                 "AI_USAGE_POLICY.md", "PORTABLE_AGENT_RULES.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "VERSION"]:
         shutil.copy2(root / name, destination / name)
     (destination / ".github").mkdir()
     shutil.copy2(root / ".github/copilot-instructions.md", destination / ".github/copilot-instructions.md")

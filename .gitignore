@@ -87,8 +87,6 @@ backend/tmp_*
 *.key
 *.pem
 *.pfx
-# Official guide text is fetched from its own upstream, not relicensed here.
-/plugins/yingce/skills/h3-prompt-writing/references/base-en.txt
-/plugins/yingce/skills/h3-prompt-writing/references/ref-en.txt
+# Temporary guide downloads are never shipped.
 /plugins/yingce/skills/h3-prompt-writing/references/upstream-SKILL.md
 *.download

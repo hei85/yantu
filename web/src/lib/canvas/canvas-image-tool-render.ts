@@ -65,3 +65,4 @@ export async function regionMask(url: string, regions: ImageToolRect[]) {
     regions.forEach((rect) => { validateImageToolRect(rect); context.clearRect(Math.floor(rect.x * canvas.width), Math.floor(rect.y * canvas.height), Math.ceil(rect.width * canvas.width), Math.ceil(rect.height * canvas.height)); });
     return canvas.toDataURL("image/png");
 }
+
