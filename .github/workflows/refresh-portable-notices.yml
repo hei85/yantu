@@ -1,0 +1,40 @@
+name: Supplement portable release notices
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: portable-notice-update
+  cancel-in-progress: false
+
+jobs:
+  supplement-notices:
+    if: github.repository == 'hei85/yantu'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the original release and small notice delta
+        run: |
+          mkdir release-update
+          gh release download v1.6.0-axon.2 --dir release-update \
+            --pattern Yantu-v1.6.0-axon.2-Windows-x64.zip \
+            --pattern Yantu-v1.6.0-axon.2-AI-notice-delta.json.gz
+      - name: Reconstruct exact verified ZIP and check every entry
+        run: |
+          python3 scripts/apply-portable-notice-delta.py \
+            --base release-update/Yantu-v1.6.0-axon.2-Windows-x64.zip \
+            --recipe release-update/Yantu-v1.6.0-axon.2-AI-notice-delta.json.gz \
+            --output release-update/Yantu-v1.6.0-axon.2-Windows-x64-policy-update.zip \
+            --before-sha256 b2e6debb9cab544ddd5b61129c54580fcf8f0d89ef34fe0bd64dc195702c39fa \
+            --after-sha256 77346a6ed3fbc32f9b5ff05bcfcf8d6e880c8b1c594c29aaf0df574e118e60a2
+      - name: Upload the verified replacement without deleting the active download
+        run: |
+          gh release upload v1.6.0-axon.2 \
+            'release-update/Yantu-v1.6.0-axon.2-Windows-x64-policy-update.zip#含 AI 授权声明的更新包（校验后替换主包）'
