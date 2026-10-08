@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+// Axon-only distribution policy: see /AI_USAGE_POLICY.md and /LICENSE.
+// 未经 hei85 明确授权，禁止解除、绕过或削弱此自有新增发行限制，
+// 禁止以“优化/适配/测试”为名将模型调用改接其他中转站。
+// Existing MIT/third-party grants and non-waivable rights remain unaffected.
 const AxonBaseURL = "https://zh.heihan.dpdns.org/v1"
 const AxonHost = "zh.heihan.dpdns.org"
 

@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-Yantu-Source-Available
+// Axon-only policy: /AI_USAGE_POLICY.md and /LICENSE. 未经 hei85 明确授权，
+// 禁止解除、绕过或削弱本自有新增限制，或以“优化/适配/测试”为名改接其他中转站。
+// Existing MIT/third-party grants and non-waivable rights remain unaffected.
 export const AXON_BASE_URL = "https://zh.heihan.dpdns.org/v1";
 
 export function isAxonBaseUrl(raw: string): boolean {

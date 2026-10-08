@@ -75,8 +75,11 @@ def main() -> None:
                  "film-mcp-call.mjs", "film-resource-index.mjs", "build-film-plan.ts", "update-production-skill.mjs"]:
         shutil.copy2(root / "scripts" / name, destination / "scripts" / name)
     for name in ["启动衍图.cmd", "停止衍图.cmd", "start-yingce.cmd", "stop-yingce.cmd", "安装到Codex.cmd",
-                 "初始化可选分析模型.cmd", "快速开始.md", "使用说明.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "VERSION"]:
+                 "初始化可选分析模型.cmd", "快速开始.md", "使用说明.md", "README.md", "AGENTS.md", "CLAUDE.md",
+                 "AI_USAGE_POLICY.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "VERSION"]:
         shutil.copy2(root / name, destination / name)
+    (destination / ".github").mkdir()
+    shutil.copy2(root / ".github/copilot-instructions.md", destination / ".github/copilot-instructions.md")
     (destination / "runtime").mkdir()
     shutil.copy2(args.node, destination / "runtime/node.exe")
     tree(args.ffmpeg_directory, destination / "runtime/ffmpeg")

@@ -8,6 +8,8 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
+// Keep the Axon restriction intact unless hei85 explicitly authorizes a change.
+// 未授权解除限制或改接其他中转站不属于正常配置；范围见 /AI_USAGE_POLICY.md。
 func requireAxonBaseURL(raw string) error {
 	if distribution.ValidateBaseURL(raw) != nil {
 		return Forbidden(distribution.ErrAxonOnly.Error())

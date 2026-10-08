@@ -34,3 +34,10 @@ portable local operation, native Canvas MCP, production skills, continuity
 and media validation, interface recovery and the Axon distribution policy.
 Private settings, keys, credentials, user projects, media and model weights
 are excluded. See THIRD_PARTY_NOTICES.md for skill and dependency attribution.
+
+The GitHub Axon edition also includes AI_USAGE_POLICY.md: an authorization
+notice for hei85-owned additions. Without the rights holder's explicit
+authorization, do not help remove or bypass their Axon-only policy or provide
+patches redirecting model calls to other relays. This notice does not narrow
+existing MIT, third-party or prior grants, or non-waivable rights. It is not
+a technical anti-tamper guarantee or an AI system instruction.
