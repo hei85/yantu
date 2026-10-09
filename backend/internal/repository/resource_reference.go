@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -93,6 +94,42 @@ func (r *Repository) ResourceReferenceSnapshot(userID string, excludingAssetID s
 	}
 	for _, asset := range assets {
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, Title: asset.Title, PrimaryJSON: asset.PayloadJSON})
+	}
+	var workspace []model.WorkspaceDocument
+	if err := r.db.Where("user_id = ? AND value IS NOT NULL", userID).Find(&workspace).Error; err != nil {
+		return snapshot, err
+	}
+	for _, document := range workspace {
+		if document.Value == nil {
+			continue
+		}
+		if document.Key == "infinite-canvas:asset_store" {
+			var library struct {
+				State struct {
+					Assets []json.RawMessage `json:"assets"`
+				} `json:"state"`
+			}
+			if err := json.Unmarshal([]byte(*document.Value), &library); err != nil {
+				return snapshot, err
+			}
+			for _, entry := range library.State.Assets {
+				var asset struct {
+					ID    string `json:"id"`
+					Title string `json:"title"`
+				}
+				if err := json.Unmarshal(entry, &asset); err != nil {
+					return snapshot, err
+				}
+				if asset.ID == excludingAssetID {
+					continue
+				}
+				snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, Title: asset.Title, PrimaryJSON: string(entry)})
+			}
+			continue
+		}
+		if document.Key == "infinite-canvas:canvas_store" || strings.HasPrefix(document.Key, "drawing:") {
+			snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "画布", ID: document.Key, Title: "本机工作区", PrimaryJSON: *document.Value})
+		}
 	}
 
 	var tasks []model.Task

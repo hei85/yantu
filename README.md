@@ -7,7 +7,7 @@
 组织到同一套制作流程中。既可以在网页中手动创作，也可以连接 Codex
 等支持 MCP 的 AI 客户端，让 Agent 读取画布、调用技能并执行制作任务。
 
-**[下载 Windows 全部补齐版](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.5/Yantu-v1.6.0-axon.5-Windows-x64.zip)** ·
+**[下载 Windows 完整版](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.6/Yantu-v1.6.0-axon.6-Windows-x64.zip)** ·
 [最新发布与更新说明](https://github.com/hei85/yantu/releases/latest) ·
 [快速开始](快速开始.md) · [插件说明](plugins/yingce/README.md)
 
@@ -26,6 +26,7 @@
 | 技能库 | 随包提供 47 个制作技能，可在“技能 → 我的技能”查看正文、参考文件和脚本，覆盖整片制作、MiniMax H3 提示词、FFmpeg、Higgsfield、Remotion 等。 |
 | MCP 与插件 | 配套画布 MCP 和 Codex 插件，用于读取及编辑节点、关联资产、调用生成任务、读取技能与组织制作流程。 |
 | 制作自检与恢复 | 规则要求核对真实输入、人物与空间连续性、任务结果、对白和成片；保留任务 ID 与采用资源，超时先查询原任务，避免重复提交。 |
+| 本机共享工作区 | Codex 内置浏览器与 Edge/Chrome 连接同一软件服务时共用画布和资产，保留旧浏览器数据并防止过期窗口覆盖新数据。 |
 
 这些能力支持从剧本到成片的自动化编排。生成质量仍需根据实际输出
 检查，技能和规则不会把一次生成成功自动判为内容合格。
@@ -58,7 +59,7 @@
 
 ## 直接下载使用（Windows 10 / 11，64 位）
 
-**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.5/Yantu-v1.6.0-axon.5-Windows-x64.zip)**
+**[下载完整便携版 ZIP](https://github.com/hei85/yantu/releases/download/v1.6.0-axon.6/Yantu-v1.6.0-axon.6-Windows-x64.zip)**
 
 1. 将 ZIP **完整解压**到可写目录。
 2. 双击 **`启动衍图.cmd`**，等待浏览器打开软件。
@@ -86,6 +87,8 @@ Node、Python、依赖和 FFmpeg / FFprobe。**不需要安装编译工具，
 许可，详见 [模型清单](models/MODEL_NOTICES.md) 与 [快速开始](快速开始.md)。
 
 ## 开发者：Windows 源码启动
+
+旧版用户可下载发布页的 **Workspace-Update.zip**，关闭软件后解压到原软件根目录覆盖应用文件，保留自己的数据和配置。迁移及更新步骤见 [Codex 与浏览器共用本机数据](release/SHARED-LOCAL-WORKSPACE.md)。
 
 准备 Git、**Node.js 22.13+**、Bun、Go 1.25，以及 SQLite 编译所需的
 GCC / MinGW-w64，并加入 PATH。影视合成另需 FFmpeg / FFprobe。

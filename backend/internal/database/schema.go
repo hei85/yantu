@@ -16,6 +16,8 @@ import (
 func Models() []any {
 	return []any{
 		&model.User{},
+		&model.WorkspaceDocument{},
+		&model.WorkspaceDocumentRevision{},
 		&model.AuthSession{},
 		&model.ModelChannel{},
 		&model.ChannelModel{},

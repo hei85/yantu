@@ -4,6 +4,9 @@ import type { CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import { readImageMeta } from "@/lib/image-utils";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { imageToDataUrl } from "@/services/image-storage";
+import { getImageBlob } from "@/services/image-storage";
+import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
+import { observedWorkspaceRevision, readSharedWorkspace, usesSharedWorkspace, writeSharedWorkspace } from "@/lib/shared-workspace";
 
 export type CanvasDrawingSnapshot = {
     version: 2;
@@ -43,6 +46,50 @@ type LegacyCanvasDrawingSnapshot = Omit<CanvasDrawingSnapshot, "version" | "engi
 
 function drawingKey(projectId: string, drawingId: string) {
     return `${getActiveUserScope()}:${projectId}:${drawingId}`;
+}
+
+type SharedDrawingBundle = {
+    document: CanvasDrawingSnapshot;
+    previewResourceId?: string;
+    render?: Omit<CanvasDrawingRender, "blob"> & { resourceId: string };
+};
+const sharedDrawingKey = (projectId: string, drawingId: string) => `drawing:${encodeURIComponent(projectId)}:${encodeURIComponent(drawingId)}`;
+
+async function publishDrawingImage(blob: Blob, idempotencyKey: string) {
+    return uploadResourceFile(blob, "image", { idempotencyKey });
+}
+
+async function loadSharedDrawingBundle(projectId: string, drawingId: string, scope = getActiveUserScope()): Promise<SharedDrawingBundle | null> {
+    const key = sharedDrawingKey(projectId, drawingId);
+    const value = await readSharedWorkspace(scope, key);
+    if (value) return JSON.parse(value) as SharedDrawingBundle;
+    if ((observedWorkspaceRevision(scope, key) || 0) > 0) return null;
+    const oldKey = `${scope}:${projectId}:${drawingId}`;
+    const document = normalizeCanvasDrawingSnapshot(await drawingStore.getItem<CanvasDrawingSnapshot | LegacyCanvasDrawingSnapshot>(oldKey));
+    if (!document) return null;
+    const preview = await drawingPreviewStore.getItem<Blob>(oldKey);
+    const render = await drawingRenderStore.getItem<CanvasDrawingRender>(oldKey);
+    const bundle: SharedDrawingBundle = { document };
+    if (preview) bundle.previewResourceId = (await publishDrawingImage(preview, `drawing:${oldKey}:preview:${document.revision}`)).id;
+    if (render?.blob) {
+        const { blob, ...metadata } = render;
+        const resource = await publishDrawingImage(blob, `drawing:${oldKey}:render:${render.revision}`);
+        bundle.render = { ...metadata, resourceId: resource.id, storageKey: resourceStorageKey(resource.id), url: resourceFileUrl(resource.id) };
+    }
+    await writeSharedWorkspace(scope, key, JSON.stringify(bundle));
+    return bundle;
+}
+
+/** Promote editable drawings as well as media before publishing a legacy canvas. */
+export async function migrateLegacyCanvasDrawings(projectId: string, nodes: unknown[], scope: string) {
+    for (const item of nodes) {
+        const node = item as { type?: string; metadata?: { drawingId?: string } };
+        if (node.type !== "drawing" || !node.metadata?.drawingId) continue;
+        const key = sharedDrawingKey(projectId, node.metadata.drawingId);
+        if (!usesSharedWorkspace(scope, key)) continue;
+        const saved = await loadSharedDrawingBundle(projectId, node.metadata.drawingId, scope);
+        if (!saved) throw new Error(`绘图文档不可读取，原画布已保留：${node.metadata.drawingId}`);
+    }
 }
 
 export type CanvasDrawingInitializationStorage = {
@@ -116,6 +163,7 @@ async function createEmptyTldrawSnapshot() {
 
 export async function loadCanvasDrawing(projectId: string, drawingId: string) {
     if (!projectId || !drawingId) return null;
+    if (usesSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId))) return (await loadSharedDrawingBundle(projectId, drawingId))?.document || null;
     const saved = await drawingStore.getItem<CanvasDrawingSnapshot | LegacyCanvasDrawingSnapshot>(drawingKey(projectId, drawingId));
     return normalizeCanvasDrawingSnapshot(saved);
 }
@@ -141,6 +189,21 @@ export async function saveCanvasDrawing(
         shapeCount: summary.shapeCount,
         pageCount: Math.min(summary.pageCount, 1),
     };
+    const scope = getActiveUserScope();
+    const sharedKey = sharedDrawingKey(projectId, drawingId);
+    if (usesSharedWorkspace(scope, sharedKey)) {
+        const existing = await loadSharedDrawingBundle(projectId, drawingId, scope);
+        if (previous && existing && previous.revision !== existing.document.revision) throw new Error("此绘图已在另一浏览器更新，请核对最新版本后保存；当前原稿仍在编辑器中");
+        const bundle: SharedDrawingBundle = { ...existing, document: next };
+        if (preview) bundle.previewResourceId = (await publishDrawingImage(preview, `drawing:${scope}:${projectId}:${drawingId}:preview:${revision}:${updatedAt}`)).id;
+        else if (preview === null) delete bundle.previewResourceId;
+        if (render) {
+            const { blob, ...metadata } = render;
+            const resource = await publishDrawingImage(blob, `drawing:${scope}:${projectId}:${drawingId}:render:${revision}:${updatedAt}`);
+            bundle.render = { ...metadata, version: 1, revision, updatedAt, resourceId: resource.id, storageKey: resourceStorageKey(resource.id), url: resourceFileUrl(resource.id) };
+        } else if (render === null) delete bundle.render;
+        await writeSharedWorkspace(scope, sharedKey, JSON.stringify(bundle));
+    }
     await drawingStore.setItem(drawingKey(projectId, drawingId), next);
     if (preview) await drawingPreviewStore.setItem(drawingKey(projectId, drawingId), preview);
     else if (preview === null) await drawingPreviewStore.removeItem(drawingKey(projectId, drawingId));
@@ -182,15 +245,34 @@ export async function createCanvasDrawingFromImage(
 
 export async function loadCanvasDrawingPreview(projectId: string, drawingId: string) {
     if (!projectId || !drawingId) return null;
+    if (usesSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId))) {
+        const bundle = await loadSharedDrawingBundle(projectId, drawingId);
+        return bundle?.previewResourceId ? getImageBlob(resourceStorageKey(bundle.previewResourceId)) : null;
+    }
     return drawingPreviewStore.getItem<Blob>(drawingKey(projectId, drawingId));
 }
 
 export async function loadCanvasDrawingRender(projectId: string, drawingId: string) {
     if (!projectId || !drawingId) return null;
+    if (usesSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId))) {
+        const render = (await loadSharedDrawingBundle(projectId, drawingId))?.render;
+        if (!render) return null;
+        const blob = await getImageBlob(resourceStorageKey(render.resourceId));
+        if (!blob) throw new Error("绘图渲染资源暂时无法读取");
+        const { resourceId: _resourceId, ...metadata } = render;
+        return { ...metadata, blob } satisfies CanvasDrawingRender;
+    }
     return drawingRenderStore.getItem<CanvasDrawingRender>(drawingKey(projectId, drawingId));
 }
 
 export async function saveCanvasDrawingRenderPublication(projectId: string, drawingId: string, revision: number, publication: Pick<CanvasDrawingRenderDraft, "storageKey" | "url">) {
+    if (usesSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId))) {
+        const bundle = await loadSharedDrawingBundle(projectId, drawingId);
+        if (!bundle?.render || bundle.render.revision !== revision) return false;
+        bundle.render = { ...bundle.render, ...publication, resourceId: resourceIdFromStorageKey(publication.storageKey || "") || bundle.render.resourceId };
+        await writeSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId), JSON.stringify(bundle));
+        return true;
+    }
     const key = drawingKey(projectId, drawingId);
     const render = await drawingRenderStore.getItem<CanvasDrawingRender>(key);
     if (!render || render.revision !== revision) return false;
@@ -200,6 +282,7 @@ export async function saveCanvasDrawingRenderPublication(projectId: string, draw
 
 export async function removeCanvasDrawing(projectId: string, drawingId: string) {
     if (!projectId || !drawingId) return;
+    if (usesSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId))) await writeSharedWorkspace(getActiveUserScope(), sharedDrawingKey(projectId, drawingId), null);
     await Promise.all([
         drawingStore.removeItem(drawingKey(projectId, drawingId)),
         drawingPreviewStore.removeItem(drawingKey(projectId, drawingId)),

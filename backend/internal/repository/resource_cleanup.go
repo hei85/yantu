@@ -49,6 +49,11 @@ func (r *Repository) DeleteDetachedResources(resources []model.Resource, deletio
 				return err
 			}
 			documentsByUser[resource.UserID] = assetDocuments
+			var workspaceDocuments []string
+			if err := tx.Model(&model.WorkspaceDocument{}).Where("user_id = ? AND value IS NOT NULL", resource.UserID).Pluck("value", &workspaceDocuments).Error; err != nil {
+				return err
+			}
+			documentsByUser[resource.UserID] = append(documentsByUser[resource.UserID], workspaceDocuments...)
 		}
 		for _, resource := range current {
 			storageKey := "resource:" + resource.ID + `"`

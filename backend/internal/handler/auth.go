@@ -778,7 +778,7 @@ func shortSystemProxyPath(rawPath string) (string, string, bool) {
 // as a channel request when a business route returns 404.
 func isReservedAPIPathPrefix(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "admin", "agent", "ai", "announcements", "banner-announcements", "auth", "channels", "diagnostics", "features", "files", "model-catalog", "models", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "voice-profiles":
+	case "admin", "agent", "ai", "announcements", "banner-announcements", "auth", "channels", "diagnostics", "features", "files", "model-catalog", "models", "plugins", "projects", "public", "resources", "sessions", "settings", "skills", "style-profiles", "tasks", "timeline", "voice-profiles", "workspace":
 		return true
 	default:
 		return false

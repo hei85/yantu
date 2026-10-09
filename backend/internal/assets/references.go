@@ -91,7 +91,7 @@ func walkReferenceDocument(value any, parentKey string, resourceIDs map[string]s
 
 func isBareResourceIDField(field string) bool {
 	switch field {
-	case "resourceId", "resourceIds", "sampleResourceId", "referenceResourceId", "referenceResourceIds":
+	case "resourceId", "resourceIds", "sampleResourceId", "referenceResourceId", "referenceResourceIds", "previewResourceId":
 		return true
 	default:
 		return false
@@ -100,7 +100,7 @@ func isBareResourceIDField(field string) bool {
 
 func isResourceLocatorField(field string) bool {
 	switch field {
-	case "storageKey", "content", "previewContent", "drawingPreviewStorageKey", "drawingPreviewUrl", "url", "dataUrl", "coverUrl", "imageUrl", "videoUrl", "audioUrl", "referenceUrl", "referenceUrls", "artifactRef", "providerArtifactRef":
+	case "storageKey", "sourceStorageKey", "maskStorageKey", "content", "previewContent", "drawingPreviewStorageKey", "drawingPreviewUrl", "url", "dataUrl", "coverUrl", "imageUrl", "videoUrl", "audioUrl", "referenceUrl", "referenceUrls", "artifactRef", "providerArtifactRef":
 		return true
 	default:
 		return false

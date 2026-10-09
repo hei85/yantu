@@ -18,7 +18,7 @@ import (
 // 33：制作步骤、生成任务保存稳定分镜行与分段追踪身份。
 // 34：制作步骤保存重做成本估算，并为计划替换步骤保留 superseded 历史。
 // 35：制作步骤和生成任务持久保存分镜音轨 ID。
-const CurrentSchemaVersion int64 = 36
+const CurrentSchemaVersion int64 = 37
 const productionRuntimeChecksum = "sha256:production-runtime-v29-20260923"
 const taskClientOperationChecksum = "sha256:task-client-operation-v30-20260923"
 const productionBudgetChecksum = "sha256:production-budget-v31-20260923"
@@ -120,6 +120,9 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.ProductionStep{}, &model.Task{})
 	}},
 	{version: 36, name: "production_audio_mode_voice_version", checksum: productionAudioModeVoiceVersionChecksum, apply: migrateProductionAudioModeVoiceVersion},
+	{version: 37, name: "shared_browser_workspace", checksum: "sha256:shared-browser-workspace-v37-20261009", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.WorkspaceDocument{}, &model.WorkspaceDocumentRevision{})
+	}},
 }
 
 func migrateProductionAudioModeVoiceVersion(tx *gorm.DB) error {

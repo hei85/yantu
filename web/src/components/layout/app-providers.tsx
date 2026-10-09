@@ -5,6 +5,7 @@ import { App, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 
 import { AuthSessionHydrator } from "@/components/auth/auth-session-hydrator";
+import { SharedWorkspaceSync } from "@/components/layout/shared-workspace-sync";
 import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { applySkinTheme } from "@/lib/skin-themes";
@@ -46,6 +47,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
                         children
                     ) : (
                         <AuthSessionHydrator>
+                            <SharedWorkspaceSync />
                             <ClientRootBoundary>{children}</ClientRootBoundary>
                         </AuthSessionHydrator>
                     )}

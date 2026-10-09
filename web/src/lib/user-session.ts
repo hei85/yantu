@@ -2,7 +2,7 @@ import { getFeatureAvailability, type AuthSessionPayload } from "@/services/api/
 import { getModelCatalog, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog } from "@/services/api/logical-models";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { appQueryClient } from "@/lib/query-client";
-import { scopedLocalStorage, setActiveUserScope } from "@/lib/user-scope";
+import { getActiveUserScope, scopedLocalStorage, setActiveUserScope } from "@/lib/user-scope";
 import { CANVAS_STORE_KEY, flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { CANVAS_HISTORY_STORE_KEY, useCanvasHistoryStore } from "@/stores/canvas/use-canvas-history-store";
 import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore } from "@/stores/use-asset-store";
@@ -14,6 +14,7 @@ import { imageSizeConfigWithPresets } from "@/lib/image-size-presets";
 import { useUserStore } from "@/stores/use-user-store";
 import { PLUGIN_STORE_KEY, usePluginStore } from "@/stores/use-plugin-store";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
+import { beginSharedWorkspaceHydration, endSharedWorkspaceHydration } from "@/lib/shared-workspace";
 
 export async function switchUserStorageScope(userId?: string | null) {
     await withGenerationConsumersPaused(async () => {
@@ -30,6 +31,9 @@ export async function applyUserSession(payload: AuthSessionPayload) {
         // Query key 不携带用户 ID；身份变化时必须取消并清空旧账号请求，避免跨账号复用内存数据。
         if (previousUserId !== nextUserId) appQueryClient.clear();
         await switchUserStorageScope(payload.user?.id);
+        // Authenticate first, then migrate the original browser's documents into
+        // the same local backend used by every browser. Never activate guest sync.
+        beginSharedWorkspaceHydration(nextUserId);
         const [persistedCanvas, persistedCanvasHistory, persistedAssets, persistedAssetFolders, persistedPlugins] = await Promise.all([
             localForageStorage.getItem(CANVAS_STORE_KEY),
             localForageStorage.getItem(CANVAS_HISTORY_STORE_KEY),
@@ -76,14 +80,41 @@ export async function applyUserSession(payload: AuthSessionPayload) {
             const catalog = await getModelCatalog();
             useConfigStore.getState().mergeSystemChannels(modelCatalogChannels(catalog));
         }
+    } catch (error) {
+        // A failed connection/migration is not an empty or anonymous workspace.
+        useUserStore.getState().setHydrated(false);
+        throw error;
     } finally {
-        useUserStore.getState().setHydrated(true);
+        endSharedWorkspaceHydration(nextUserId);
     }
+    useUserStore.getState().setHydrated(true);
 }
 
 export async function refreshSystemChannels() {
     const catalog = await getModelCatalog();
     useConfigStore.getState().mergeSystemChannels(modelCatalogChannels(catalog));
+}
+
+export async function refreshSharedWorkspaceStores() {
+    await withGenerationConsumersPaused(async () => {
+        await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence(), flushAssetFolderStorePersistence()]);
+        const scope = getActiveUserScope();
+        beginSharedWorkspaceHydration(scope);
+        try {
+            const values = await Promise.all([
+                localForageStorage.getItem(CANVAS_STORE_KEY), localForageStorage.getItem(ASSET_STORE_KEY),
+                localForageStorage.getItem(CANVAS_HISTORY_STORE_KEY), localForageStorage.getItem(ASSET_FOLDER_STORE_KEY),
+            ]);
+            await Promise.all([
+                useCanvasStore.persist.rehydrate(), useAssetStore.persist.rehydrate(),
+                useCanvasHistoryStore.persist.rehydrate(), useAssetFolderStore.persist.rehydrate(), usePluginStore.persist.rehydrate(),
+            ]);
+            if (!values[0]) useCanvasStore.setState({ projects: [] });
+            if (!values[1]) useAssetStore.setState({ assets: [] });
+            if (!values[2]) useCanvasHistoryStore.setState({ deletedProjects: [] });
+            if (!values[3]) useAssetFolderStore.setState({ folders: [] });
+        } finally { endSharedWorkspaceHydration(scope); }
+    });
 }
 
 // 目录仅接受系统渠道模型，避免畸形响应被当成空目录写入配置。
